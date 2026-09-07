@@ -1,0 +1,291 @@
+// kernel/via/index.ts — the ONLY kernel-resident via surface.
+import { NoydbError } from '../errors.js'
+import type { EncryptedEnvelope } from '../types.js'
+
+/** Awaitable type for potentially async results. */
+type Awaitable<T> = T | Promise<T>
+
+/** Declared security posture — a property the kernel enforces (enforcement activates in phases B/C). */
+export interface ViaPosture {
+  readonly encryptedAtRest: 'envelope' | 'sealed'
+  readonly queryable: 'none' | 'det-exact' | 'ordered' | 'full'
+  readonly exportable: boolean
+  readonly forgettable: boolean
+}
+
+/** Opaque marker every feature descriptor extends; the kernel never sees concrete descriptor types. */
+export interface ViaDescriptor { readonly _viaBrand: string }
+
+/** Per-call write context (A: minimal; B/C extend). */
+export interface ViaWriteCtx {
+  readonly id: string
+  /** Owning vault name (event payload identity — e.g. i18n:script-violation). */
+  readonly vault: string
+  /** Prior stored record (decoded), lazily resolved. Null when creating. */
+  readonly prior: () => Promise<Record<string, unknown> | null>
+  /** Typed event emission (e.g. i18n:script-violation). */
+  readonly emit: (event: string, payload: unknown) => void
+}
+
+/** Per-call read context — mirrors LocaleReadOptions loosely; features narrow. */
+export interface ViaReadCtx {
+  readonly locale?: unknown
+  readonly fallback?: unknown
+  readonly layer: string
+}
+
+/** One sealed slot's ciphertext — matches the existing `iv:data` sealed map entries (seam map §2 step 2). */
+export interface SealedSlotRef { readonly iv: string; readonly data: string }
+
+/**
+ * A scoped crypto capability handed to a `via` feature's `encodeAtRest`/
+ * `decodeAtRest`/`erase` hooks — never the keyring, never the enclave.
+ * `sealedSlots` is pre-bound to one `(collection, recordId)`; `reservedEnvelopes`
+ * is a whole-envelope encrypt/decrypt door scoped to collection names under a
+ * declared prefix (e.g. `_dict_`).
+ */
+export interface ViaCryptoCtx {
+  readonly sealedSlots: {
+    seal(field: string, plaintext: unknown): Promise<SealedSlotRef>
+    unseal(field: string, ref: SealedSlotRef): Promise<unknown>
+    delete(field: string): Promise<void>
+  }
+  reservedEnvelopes(prefix: string): {
+    /**
+     * `id` is the record id the envelope will be stored under. Required
+     * (#1051) because this function holds the DEK, so it is where record-identity
+     * AAD is applied — a caller that cannot name the id cannot be bound.
+     */
+    encrypt(
+      identity: { readonly collection: string; readonly id: string; readonly by?: string },
+      json: string,
+      v: number,
+    ): Promise<EncryptedEnvelope>
+    decrypt(collection: string, id: string, env: EncryptedEnvelope): Promise<string>
+  }
+}
+
+/** Per-call erase context — `forget()`'s per-ref participation door (phase C). */
+export interface ViaEraseCtx { readonly id: string; readonly vault: string; readonly live: unknown /* EncryptedEnvelope */; readonly crypto: ViaCryptoCtx }
+/**
+ * What an `erase` hook reports back to `forget()`'s summary ledger entry.
+ * `retainedShared` is additive (#629 Task 10) — content NOT erased because
+ * still referenced by another live record (blob's shared-chunk dual
+ * accounting, `shredAllForRecord()`'s `retainedShared` count). Absent/0 for
+ * bindings with no such concept (a sealed field is never "shared").
+ */
+export interface ViaEraseReport { readonly shredded: number; readonly residue: readonly unknown[]; readonly retainedShared?: number }
+
+/**
+ * A feature bound to one collection's declared config. Record-grain hooks —
+ * every hook receives the whole record (matches the real engine signatures,
+ * e.g. quantizeMoneyFields(record, moneyFields)). All hooks optional;
+ * absent = passthrough. Query-participation hooks are SYNC (#553).
+ */
+export interface NoydbVia {
+  readonly brand: string
+  readonly posture: ViaPosture
+  /** Declared dependencies (field paths / cross-record specs). MANDATORY for any future
+   *  derive-bearing binding — phase C validates well-formedness (strings, non-empty,
+   *  reference declared fields) and graph-registers a derived edge for each covered
+   *  field at declare time, right after `compileVias` builds the bindings
+   *  (unknown source field throws `ValidationError`). See
+   *  `kernel/collection-config.ts`'s `resolveViaDepsEdges`. */
+  readonly deps?: readonly string[]
+  /** Collection-name prefixes this binding's `reservedEnvelopes` capability may address (e.g. `_dict_`). */
+  readonly reservedPrefixes?: readonly string[]
+  /**
+   * Does this binding own `field`? Backs `ViaPipeline.postureFor` (#629 Task
+   * 8's posture consumer) — a passive coverage check, independent of
+   * `buildClause`/`compareForOrder` (which some bindings, e.g. classified and
+   * blob, never define). SYNC, no side effects.
+   *
+   * Contract (documentation only — not enforced at runtime, future work):
+   * any binding declaring a non-default posture value — `queryable: 'none'`
+   * (#629 Task 8) or `exportable: false` (#629 Task 9's `redactForExport`)
+   * — MUST implement `covers()`. `postureFor`'s consumers only engage for
+   * fields a binding actively claims via `covers()`; a binding that omits
+   * it would silently fall through to the generic (unrefused/unredacted)
+   * path instead.
+   */
+  covers?(field: string): boolean
+  // NOTE: phase C adds a `derive` hook ADDITIVELY — do not stub it now.
+  // ── write pipeline ──
+  /** Refuse a write before crypto runs (classified step-3 slot: storage:'never' rejection + validators). Throws to refuse. */
+  enforceWrite?(record: Record<string, unknown>, ctx: ViaWriteCtx): void | Promise<void>
+  /** First pipeline stage (money canonicalizeIncomingMoney). SYNC. */
+  ingest?(record: Record<string, unknown>): Record<string, unknown>
+  /** Decode STORED form to canonical for internal boundaries (gates, derivations, patch bases). SYNC. */
+  canonicalizeStored?(record: Record<string, unknown>): Record<string, unknown>
+  /** Post-validation write encoding (money quantize; i18n translate→script→validate→densify). May be async. */
+  encodeWrite?(record: Record<string, unknown>, ctx: ViaWriteCtx): Awaitable<Record<string, unknown>>
+  /** Final write-pipeline stage: seal/encrypt declared fields via `crypto` before the envelope body is built (classified step-2 slot). */
+  encodeAtRest?(record: Record<string, unknown>, crypto: ViaCryptoCtx): Promise<{ record: Record<string, unknown>; sealed?: Record<string, SealedSlotRef> }>
+  // ── read pipeline ──
+  /** First read-pipeline stage: unseal/decrypt declared fields via `crypto` before `present` runs (classified sealed-handle slot). */
+  decodeAtRest?(record: Record<string, unknown>, sealed: Record<string, SealedSlotRef>, crypto: ViaCryptoCtx, opts: { asHandles: boolean }): Promise<Record<string, unknown>>
+  /** Read-time presentation (money decode+virtuals; i18n locale/labels/strip). May be async. */
+  present?(record: Record<string, unknown>, ctx: ViaReadCtx): Awaitable<Record<string, unknown>>
+  /**
+   * Late read-time presentation (#669) — runs AFTER every binding's `present()` in the
+   * money+computed present-order segment (`ViaPipeline`'s `_presentOrder`, `kernel/via/
+   * pipeline.ts`), BEFORE the "everything else" segment (i18n/lookup dressing, taint
+   * redaction) runs. Exists for a binding that needs to react to a virtual computed
+   * field's fresh OWN-field output before anything dresses it (money's MAJOR-UNITS
+   * quantize-and-present for a field that is BOTH money AND `mode:'virtual'` computed) —
+   * `present()` alone can't express "run after computed for THESE fields only, before
+   * computed for all others", since it's a per-BINDING fold, not per-field. Folded over
+   * `bindings` in declaration order (mirrors every other per-binding fold), so lookup/
+   * i18n dressing and taint/redaction (both in the "everything else" segment) still see
+   * the already-dressed value.
+   */
+  presentLate?(record: Record<string, unknown>, ctx: ViaReadCtx): Awaitable<Record<string, unknown>>
+  /**
+   * #1416 — declare that BOTH `present` and `presentLate` return synchronously,
+   * so `ViaPipeline.presentSync` may fold this binding.
+   *
+   * ⛔ DECLARED, NOT SNIFFED, and that is the whole point. A plain function
+   * returning a promise is indistinguishable at runtime from one that does not
+   * (`constructor.name === 'AsyncFunction'` catches `async () =>` and nothing
+   * else), so detecting it would silently mis-classify the one binding that
+   * matters. Calling an async hook and discarding its promise is worse still:
+   * side effects run and a rejection surfaces unhandled.
+   *
+   * Defaults to `false` — a binding that has not thought about it is skipped by
+   * the sync path and dressed only on the async one, which is today's
+   * behaviour. `money` and `computed` set it; `i18n` and `lookup` cannot.
+   */
+  readonly presentIsSync?: boolean
+  /**
+   * #1447 — the fields this binding covers, ENUMERATED.
+   *
+   * ⛔ `covers()` is a PREDICATE and cannot answer this. Iterating a
+   * collection's declared fields and asking "do you cover this?" misses every
+   * field that exists only in the binding's own config — a
+   * `computed({ mode: 'virtual' })` field is exactly that, and it is the case
+   * that motivated the report: a consumer's rulebook described three vault
+   * -computed fields as app-owned, and a predicate-based check would not have
+   * caught it because it never thinks to ask about them.
+   *
+   * Optional, and absence is honest rather than empty: a binding that has not
+   * declared its set is omitted from the report rather than reported as
+   * covering nothing.
+   */
+  readonly coveredFields?: readonly string[]
+  // ── query participation (ALL SYNC — #553) ──
+  /** Returns an opaque clause payload when this binding covers `field`, else undefined. */
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+  buildClause?(field: string, op: string, value: unknown): unknown | undefined
+  /** Evaluate a payload produced by buildClause against a raw stored value. */
+  evaluateClause?(actual: unknown, op: string, payload: unknown): boolean
+  /**
+   * Optional: the STORED-form operand for a direct secondary-index probe
+   * against a payload produced by `buildClause` (#625) — lets
+   * `candidateRecords()` (`query/builder.ts`) hit `CollectionIndexes.
+   * lookupEqual`/`lookupIn` for `==`/`in` clauses instead of falling back
+   * to a linear scan + per-record `evaluateClause`. Returning `undefined`
+   * means "no sound probe for this op/payload" (e.g. a comparison whose
+   * stored form isn't a single index-bucketable value, or an op the index
+   * can't serve) — the caller falls back to the scan. A binding that
+   * never implements this hook always falls back, unchanged from before
+   * this hook existed.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+  indexProbe?(op: string, payload: unknown): unknown | undefined
+  /**
+   * Optional: canonicalize a raw STORED field value into the bucket key an
+   * eager index should use (#672) — lets `CollectionIndexes` group a
+   * pre-declaration / non-canonical stored value (e.g. a money field's
+   * leftover `'0100'` written before its `money()` declaration) under the
+   * SAME key a canonical write produces (`'100'`), so the index-probe fast
+   * path (`indexProbe` above) and the fallback scan (`evaluateClause`)
+   * agree on which records match. `undefined` means "not mine / can't
+   * canonicalize this value" — the caller buckets the raw stringified
+   * value, unchanged from before this hook existed. MUST agree with what
+   * this binding's own `evaluateClause`/`indexProbe` treat as equal, or
+   * the fast path and the scan will disagree.
+   */
+  canonicalizeIndexKey?(field: string, rawValue: unknown): string | undefined
+  /** Decode a raw stored record for query/scan results and callback views ('raw' — no virtuals). */
+  decodeResults?(record: unknown): unknown
+  /** Exact ordering for a covered field; undefined when the field is not covered. */
+  compareForOrder?(field: string, a: unknown, b: unknown): number | undefined
+  /**
+   * Per-key, PER-CALL-locale label resolution for `orderBy(field, dir,
+   * { by: 'label' })` (#650 Task 7) — the sibling `compareForOrder` above
+   * structurally cannot serve, since it carries no locale parameter.
+   * `locale` is the query's per-call locale (`undefined` for a locale-less
+   * query — a binding may fall back to its own descriptor-level default,
+   * mirroring `present`'s displayLocale hinge). `undefined` return = this
+   * binding doesn't resolve a label for `key` at `field` — caller falls
+   * back to the raw stored value, same graceful-degrade discipline every
+   * other via query hook uses. SYNC (#553 — query participation).
+   */
+  resolveOrderLabel?(field: string, key: string, locale: string | undefined): string | undefined
+  /** Rewrite an aggregate spec (money exact reducers). */
+  wrapReducers?(spec: unknown): unknown
+  // ── forget participation ──
+  /** `forget()`'s per-ref erasure door — shred/report this binding's residue for one record (classified/blob forget participation). */
+  erase?(ctx: ViaEraseCtx): Promise<ViaEraseReport>
+  // ── introspection ──
+  describeFragment?(): Record<string, unknown>
+}
+
+/**
+ * An `indexProbe` result asking for a UNION of sorted-index PREFIX slices
+ * (#1355), rather than the single equality operand `indexProbe` yielded
+ * before it existed.
+ *
+ * ⛔ IT IS A SUPERSET, AND THAT IS THE CONTRACT. `candidateRecords()`
+ * (`kernel/query/builder.ts`) narrows to the union of these prefixes and
+ * then keeps the clause in `remainingClauses`, so the binding's own
+ * `evaluateClause` still runs over every candidate. A binding returning
+ * this promises only that no MATCHING record lies outside the union —
+ * never that every record inside it matches. Return `undefined` instead
+ * of a cover you cannot prove complete: an over-wide cover costs
+ * predicate calls, a short one silently drops rows.
+ *
+ * Generic on purpose. Geo is today's only producer, but nothing here is
+ * spatial — any binding whose stored key is an ordered string with a
+ * meaningful prefix (a path, a bucketed timestamp) can use it.
+ */
+export interface ViaPrefixProbe {
+  readonly kind: 'via-prefixes'
+  readonly prefixes: readonly string[]
+}
+
+/** Runtime predicate for a {@link ViaPrefixProbe} handed back by `indexProbe`. */
+export function isViaPrefixProbe(x: unknown): x is ViaPrefixProbe {
+  return (
+    typeof x === 'object' && x !== null &&
+    (x as { kind?: unknown }).kind === 'via-prefixes' &&
+    Array.isArray((x as { prefixes?: unknown }).prefixes)
+  )
+}
+
+/** Binder: constructs a binding from a collection's declared config. Installed by the feature's declaration factory. */
+export type ViaBinder = (config: unknown) => NoydbVia
+
+const binders = new Map<string, ViaBinder>()
+
+/** @internal — called (idempotently, first-wins) by a feature's declaration factory, e.g. money(). */
+export function installViaBinder(brand: string, binder: ViaBinder): void {
+  if (!binders.has(brand)) binders.set(brand, binder)
+}
+
+/** @internal — registry presence check. Used by tests (mirrors isMoneyEngineInstalled) and by vault's i18n validator delegators as a no-i18n-ever-declared fast path. */
+export function isViaInstalled(brand: string): boolean {
+  return binders.has(brand)
+}
+
+/** @internal — resolve a binder; throws when the declaration factory never ran (hand-rolled descriptors). */
+export function viaBinder(brand: string): ViaBinder {
+  const b = binders.get(brand)
+  if (!b) {
+    throw new NoydbError(
+      'VIA_NOT_LINKED',
+      `via feature "${brand}" requires descriptors created via its declaration factory from @noy-db/hub`,
+    )
+  }
+  return b
+}

@@ -1,0 +1,316 @@
+{
+  "name": "@noy-db/hub",
+  "version": "0.7.1-pre.0",
+  "description": "Zero-knowledge, offline-first, encrypted document store — core library with AES-256-GCM, PBKDF2, multi-user keyring, and sync engine",
+  "license": "MIT",
+  "author": "vLannaAi <vicio@lanna.ai>",
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/hub#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/hub"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "type": "module",
+  "sideEffects": [
+    "./dist/query/live/index.js",
+    "./dist/query/reduce/index.js",
+    "./dist/query/relate/index.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json",
+    "./codemods/0.4.0-pre.json": "./codemods/0.4.0-pre.json",
+    "./i18n": {
+      "types": "./dist/via/i18n/index.d.ts",
+      "default": "./dist/i18n/index.js"
+    },
+    "./team": {
+      "types": "./dist/with-party/team/index.d.ts",
+      "default": "./dist/team/index.js"
+    },
+    "./broker": {
+      "types": "./dist/with-party/broker/index.d.ts",
+      "default": "./dist/broker/index.js"
+    },
+    "./session": {
+      "types": "./dist/with-party/session/index.d.ts",
+      "default": "./dist/session/index.js"
+    },
+    "./vault-head": {
+      "types": "./dist/with-commit/vault-head/index.d.ts",
+      "default": "./dist/vault-head/index.js"
+    },
+    "./history": {
+      "types": "./dist/with-commit/history/index.d.ts",
+      "default": "./dist/history/index.js"
+    },
+    "./forget": {
+      "types": "./dist/with-audit/forget/index.d.ts",
+      "default": "./dist/forget/index.js"
+    },
+    "./sealed-record": {
+      "types": "./dist/with-audit/sealed-record/index.d.ts",
+      "default": "./dist/sealed-record/index.js"
+    },
+    "./query": {
+      "types": "./dist/kernel/query/index.d.ts",
+      "default": "./dist/query/index.js"
+    },
+    "./query/live": {
+      "types": "./dist/kernel/query/live/index.d.ts",
+      "default": "./dist/query/live/index.js"
+    },
+    "./query/reduce": {
+      "types": "./dist/kernel/query/reduce/index.d.ts",
+      "default": "./dist/query/reduce/index.js"
+    },
+    "./query/relate": {
+      "types": "./dist/kernel/query/relate/index.d.ts",
+      "default": "./dist/query/relate/index.js"
+    },
+    "./query/all": {
+      "types": "./dist/kernel/query/all.d.ts",
+      "default": "./dist/query/all/index.js"
+    },
+    "./debug": {
+      "types": "./dist/kernel/debug.d.ts",
+      "default": "./dist/debug/index.js"
+    },
+    "./blobs": {
+      "types": "./dist/via/blob/index.d.ts",
+      "default": "./dist/blobs/index.js"
+    },
+    "./indexing": {
+      "types": "./dist/with-lookup/indexing/index.d.ts",
+      "default": "./dist/indexing/index.js"
+    },
+    "./lazy": {
+      "types": "./dist/with-store/lazy/index.d.ts",
+      "default": "./dist/lazy/index.js"
+    },
+    "./crdt": {
+      "types": "./dist/with-commit/crdt/index.d.ts",
+      "default": "./dist/crdt/index.js"
+    },
+    "./consent": {
+      "types": "./dist/with-audit/consent/index.d.ts",
+      "default": "./dist/consent/index.js"
+    },
+    "./coverage": {
+      "types": "./dist/with-audit/coverage/index.d.ts",
+      "default": "./dist/coverage/index.js"
+    },
+    "./periods": {
+      "types": "./dist/with-audit/periods/index.d.ts",
+      "default": "./dist/periods/index.js"
+    },
+    "./guards": {
+      "types": "./dist/with-audit/guards/index.d.ts",
+      "default": "./dist/guards/index.js"
+    },
+    "./shadow": {
+      "types": "./dist/with-fork/shadow/index.d.ts",
+      "default": "./dist/shadow/index.js"
+    },
+    "./snapshots": {
+      "types": "./dist/with-fork/snapshots/index.d.ts",
+      "default": "./dist/snapshots/index.js"
+    },
+    "./transactions": {
+      "types": "./dist/with-commit/tx/index.d.ts",
+      "default": "./dist/transactions/index.js"
+    },
+    "./search": {
+      "types": "./dist/with-lookup/search/index.d.ts",
+      "default": "./dist/search/index.js"
+    },
+    "./sequence": {
+      "types": "./dist/with-commit/sequence/index.d.ts",
+      "default": "./dist/sequence/index.js"
+    },
+    "./custody": {
+      "types": "./dist/with-party/custody/index.d.ts",
+      "default": "./dist/custody/index.js"
+    },
+    "./derivations": {
+      "types": "./dist/with-formula/derivations/index.d.ts",
+      "default": "./dist/derivations/index.js"
+    },
+    "./materialized-views": {
+      "types": "./dist/with-formula/materialized-views/index.d.ts",
+      "default": "./dist/materialized-views/index.js"
+    },
+    "./overlay-views": {
+      "types": "./dist/with-formula/overlay-views/index.d.ts",
+      "default": "./dist/overlay-views/index.js"
+    },
+    "./sync": {
+      "types": "./dist/with-sync/index.d.ts",
+      "default": "./dist/sync/index.js"
+    },
+    "./util": {
+      "types": "./dist/kernel/util/index.d.ts",
+      "default": "./dist/util/index.js"
+    },
+    "./share-link": {
+      "types": "./dist/share-link/index.d.ts",
+      "default": "./dist/share-link/index.js"
+    },
+    "./attestation": {
+      "types": "./dist/with-audit/attestation/index.d.ts",
+      "default": "./dist/attestation/index.js"
+    },
+    "./classified": {
+      "types": "./dist/via/classified/index.d.ts",
+      "default": "./dist/classified/index.js"
+    },
+    "./satellites": {
+      "types": "./dist/with-shape/satellites/index.d.ts",
+      "default": "./dist/satellites/index.js"
+    },
+    "./tiers": {
+      "types": "./dist/with-audit/tiers/index.d.ts",
+      "default": "./dist/tiers/index.js"
+    },
+    "./portability": {
+      "types": "./dist/with-audit/portability/index.d.ts",
+      "default": "./dist/portability/index.js"
+    },
+    "./cargo": {
+      "types": "./dist/with-cargo/index.d.ts",
+      "default": "./dist/cargo/index.js"
+    },
+    "./pod": {
+      "types": "./dist/with-pod/index.d.ts",
+      "default": "./dist/pod/index.js"
+    },
+    "./to": {
+      "types": "./dist/port/to/index.d.ts",
+      "default": "./dist/to/index.js"
+    },
+    "./at": {
+      "types": "./dist/port/at/index.d.ts",
+      "default": "./dist/at/index.js"
+    },
+    "./as": {
+      "types": "./dist/port/as/index.d.ts",
+      "default": "./dist/as/index.js"
+    },
+    "./by": {
+      "types": "./dist/port/by/index.d.ts",
+      "default": "./dist/by/index.js"
+    },
+    "./on": {
+      "types": "./dist/port/on/index.d.ts",
+      "default": "./dist/on/index.js"
+    },
+    "./store": {
+      "types": "./dist/with-store/index.d.ts",
+      "default": "./dist/store/index.js"
+    },
+    "./introspection": {
+      "types": "./dist/with-shape/introspection/index.d.ts",
+      "default": "./dist/introspection/index.js"
+    },
+    "./money": {
+      "types": "./dist/via/money/index.d.ts",
+      "default": "./dist/money/index.js"
+    },
+    "./cover": {
+      "types": "./dist/with-party/directory/cover/index.d.ts",
+      "default": "./dist/cover/index.js"
+    },
+    "./schema-update": {
+      "types": "./dist/with-shape/schema-update/index.d.ts",
+      "default": "./dist/schema-update/index.js"
+    },
+    "./policy": {
+      "types": "./dist/with-party/policy/index.d.ts",
+      "default": "./dist/policy/index.js"
+    },
+    "./directory": {
+      "types": "./dist/with-party/directory/index.d.ts",
+      "default": "./dist/directory/index.js"
+    },
+    "./reduce": {
+      "types": "./dist/with-lookup/reduce/index.d.ts",
+      "default": "./dist/reduce/index.js"
+    },
+    "./codemods/0.6.0-pre.json": "./codemods/0.6.0-pre.json",
+    "./codemods/0.7.0-pre.json": "./codemods/0.7.0-pre.json",
+    "./codemods/0.8.0-pre.json": "./codemods/0.8.0-pre.json"
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "codemods"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.typetest.json && tsc --noEmit -p tsconfig.tests.json",
+    "typecheck:types": "tsc --noEmit -p tsconfig.typetest.json",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
+    "bundle-check": "node scripts/check-bundle.mjs",
+    "check:types": "node scripts/check-type-reachability.mjs",
+    "check:codemods": "node scripts/check-codemod-coverage.mjs"
+  },
+  "dependencies": {
+    "@noy-db/attestation": "workspace:*"
+  },
+  "devDependencies": {
+    "@noy-db/shamir": "workspace:*",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "happy-dom": "^18.0.0",
+    "zod": "^4.0.0",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "peerDependencies": {
+    "zod": "^3.0.0 || ^4.0.0",
+    "zod-to-json-schema": "^3.25.0"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    },
+    "zod-to-json-schema": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "noy-db",
+    "encryption",
+    "zero-knowledge",
+    "offline-first",
+    "document-store",
+    "database",
+    "aes-256-gcm",
+    "pbkdf2",
+    "web-crypto",
+    "crypto",
+    "e2ee",
+    "privacy",
+    "multi-user",
+    "sync",
+    "audit-log"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  }
+}

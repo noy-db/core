@@ -1,0 +1,70 @@
+{
+  "name": "@noy-db/cli",
+  "version": "0.7.1-pre.0",
+  "description": "Command-line tool for noy-db — inspect .noydb bundles without decrypting, verify integrity, validate config objects, scaffold topology profiles, and monitor a live vault's store metrics.",
+  "license": "MIT",
+  "author": "vLannaAi <vicio@lanna.ai>",
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "noydb": "dist/bin/noydb.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@noy-db/hub": "workspace:^",
+    "@noy-db/to-meter": "workspace:^",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@noy-db/hub": "workspace:*",
+    "@noy-db/to-meter": "workspace:*",
+    "@types/node": "^22.0.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.0.0",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "keywords": [
+    "noy-db",
+    "cli",
+    "inspect",
+    "verify",
+    "config",
+    "scaffold",
+    "monitor",
+    "noydb-bundle"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  }
+}

@@ -1,0 +1,615 @@
+import type { GroupKey } from '../../kernel/query/reduce/date-trunc.js'
+import type { Query } from '../../kernel/query/builder.js'
+import type { Collection } from '../../kernel/collection.js'
+import type { ReduceSpec, Reduction } from '../../with-lookup/reduce/reduction.js'
+import type { GroupedReduction } from '../../with-lookup/reduce/groupby.js'
+import type { JoinStrategy } from '../../kernel/query/relate/join.js'
+import type { JoinOnSpec } from '../../kernel/query/relate/join-on.js'
+import type { MoneyDescriptor } from '../../via/money/descriptor.js'
+import type { WindowSpec, WindowSelectSpec } from '../../with-lookup/reduce/window.js'
+import type { ExactMath } from '../../via/money/exact.js'
+import type { I18nTextDescriptor } from '../../via/i18n/core.js'
+
+/**
+ * Minimal vault-shaped accessor passed to the MV `query()` callback.
+ * Defined as a structural interface so the strategy types don't have
+ * to import the full `Vault` class (avoids a circular import). The
+ * Vault implements this shape natively.
+ */
+export interface MVQueryContext {
+   
+  collection<T extends Record<string, unknown>>(name: string): Collection<T>
+}
+
+/**
+ * Metadata that travels inside the `_data` payload of a materialized
+ * row. Lives in encrypted payload, not in the unencrypted envelope —
+ * the storage backend cannot infer the MV graph from listing.
+ *
+ * Extends the `_derivedFrom` precedent from v1: same encryption shape,
+ * same "metadata-inside-data" location.
+ */
+export interface MaterializedFromMeta {
+  /** Stable identity for the MV that emitted this row. */
+  readonly mvName: string
+  /**
+   * SHA-256 of (mvName + canonical query plan + dependency-set).
+   * Changes when the query structure changes → forces refresh on
+   * next visit (parallels v1's `strategyHash`).
+   */
+  readonly queryHash: string
+  /**
+   * Map from source collection name → `_v` of the source row(s) that
+   * contributed to this MV row at materialization time. For aggregates
+   * over many rows, this is `max(_v)` per source collection — coarse
+   * but sufficient for stale detection.
+   */
+  readonly sourceVersions: Record<string, number>
+  /** ISO timestamp when this row was materialized. */
+  readonly materializedAt: string
+}
+
+/** Output routing for an MV. Optional — when omitted, writes to a collection named after `name`. */
+export interface MaterializedViewOutput {
+  /** Output collection name. Defaults to `name`. */
+  collection?: string
+  /**
+   * For same-collection-as-source MVs — see § Same-collection partition
+   * discriminator in the v2 spec. The cycle detector resolves the
+   * same-collection edge IFF the query has a where-clause that
+   * provably excludes `partition.value` (supports `==` against a
+   * different value, `!=` against the value, and `in` lists that
+   * don't contain it). Naïve same-collection MVs without a disjoint
+   * clause throw `MaterializedViewCycleError` at vault open.
+   */
+  partition?: { field: string; value: unknown }
+}
+
+/**
+ * One arm of a UNION materialized view. Reads rows from `collection`,
+ * then maps each into the MV's row shape via `map`.
+ *
+ * The per-source `map` is the schema-unification boundary — sibling
+ * collections can have different schemas, and `map` is where they
+ * meet the MV's row type. The hub does NOT compare schemas across
+ * arms; consumer responsibility is that every arm's `map` returns
+ * the same shape (the strategy's `TRow` type parameter enforces this
+ * at compile time).
+ */
+export interface UnionSource<TRow extends Record<string, unknown>> {
+  /** Source collection name. Must exist in the vault. */
+  readonly collection: string
+  /**
+   * Pure function from a source row to the unified MV row shape.
+   * Called once per source row at materialization time. Each arm's
+   * mapped output is concatenated into a single stream before
+   * `groupBy` + `aggregate` run.
+   *
+   * Returning `null` or `undefined` **omits** the source row from the
+   * materialized output entirely — the row is not pushed into the
+   * unified stream and never reaches `groupBy` / `aggregate`. This
+   * removes the need for sentinel rows (e.g. `{ amount: 0 }`) whose
+   * sole purpose is to be aggregated away.
+   *
+   * When this arm declares {@link join}, the aliased right-side
+   * record(s) are attached to the source row under each leg's `as`
+   * BEFORE `map` runs, so `map` can read `sourceRow[leg.as]`.
+   */
+  readonly map: (sourceRow: Record<string, unknown>) => TRow | null | undefined
+  /**
+   * Optional joins to apply to this arm's rows before {@link map}, in two
+   * shapes (a leg is one or the other):
+   *
+   *  - {@link UnionArmRefJoin} `{ field, as }` — resolves a `ref()`-declared
+   *    foreign key on the arm's source collection into an attached right-side
+   *    record under `as`; the same machinery as the query-form `Query.join()`.
+   *    Its right-side collections must be listed in the strategy's
+   *    {@link MaterializedViewSpec.sources} so writes to them trigger MV
+   *    refresh — registration throws `MaterializedViewConfigError` otherwise
+   *    (a ref's target is not known until the ref is declared, after
+   *    `openVault()`).
+   *  - {@link UnionArmDeclaredJoin} `{ target, as, on }` (#1411) — the
+   *    query-form `Query.joinOn()`: composite equality or a range, with the
+   *    predicate as DATA. No `ref()` needed, and `target` is a literal
+   *    collection name, so it joins the dependency set on its own and the
+   *    predicate folds into `queryHash`.
+   */
+  readonly join?: ReadonlyArray<UnionArmJoin>
+}
+
+/** One join leg on a UNION arm — a ref join or a declared join (#1411). */
+export type UnionArmJoin = UnionArmRefJoin | UnionArmDeclaredJoin
+
+/**
+ * One FK join leg on a UNION arm. Mirrors the option shape of the
+ * query-form `Query.join(field, { as, maxRows?, strategy? })`.
+ */
+export interface UnionArmRefJoin {
+  /** FK field on the arm's source collection (must have a `ref()` declared). */
+  readonly field: string
+  /** Alias under which the resolved right-side record attaches on the source row. */
+  readonly as: string
+  /** Per-side row ceiling override. `undefined` → the join default. */
+  readonly maxRows?: number
+  /** Planner strategy override. `undefined` → auto-select. */
+  readonly strategy?: JoinStrategy
+}
+
+/**
+ * One DECLARED join leg on a UNION arm (#1411) — `Query.joinOn(target, { as,
+ * on, mode?, maxRows? })` in declaration form. The `on` is plain JSON: a
+ * composite-equality pair list or a `{ left, op, right }` range. A left row
+ * matching nothing gets `null` under `as` (left outer); `mode: 'inner'` drops
+ * it. ⚠️ A declared join EXPANDS rows — one output row per match.
+ */
+export interface UnionArmDeclaredJoin {
+  /** Right-side collection name. Joins the MV's dependency set automatically. */
+  readonly target: string
+  /** Alias under which each matching right-side record attaches on the source row. */
+  readonly as: string
+  /** The predicate — see `JoinOnSpec`. Normalised and validated at registration. */
+  readonly on: JoinOnSpec
+  /** `'inner'` drops left rows with no match; omit for left-outer (`null` under `as`). */
+  readonly mode?: 'inner'
+  /** Per-side / output row ceiling override. `undefined` → the join default. */
+  readonly maxRows?: number
+}
+
+/**
+ * Projection-form registration (#810): one output row per record of a
+ * primary `source` collection, enriched with forward FK legs and
+ * reverse one-to-many "collect" legs BEFORE `map` shapes the MV row.
+ * The pilot1 federated read-model shape — a bill row carrying its
+ * client lookup plus the receipt / application / credit-note sets
+ * that point back at it.
+ */
+export interface ProjectionSpec<TRow extends Record<string, unknown>> {
+  /** Primary collection. One output row per primary record (unless {@link map} omits). */
+  readonly source: string
+  /** Join legs attached to each primary row BEFORE {@link map} runs. */
+  readonly joins: ReadonlyArray<ProjectionJoinLeg>
+  /**
+   * Pure projection: primary row + leg attachments → MV row. Called
+   * once per primary record at materialization time, AFTER every leg
+   * has attached under its `as` alias.
+   *
+   * Returning `null` or `undefined` **omits** the primary record from
+   * the materialized output entirely (same contract as the UNION arm
+   * `map`) — filtering lives here; there is no `where` on the
+   * projection form.
+   */
+  readonly map: (row: Record<string, unknown>) => TRow | null | undefined
+}
+
+/**
+ * One join leg of a projection MV. Discriminated by the presence of
+ * `collect` (reverse leg) vs `field` (forward leg); `as` aliases must
+ * be unique across legs and non-empty.
+ *
+ * - **Forward FK leg** — identical shape + machinery as
+ *   {@link UnionArmJoin} / `Query.join()`: resolves a `ref()`-declared
+ *   FK on the projection source into an attached right-side record
+ *   (record | null) under `as`.
+ * - **Reverse "collect" leg** — every row of `collect` whose `on`
+ *   field references the attach point's id, attached as a
+ *   possibly-empty ARRAY under `as`. `on` must carry a `ref()`
+ *   declared on the `collect` collection targeting that attach point
+ *   — checked at first materialization (parity with join-time ref
+ *   errors). `maxRows` here is a PER-ROW fan-out ceiling (default:
+ *   the join default); exceeding it throws `JoinTooLargeError`.
+ *
+ * Both kinds attach to the primary row by default, and to a
+ * previously-declared alias when `from` is set (#1140).
+ */
+export type ProjectionJoinLeg =
+  | {
+      /** FK field on this leg's attach point (must have a `ref()` declared). */
+      readonly field: string
+      /** Alias under which the resolved right-side record attaches. */
+      readonly as: string
+      /**
+       * Attach to a previously-declared FORWARD leg's alias instead of to the
+       * primary row (#1140) — `field` is then read off that leg's record and
+       * resolved through a `ref()` on ITS collection. See the union's doc.
+       */
+      readonly from?: string
+      /** Per-side row ceiling override. `undefined` → the join default. */
+      readonly maxRows?: number
+      /** Planner strategy override. `undefined` → auto-select. */
+      readonly strategy?: JoinStrategy
+    }
+  | {
+      /** Sibling collection to collect from. */
+      readonly collect: string
+      /** FK field on `collect` — a `ref()` targeting this leg's attach point. */
+      readonly on: string
+      /** Alias under which the collected array attaches. */
+      readonly as: string
+      /**
+       * Attach to a previously-declared FORWARD leg's alias instead of to the
+       * primary row (#1140): `on` must then `ref()` THAT leg's collection, and
+       * rows are matched against that leg's record id.
+       *
+       * This is what makes a two-hop lookup expressible. For
+       * `bill → entity → client`, the client is not reachable from the bill: a
+       * forward leg would need a `bill.clientId` that does not exist, and a
+       * collect leg would need `clients.entityId` to ref `bills` when it refs
+       * `entities`. With `from` it is one line:
+       *
+       * ```ts
+       * joins: [
+       *   { field: 'entityId', as: 'entity' },
+       *   { from: 'entity', collect: 'clients', on: 'entityId', as: 'clients' },
+       * ]
+       * ```
+       *
+       * The alternatives it replaces are both bad: denormalizing a redundant FK
+       * onto the source reintroduces exactly the duplicated relationship a
+       * projection MV exists to avoid, and dropping back to app code forfeits
+       * the dependency tracking it was adopted for.
+       *
+       * `from` may only name a leg declared EARLIER, and only a FORWARD one — a
+       * collect leg holds an array, not a record. Both are refused at
+       * registration. The backward-only rule is also why no depth cap is
+       * needed: a cycle cannot be spelled.
+       */
+      readonly from?: string
+      /** Per-row fan-out ceiling. `undefined` → the join default. */
+      readonly maxRows?: number
+    }
+
+/**
+ * Registration shape passed to `withMaterializedView()`.
+ *
+ * @typeParam TRow - the materialized row type (the query's result row)
+ */
+export interface MaterializedViewSpec<TRow extends Record<string, unknown>> {
+  /**
+   * Stable identity for this view. Used as the output collection name
+   * unless `output.collection` overrides. Must be unique within the vault.
+   */
+  name: string
+  /**
+   * Declared query (single-source mode). Called at registration time
+   * with a vault-shaped accessor so the closure can compose collections
+   * without pre-existing in-scope references; called again at each
+   * refresh.
+   *
+   * **One exception to "at registration time" (#1139).** Registration runs
+   * inside `openVault()`, and a collection's `refs` can only be declared after
+   * that returns — so a query that `.join()`s a declared FK cannot possibly
+   * resolve it on the registration call. When that happens the strategy is
+   * PARKED rather than failed, and replanned on the first write dispatch or
+   * `vault.refreshView()` — by which time the refs exist. The callback must
+   * therefore be safe to invoke more than once before the view first
+   * materializes, which it already had to be (it runs again at every refresh).
+   *
+   * Every other planning failure — a typo'd collection, a malformed spec, a
+   * throw from your own callback — still surfaces out of `openVault()`
+   * immediately. Only a not-yet-declared ref defers.
+   *
+   * While parked, the strategy is invisible: it contributes no cycle-detection
+   * edge (that pass runs once, at vault open) and appears in neither
+   * `refreshView()` nor the source dispatch map until it resolves.
+   *
+   * Built via the same `Query<T>` chainable builder used elsewhere —
+   * `.where()`, `.join()`, `.groupBy()`, `.aggregate()`. The
+   * dependency analyzer walks the returned plan to determine source
+   * collections.
+   *
+   * Mutually exclusive with {@link unionSources}: a strategy must
+   * declare exactly one of `query` (single-source) or `unionSources`
+   * (multi-source UNION). Registration throws
+   * `MaterializedViewConfigError` if both are set or neither is set.
+   */
+  query?: (db: MVQueryContext) => Query<TRow> | Reduction<TRow> | GroupedReduction<TRow>
+  /**
+   * UNION-form sources: an explicit list of sibling collections
+   * that contribute rows to a single MV. Each arm's `map` projects a
+   * source row into the MV's unified row shape; the mapped streams are
+   * concatenated, then {@link groupBy} + {@link aggregate} run on the
+   * combined output.
+   *
+   * Mutually exclusive with {@link query}. Registration throws
+   * `MaterializedViewConfigError` if both are set, if `unionSources`
+   * is empty, or if two arms name the same `collection`.
+   *
+   * A SINGLE arm is valid: it expresses map→group→aggregate
+   * over one collection with a COMPUTED bucket key (e.g. a month
+   * sliced from a date field). The query form's `.groupBy()` accepts
+   * stored field names only, so a derived key needs the arm's `map`.
+   *
+   * UNION mode replaces the dependency-analyzer path: the source
+   * collections come directly from `unionSources[].collection`, and
+   * {@link sources} is ignored.
+   */
+  unionSources?: ReadonlyArray<UnionSource<TRow>>
+  /**
+   * Projection-form registration (#810): one output row per primary
+   * record of `projection.source`, enriched with forward FK legs and
+   * reverse one-to-many "collect" legs before `projection.map` shapes
+   * the MV row. Post-map {@link groupBy} + {@link aggregate} are
+   * supported exactly as in UNION mode.
+   *
+   * Mutually exclusive with {@link query} and {@link unionSources} —
+   * a strategy must declare exactly one of the three forms.
+   * Registration throws `MaterializedViewConfigError` otherwise.
+   *
+   * Dependencies are all AUTO: `{source} ∪ forward ref() targets ∪
+   * collect collections` (explicit {@link sources} remains additive).
+   * Forward targets resolve from the attach point's `ref()`
+   * declarations; those are declared by user code AFTER the vault
+   * opens (registration time), so the registry folds them into the
+   * dependency set on the first MV dispatch that finds them declared.
+   * A leg-relative forward leg (#1140) resolves its whole `from` chain
+   * the same way, so a two-hop leg simply lands one dispatch later
+   * than a one-hop one. A collect leg needs none of this: its
+   * dependency is the literal `collect` name whatever it attaches to.
+   */
+  projection?: ProjectionSpec<TRow>
+  /**
+   * Group-key field(s) for UNION mode. Applied to the
+   * concatenated mapped-row stream from {@link unionSources} before
+   * {@link aggregate} runs. Accepts a single field name or a tuple of
+   * field names for multi-key grouping (same shape as
+   * `Query.groupBy(...fields)`).
+   *
+   * A field name can be replaced by a `dateTrunc(field, unit, { timeZone })`
+   * derived calendar key (#1350) — the bucket is computed on the mapped row
+   * before grouping, and the key's parameters fold into the MV's `queryHash`,
+   * so re-parameterising it forces a refresh.
+   *
+   * UNION-mode only. Ignored if {@link query} is set — single-source
+   * grouping is expressed inside the `Query<T>` returned from `query()`
+   * via `.groupBy(...).aggregate(...)`.
+   */
+  groupBy?: GroupKey | ReadonlyArray<GroupKey>
+  /**
+   * Reduction spec for UNION mode. Applied per-group after
+   * {@link groupBy} buckets the concatenated mapped-row stream from
+   * {@link unionSources}. Same shape as the `ReduceSpec` passed to
+   * `Query.aggregate()`.
+   *
+   * UNION-mode only. Ignored if {@link query} is set.
+   */
+  aggregate?: ReduceSpec
+  /**
+   * Post-aggregate projection over ONE finished row (#1007).
+   *
+   * `aggregate` accepts reducers only, so a row can carry every input a
+   * derived value needs and still not express it — `max(0, netTotal - paid)`
+   * is not a reduction. `derive` closes that gap: it receives the row the
+   * grouping/aggregation pipeline just produced and returns a patch merged
+   * onto it, immediately before materialisation.
+   *
+   * ```ts
+   * aggregate: { paid: sum('paid'), netTotal: sum('netTotal') },
+   * derive: (row) => ({ toPay: Math.max(0, row.netTotal - row.paid) }),
+   * ```
+   *
+   * Deliberately narrow, and the narrowness is what keeps it safe under
+   * incremental recompute: **pure, single-row, no cross-row access, no second
+   * aggregation pass.** It only ever sees the row the reducer just produced,
+   * so a refresh triggered by one source write recomputes it correctly without
+   * the engine needing to know anything about the function.
+   *
+   * Returning `null` / `undefined` leaves the row unchanged. Returned keys
+   * that collide with a {@link groupBy} field throw
+   * `MaterializedViewConfigError` — a group key is the row's identity and
+   * feeds {@link rowKey}, so rewriting it would silently re-home the row.
+   *
+   * **Money:** money leaves a reducer as an exact decimal string, and
+   * `Number(a) - Number(b)` would put it straight back through binary floating
+   * point — `10.05 - 0.10` becomes `9.950000000000001`, which the money
+   * quantiser then refuses rather than storing drift. So `derive` receives
+   * {@link ExactMath} as its second argument; it works in scaled BigInt and
+   * cannot introduce a representation error:
+   *
+   * ```ts
+   * moneyFields: { netTotal: THB, paid: THB, toPay: THB },
+   * derive: (row, exact) => ({ toPay: exact.max(0, exact.sub(row.netTotal, row.paid)) }),
+   * ```
+   *
+   * Declare the derived field in {@link moneyFields} and the result is
+   * quantised through that descriptor before storage, exact at its scale.
+   *
+   * Note the one place `TRow` under-describes what arrives: a field declared
+   * in {@link moneyFields} reaches `derive` DECODED — the decimal string a
+   * reader would see, not the scaled integer the reducer left behind — even
+   * where `TRow` types it as `number` (which is what the arms' `map` emits).
+   * `ExactMath` accepts both, which is why its operations are the right tool
+   * here and why no cast is needed.
+   *
+   * Applies to every MV form (union, projection, and query), always as the
+   * last step before rows are materialised.
+   */
+  derive?: (row: TRow, exact: ExactMath) => Record<string, unknown> | null | undefined
+  /**
+   * Money descriptors for the UNION-mode aggregate, keyed by the
+   * OUTPUT/intermediate field name as it appears in the mapped row and
+   * in {@link aggregate} (NOT the source collection's field name). When
+   * declared, any `sum` / `min` / `max` over a keyed field is rewritten
+   * into an exact per-currency BigInt reducer — without this, money
+   * aggregation in UNION mode silently runs in float (since the
+   * concatenated mapped stream is a plain array with no collection
+   * money context to inherit).
+   *
+   * UNION-mode only — the query form inherits its money descriptors
+   * from the source collection automatically. The descriptor's
+   * currency/scale must match what the arms' `map()` emits for that
+   * field (each arm maps into the same unified shape, so one descriptor
+   * per output field covers all arms). Meaningless without
+   * {@link aggregate}; registration throws `MaterializedViewConfigError`
+   * if declared alone.
+   */
+  moneyFields?: Record<string, MoneyDescriptor>
+  /**
+   * #1411 — a declared WINDOW over the finished rows: a running total, a
+   * ranking, or a look at the neighbouring row.
+   *
+   * ```ts
+   * groupBy: ['client', 'period'],
+   * aggregate: { total: sum('amount') },
+   * moneyFields: { amount: THB, total: THB, cumulative: THB },
+   * window: {
+   *   partitionBy: 'client',
+   *   orderBy: 'period',
+   *   select: { cumulative: runningMoneySum('total') },
+   * },
+   * ```
+   *
+   * Runs AFTER {@link groupBy} + {@link aggregate} and BEFORE {@link derive},
+   * which is the order the useful shape needs: aggregate per (client, period),
+   * then accumulate ACROSS periods. A window before grouping would accumulate
+   * over raw rows and every number would be wrong.
+   *
+   * ⭐ **This is the one stage that may look at other rows, and it is sound for
+   * a reason `derive` cannot borrow.** `derive` is single-row by contract;
+   * materialization is a full recompute, so the window sees every row the view
+   * will store, in order, exactly once. That is also why it is not offered on
+   * the `query` form — there the rows come from a `Query`, which has its own
+   * `.window()`.
+   *
+   * **Money is exact** when the accumulated field is declared in
+   * {@link moneyFields}: reducer slots are rewritten through the same binding
+   * `aggregate` uses, so `runningMoneySum` accumulates in BigInt rather than
+   * float. Window FUNCTIONS (`rowNumber`, `rank`, `lag`, `lead`) navigate
+   * rather than accumulate and need no rewrite.
+   *
+   * A `select` key that collides with a {@link groupBy} field throws
+   * `MaterializedViewConfigError` — the same rule, and the same reason, as
+   * `derive`: a group key is the row's identity and feeds {@link rowKey}.
+   */
+  window?: MaterializedViewWindow
+  /**
+   * Compute-time i18n resolution locale (`mv` layer). UNION-mode only.
+   *
+   * An MV that **groups by** an `i18nText` field would otherwise bucket on the
+   * raw `{ locale: string }` map — an unstable object key. Set `i18nLocale`
+   * (with {@link i18nFields} describing those fields) and, before grouping, the
+   * executor resolves each declared i18n group-key field to this locale at the
+   * `mv` layer (`resolvePolicy(onMissing, 'mv')`), so buckets are stable strings.
+   *
+   * This is the **compute** path only: i18n fields *carried through* for display
+   * stay raw — declare them on the OUTPUT collection and they resolve per-reader
+   * at read time (the resolve-at-output model). Without `i18nLocale`, grouping by
+   * a raw i18n field throws `LocaleNotSpecifiedError` (steer: group by a
+   * `dictKey`/`staticDict` code — the stable key — and label at read).
+   *
+   * Query-form MVs do their own `groupBy` inside the `Query`, which carries no
+   * locale yet — so `i18nLocale` /
+   * `i18nFields` on a query-form MV throw `MaterializedViewConfigError`.
+   */
+  i18nLocale?: string
+  /**
+   * i18n descriptors for UNION-mode compute, keyed by the OUTPUT field
+   * name as it appears in the mapped row (NOT the source field). Mirrors
+   * {@link moneyFields}: the concatenated mapped stream is a plain array with no
+   * collection i18n context, so the descriptor (carrying `onMissing`/`substitute`
+   * /`fallback`) must be declared here for the `mv`-layer resolution that
+   * {@link i18nLocale} drives. Meaningless without `i18nLocale`.
+   */
+  i18nFields?: Record<string, I18nTextDescriptor>
+  /**
+   * Pure function from a materialized row → stable id used in the
+   * output collection. Required — explicit always beats default-with-pitfalls
+   * (explicit always beats default-with-pitfalls; see the slash-collision rationale).
+   */
+  rowKey: (row: TRow) => string
+  /**
+   * Explicit source collections. Required when `query()` returns
+   * an `Reduction` or `GroupedReduction` rather than a `Query<T>`
+   * — the dependency analyzer can't introspect through `groupBy().aggregate()`
+   * back to the source. Optional for plain `Query<T>` results — the
+   * analyzer extracts dependencies automatically from the query plan.
+   *
+   * When set, takes precedence over auto-analysis.
+   */
+  sources?: ReadonlyArray<string>
+  /**
+   * Declared deterministic predicates. Each entry pairs a
+   * consumer-stable `hash` with a function. The `query()` callback's
+   * Query<T> can invoke them via `.wherePredicate(name, ctx?)`. The
+   * predicate's `hash` + a canonical-JSON hash of `ctx` both fold
+   * into `queryHash` — bumping either forces refresh on next visit.
+   *
+   * Consumer responsibility: bump `hash` when the function's semantics
+   * change. Failing to bump after a non-equivalent change leaves
+   * stale rows around until the next explicit refresh.
+   */
+  predicates?: {
+    [name: string]: {
+      hash: string
+      fn: (row: TRow, ctx?: unknown) => boolean
+    }
+  }
+  /**
+   * Refresh policy.
+   *
+   * - `'eager'` — re-materialize synchronously inside the source-write
+   *   transaction (composes with `withTransactions` for strict-mode
+   *   rollback).
+   * - `'lazy'` — mark stale on source-change; materialize on first
+   *   read of the MV.
+   * - `'manual'` — only materializes when `vault.refreshView(name)` is
+   *   called. Useful for very expensive MVs or time-dependent queries
+   *   whose `ctx` changes externally.
+   */
+  refresh: 'eager' | 'lazy' | 'manual'
+  /** Output routing. Optional; defaults to writing the collection named after `name`. */
+  output?: MaterializedViewOutput
+  /**
+   * What to do when a re-materialization produces zero rows for a key
+   * that previously had rows.
+   *
+   * - `'delete'` (default) — tombstone the prior MV row via
+   *   `Collection._internalDelete` (system housekeeping bypasses user
+   *   `onDelete` guards on the output collection — the housekeeping
+   *   bypass composition fix).
+   * - `'keep'` — leave the prior MV row in place. Useful when zero
+   *   is a meaningful state.
+   */
+  onEmpty?: 'delete' | 'keep'
+  /**
+   * `true` re-throws on any row-write failure → composes with
+   * `withTransactions` to roll back the source-write atomically via
+   * `revertExecuted`. Default `false` (failed rows are
+   * isolated; other rows commit).
+   */
+  strict?: boolean
+  /**
+   * Row-count ceiling for the materialized output. Throws
+   * `MaterializedViewTooLargeError` before any writes when exceeded
+   * — keeps the rollback clean. Default `100_000`; override per-MV
+   * when the domain warrants it.
+   */
+  maxRows?: number
+}
+
+/** Returned by `withMaterializedView()` and consumed by `createNoydb`. */
+export interface MaterializedViewStrategy {
+  readonly __noydb_strategy: 'materialized-view'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly spec: MaterializedViewSpec<any>
+}
+
+/** @internal — the MV's own money descriptors, keyed by output field. */
+export type MoneyDescriptorMap = Record<string, MoneyDescriptor>
+
+/**
+ * #1411 — a declared window: {@link WindowSpec}'s partition/order, plus the
+ * outputs to attach. Same `select` shape as `Query.window(...).select(...)`,
+ * so a rule prototyped in the ad-hoc builder moves into a declaration
+ * unchanged.
+ */
+export interface MaterializedViewWindow extends WindowSpec {
+  /**
+   * The columns the window adds. Each slot is a window function
+   * (`rowNumber`, `rank`, `lag`, `lead`) or an ordinary reducer, which runs as
+   * a RUNNING aggregate over `rows unbounded preceding → current row`.
+   *
+   * Must be non-empty: a window that selects nothing computes nothing, and
+   * declaring one is more likely a mistake than an intention.
+   */
+  readonly select: WindowSelectSpec
+}

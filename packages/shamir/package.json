@@ -1,0 +1,52 @@
+{
+  "name": "@noy-db/shamir",
+  "version": "0.7.1-pre.0",
+  "description": "Shamir Secret Sharing over GF(2^8), byte-wise, plus the share codecs (bytes / base32 / JSON). Pure math, zero dependencies, no hub contract — the primitive @noy-db/on-shamir builds its unlock method on.",
+  "license": "MIT",
+  "author": "vLannaAi <vicio@lanna.ai>",
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/shamir#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/shamir"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "noy-db",
+    "shamir",
+    "secret-sharing",
+    "k-of-n",
+    "threshold",
+    "gf256"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  }
+}

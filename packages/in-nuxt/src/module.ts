@@ -1,0 +1,294 @@
+/**
+ * Nuxt 4 module for noy-db.
+ *
+ * Built with `@nuxt/kit`'s `defineNuxtModule`. Targets Nuxt 4+ exclusively
+ * (no Nuxt 3 compatibility shim — Nuxt 3 users should consume `@noy-db/vue`
+ * and `@noy-db/pinia` directly with a hand-written plugin).
+ *
+ * Module responsibilities:
+ *
+ *   1. Auto-import the @noy-db/in-vue composables (`useNoydb`, `useCollection`,
+ *      `useSync`) and, when `pinia: true` (default), the @noy-db/in-pinia
+ *      helpers (`defineNoydbStore`, `createNoydbPiniaPlugin`, `setActiveNoydb`).
+ *
+ *   2. Expose the user's `noydb:` config through `runtimeConfig.public.noydb`
+ *      so the runtime plugin and downstream composables can read it
+ *      without re-parsing nuxt.config.ts.
+ *
+ *   3. Register a CLIENT-ONLY runtime plugin (`runtime/plugin.client.ts`)
+ *      that sets up the noydb context. The server bundle is never touched —
+ *      this is the load-bearing SSR-safety property.
+ *
+ * Deferred to follow-up issues:
+ *   - Devtools tab via @nuxt/devtools-kit
+ *   - Optional Nitro server proxy (`/api/_noydb/...`)
+ *   - Optional Nitro scheduled backup task
+ *   - `nuxi noydb` CLI extension
+ *   - Eager Noydb instantiation (requires the user's secret callback,
+ *     which can't be serialized through runtime config — better to let
+ *     users call setActiveNoydb from their own setup file)
+ */
+
+import { defineNuxtModule, addImports, addPlugin, addServerHandler, createResolver, extendPages } from '@nuxt/kit'
+
+/**
+ * Configuration shape for the `noydb:` key in `nuxt.config.ts`.
+ *
+ * Every field is optional. The defaults give a reasonable bootstrap for
+ * a typical Vue/Nuxt app — Pinia helpers auto-imported, `to-browser-idb`
+ * as the default store. Users override by passing the relevant fields.
+ */
+export interface ModuleOptions {
+  /**
+   * Which built-in store package to prefer. The runtime plugin reads this
+   * and picks the matching store. Defaults to `'to-browser-idb'` because
+   * Nuxt apps run in the browser at runtime.
+   *
+   * Note: this is just a HINT. Users can always construct their own
+   * store and pass it to `createNoydb()` directly — this option exists
+   * to keep simple cases simple.
+   */
+  store?: 'to-browser-idb' | 'to-browser-local' | 'to-memory' | 'to-file' | 'to-aws-dynamo' | 'to-aws-s3'
+
+  /**
+   * Auto-import the @noy-db/pinia helpers (`defineNoydbStore`,
+   * `createNoydbPiniaPlugin`, `setActiveNoydb`). Defaults to `true`
+   * because Pinia is the recommended state layer for.
+   *
+   * Set to `false` if you only want the bare @noy-db/vue composables
+   * (saves ~3 KB from the auto-import metadata).
+   */
+  pinia?: boolean
+
+  /**
+   * Optional sync configuration. Currently a passthrough — the runtime
+   * plugin reads it from `runtimeConfig.public.noydb.sync` and the user
+   * is responsible for wiring it into their `createNoydb()` call.
+   */
+  sync?: {
+    store?: 'to-aws-dynamo' | 'to-aws-s3'
+    table?: string
+    region?: string
+    bucket?: string
+    mode?: 'auto' | 'manual' | 'off'
+  }
+
+  /**
+   * Optional auth configuration metadata. Same passthrough pattern as
+   * `sync`. The user provides the actual secret / biometric callback
+   * in their own setup file.
+   */
+  auth?: {
+    mode?: 'secret' | 'biometric' | 'session'
+    sessionTimeout?: string
+  }
+
+  /**
+   * Whether to enable the (planned) devtools tab in `nuxi dev`. Currently
+   * a passthrough — the devtools tab itself ships in a follow-up.
+   */
+  devtools?: boolean
+
+  /**
+   * Optional REST API integration. When `enabled: true`, mounts a catch-all
+   * Nitro server handler at `basePath/**` using `@noy-db/in-rest`.
+   *
+   * The handler is a ciphertext RPC proxy — it never unlocks a vault or
+   * sees plaintext, and it is FAIL-CLOSED: without `authToken`, every
+   * `POST {basePath}/rpc` request is rejected with 401.
+   *
+   * The handler is scaffold-level: it reads `event.context.noydbStore` which
+   * a separate Nitro plugin must populate. spec follow-up for the store
+   * wiring. The module simply registers the route here.
+   */
+  rest?: {
+    /** Enable the REST API server handler. Default: false. */
+    enabled?: boolean
+    /** Base path for all REST routes. Default: '/api/noydb'. */
+    basePath?: string
+    /**
+     * Bearer token required on every `/rpc` request's `Authorization`
+     * header. REQUIRED to accept any traffic — omitting it leaves the
+     * handler fail-closed (every request → 401). Kept OFF the public
+     * runtime config (never sent to the browser bundle); the module
+     * stashes it under the private `runtimeConfig.noydb.rest.authToken`
+     * instead, which only the Nitro server process can read.
+     *
+     * For anything beyond a static bearer token (per-user auth, JWT
+     * verification, …), call `createRestHandler` from `@noy-db/in-rest`
+     * directly with a custom `authorize` callback instead of using this
+     * module's REST integration.
+     */
+    authToken?: string
+  }
+}
+
+/**
+ * The exported Nuxt module factory.
+ *
+ * Test-friendly: `defineNuxtModule` returns a NuxtModule object whose
+ * `.meta`, `.getOptions`, and `.setup` fields can be inspected without a
+ * full Nuxt build. Unit tests use those introspection points instead of
+ * spinning up `@nuxt/test-utils`.
+ */
+export default defineNuxtModule<ModuleOptions>({
+  meta: {
+    name: '@noy-db/in-nuxt',
+    configKey: 'noydb',
+    compatibility: {
+      // Nuxt 4 only — see the module-level docstring for the rationale.
+      nuxt: '^4.0.0',
+    },
+  },
+
+  defaults: {
+    store: 'to-browser-idb',
+    pinia: true,
+    devtools: true,
+  },
+
+  setup(options, nuxt) {
+    const resolver = createResolver(import.meta.url)
+
+    // ─── 1. Expose the user's options to runtime via runtimeConfig ───
+    //
+    // We stash the typed options under `runtimeConfig.public.noydb` so
+    // the client plugin (and any downstream composable) can read them
+    // without re-parsing nuxt.config.ts. `public` is required so the
+    // values reach the browser bundle — but EVERY field there is metadata
+    // (store name, table name, etc.), NEVER a secret.
+    //
+    // `rest.authToken` is the one genuine secret this module accepts. It
+    // is deliberately kept OFF `runtimeConfig.public` and stashed on the
+    // private `runtimeConfig.noydb.rest.authToken` instead, which Nitro
+    // never ships to the client bundle — only `packages/in-nuxt`'s own
+    // server handler (`runtime/rest.ts`) reads it.
+    const { authToken, ...publicRest } = options.rest ?? {}
+    nuxt.options.runtimeConfig.public.noydb = {
+      // The cast is necessary because Nuxt's runtimeConfig type is
+      // structurally `Record<string, any>` — modules are expected to
+      // own their own typing via module augmentation (which we do
+      // below).
+      ...(nuxt.options.runtimeConfig.public.noydb ?? {}),
+      ...options,
+      ...(options.rest ? { rest: publicRest } : {}),
+    }
+    if (authToken) {
+      nuxt.options.runtimeConfig.noydb = {
+        ...(nuxt.options.runtimeConfig.noydb ?? {}),
+        rest: { authToken },
+      }
+    }
+
+    // ─── 2. Auto-imports for @noy-db/vue composables ────────────────
+    //
+    // These are the composables shipped by @noy-db/vue. Importing
+    // them automatically removes one line of boilerplate per component.
+    addImports([
+      { name: 'useNoydb', from: '@noy-db/in-vue' },
+      { name: 'useCollection', from: '@noy-db/in-vue' },
+      { name: 'useSync', from: '@noy-db/in-vue' },
+    ])
+
+    // ─── 3. Auto-imports for @noy-db/pinia (opt-out) ────────────────
+    //
+    // Most users want the Pinia helpers — `defineNoydbStore` is the
+    // headline API. We default to enabling them and let users
+    // opt out via `pinia: false` if they're not using Pinia at all.
+    if (options.pinia !== false) {
+      addImports([
+        { name: 'defineNoydbStore', from: '@noy-db/in-pinia' },
+        { name: 'createNoydbPiniaPlugin', from: '@noy-db/in-pinia' },
+        { name: 'setActiveNoydb', from: '@noy-db/in-pinia' },
+        { name: 'getActiveNoydb', from: '@noy-db/in-pinia' },
+      ])
+    }
+
+    // ─── 4. Register the client-only runtime plugin ─────────────────
+    //
+    // mode: 'client' is the LOAD-BEARING SSR-safety guarantee. Nuxt
+    // skips this plugin entirely on the server, so the server bundle
+    // never imports any code that touches `crypto.subtle`. The CI
+    // bundle assertion (planned for a follow-up) verifies this by
+    // grepping the built nitro output for forbidden symbols.
+    //
+    // The path resolves to the COMPILED runtime file in `dist/runtime/`.
+    // tsup builds this as a separate entry alongside the module index.
+    addPlugin({
+      src: resolver.resolve('./runtime/plugin.client.js'),
+      mode: 'client',
+    })
+
+    // ─── 5. REST API server handler (opt-in) ────────────────────────
+    //
+    // When `rest.enabled: true`, mount a catch-all Nitro server handler
+    // at `basePath/**`. The handler delegates to `@noy-db/in-rest` via
+    // the nitroAdapter. Store wiring (populating event.context.noydbStore)
+    // is a follow-up concern tracked separately.
+    if (options.rest?.enabled) {
+      const basePath = options.rest.basePath ?? '/api/noydb'
+      addServerHandler({
+        route: `${basePath}/**`,
+        handler: resolver.resolve('./runtime/rest'),
+      })
+    }
+
+    // ─── 6. DevTools tab (dev mode only) ────────────────────────
+    //
+    // Registers a virtual Nuxt page at /_noydb-devtools and exposes it
+    // as a tab in the Nuxt DevTools overlay. The page runs inside the
+    // user's full Vue app context — no iframe bridge, direct access to
+    // getActiveNoydb() and the inspector facade.
+    //
+    // Guarded on nuxt.options.dev: never ships to production builds.
+    // Users can opt out with `noydb: { devtools: false }`.
+    if (nuxt.options.dev && options.devtools !== false) {
+      const panelFile = resolver.resolve('./runtime/devtools/DevtoolsPanel.vue')
+
+      extendPages((pages) => {
+        pages.push({
+          name: 'noydb-devtools',
+          path: '/_noydb-devtools',
+          file: panelFile,
+        })
+      })
+
+      // `devtools:customTabs` is not in Nuxt's static HookKeys type but IS
+      // dispatched at runtime by @nuxt/devtools. Cast to bypass the type
+      // guard while keeping the hook strictly dev-only.
+      ;(nuxt as unknown as { hook(event: string, fn: (tabs: unknown[]) => void): void })
+        .hook('devtools:customTabs', (tabs: unknown[]) => {
+          tabs.push({
+            name: 'noy-db',
+            title: 'noy-db',
+            icon: 'i-carbon-data-base',
+            view: { type: 'iframe', src: '/_noydb-devtools' },
+          })
+        })
+    }
+  },
+})
+
+/**
+ * Module augmentation so the `noydb:` config key in `nuxt.config.ts`
+ * is fully typed and autocompleted in the IDE.
+ *
+ * The augmentation is a side-effect of importing the module — once a
+ * project adds `'@noy-db/in-nuxt'` to its `modules` array, TypeScript picks
+ * up the typed `noydb` option without requiring an explicit import.
+ */
+declare module '@nuxt/schema' {
+  interface NuxtConfig {
+    noydb?: ModuleOptions
+  }
+  interface NuxtOptions {
+    noydb?: ModuleOptions
+  }
+  interface PublicRuntimeConfig {
+    noydb?: ModuleOptions
+  }
+  interface RuntimeConfig {
+    /** Private (server-only) mirror — carries only `rest.authToken`. */
+    noydb?: { rest?: { authToken?: string } }
+  }
+}

@@ -1,0 +1,176 @@
+import { describe, it, expect } from 'vitest'
+import { assertCanonicalAdvanced } from '../release/version-advanced.mjs'
+
+/**
+ * #1230 — `release:version` must not produce a no-op release.
+ *
+ * The canonical lockstep version is read from hub AFTER `changeset version`.
+ * When no pending changeset targets hub, hub does not bump, so the canonical
+ * version is hub's UNCHANGED — already published — version, and the normalizer
+ * then drags the legitimately-bumped satellite back down to it. Exit 0, tidy
+ * uniform output, changesets consumed, nothing releasable.
+ *
+ * Asserted on the OUTPUT the script exists to produce — the canonical version
+ * ADVANCED — rather than on the input that happened to expose it (a release
+ * with no hub changeset).
+ */
+describe('assertCanonicalAdvanced (#1230)', () => {
+  it('accepts a version that advanced', () => {
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.6', '0.7.0-pre.7')).not.toThrow()
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.6', '0.8.0')).not.toThrow()
+  })
+
+  it('REFUSES an unchanged version — the #1230 case', () => {
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.6', '0.7.0-pre.6')).toThrow(/did not advance/i)
+  })
+
+  it('names both versions, so the message is actionable', () => {
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.6', '0.7.0-pre.6'))
+      .toThrow(/0\.7\.0-pre\.6/)
+  })
+
+  it('explains the likely cause rather than only the symptom', () => {
+    // The failure is opaque without it: the engineer sees a correct-looking
+    // run and has no reason to suspect which changeset was missing.
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.6', '0.7.0-pre.6'))
+      .toThrow(/hub/i)
+  })
+
+  it('points at --resume and never at a restore that cannot be followed (#1312)', () => {
+    // By the time this throws, `changeset version` has consumed and deleted
+    // every changeset file, and `.changeset/` is gitignored — so "restore
+    // pre.json" instructs a restore and states in the same breath that it is
+    // impossible. `--resume` is the recovery path; the message must name it.
+    // Asserted as a property of the message, not of one wording, so a future
+    // rewrite cannot quietly drop the pointer or bring the restore back.
+    let message = ''
+    try { assertCanonicalAdvanced('0.7.0-pre.6', '0.7.0-pre.6') } catch (e) { message = (e as Error).message }
+    expect(message).toMatch(/--resume/)
+    expect(message).not.toMatch(/restore .*pre\.json/i)
+  })
+
+  it('REFUSES a version that went backwards', () => {
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.6', '0.7.0-pre.5')).toThrow(/did not advance/i)
+  })
+
+  it('refuses an unreadable before-version rather than passing silently', () => {
+    // A missing baseline must not be treated as "advanced" — that would make
+    // the guard vacuous in exactly the situation it exists for.
+    expect(() => assertCanonicalAdvanced(undefined as unknown as string, '0.7.0-pre.7')).toThrow()
+  })
+})
+
+import { nextLineVersion } from '../release/version-advanced.mjs'
+
+/**
+ * The other half of #1230: the guard REFUSES a no-op, but a satellite-only
+ * release still has to be possible. Lockstep means a release IS a line move —
+ * every package ships on one version — so when hub carries no changeset the
+ * line must advance anyway rather than the release being impossible.
+ */
+describe('nextLineVersion (#1230)', () => {
+  it('advances a prerelease counter', () => {
+    expect(nextLineVersion('0.7.0-pre.6')).toBe('0.7.0-pre.7')
+    expect(nextLineVersion('0.7.0-pre.0')).toBe('0.7.0-pre.1')
+    expect(nextLineVersion('1.2.3-rc.9')).toBe('1.2.3-rc.10')
+  })
+
+  it('REFUSES to guess a stable bump', () => {
+    // Patch vs minor is a judgement about the change, not arithmetic. Guessing
+    // it would silently pick a semantic the author never chose.
+    expect(() => nextLineVersion('0.7.0')).toThrow(/stable/i)
+  })
+
+  it('refuses a malformed version rather than producing a plausible one', () => {
+    expect(() => nextLineVersion('not-a-version')).toThrow()
+    expect(() => nextLineVersion('0.7.0-pre.abc')).toThrow()
+  })
+
+  it('the result always satisfies the advance guard', () => {
+    // The two halves must agree: whatever this produces must pass the check
+    // that refuses a no-op. Ties them together rather than trusting they match.
+    for (const v of ['0.7.0-pre.6', '0.7.0-pre.0', '1.2.3-rc.9']) {
+      expect(() => assertCanonicalAdvanced(v, nextLineVersion(v))).not.toThrow()
+    }
+  })
+})
+
+import { changesetWroteASection } from '../release/version-advanced.mjs'
+
+/**
+ * #1230, third part — found by the line-advance corrupting hub's CHANGELOG.
+ *
+ * The heading rewriter maps `## <before>` to `## <after>` for every package the
+ * normalizer corrected. That is only sound when `before` names a section
+ * `changeset version` JUST WROTE. For a package with no changeset, `before` is
+ * the heading of the PREVIOUSLY PUBLISHED section — so rewriting it RENAMES a
+ * released entry. Caught when hub's `## 0.7.0-pre.6` became `## 0.7.0-pre.7`
+ * while pre.6 was already on npm.
+ */
+describe('changesetWroteASection (#1230)', () => {
+  it('true when changeset version moved the package', () => {
+    // changesets bumped it (0.7.0-pre.6 -> 1.0.0 via the pre-1.0 heuristic),
+    // so `## 1.0.0` is a new section and rewriting its heading is correct.
+    expect(changesetWroteASection('0.7.0-pre.6', '1.0.0')).toBe(true)
+  })
+
+  it('FALSE when changeset version left the package alone', () => {
+    // No changeset targeted it. Its topmost heading is the last RELEASED one;
+    // rewriting that renames published history.
+    expect(changesetWroteASection('0.7.0-pre.6', '0.7.0-pre.6')).toBe(false)
+  })
+})
+
+/**
+ * The pre -> STABLE transition, which no release had exercised until 0.7.0.
+ *
+ * Within a pre line both versions have the same segment count, so the numeric
+ * compare on the counter decides every comparison and the length boundary is
+ * unreachable. Exiting pre mode is the first time one side runs out of segments
+ * — and the comparator treated the LONGER version as the later one, inverting
+ * semver at exactly that boundary. `0.7.0-pre.18 -> 0.7.0` was refused as "did
+ * not advance", and the reverse was accepted.
+ *
+ * The existing accept-case above passes `0.8.0`, which resolves at the MINOR
+ * segment and returns before the boundary is reached. A wider table of the same
+ * shape would not have found this; the ordering property below does.
+ */
+describe('assertCanonicalAdvanced across the pre/stable boundary', () => {
+  it('accepts a prerelease advancing to its own stable', () => {
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.18', '0.7.0')).not.toThrow()
+    expect(() => assertCanonicalAdvanced('0.7.0-pre.0', '0.7.0')).not.toThrow()
+  })
+
+  it('REFUSES a stable regressing to one of its own prereleases', () => {
+    expect(() => assertCanonicalAdvanced('0.7.0', '0.7.0-pre.18')).toThrow(/did not advance/i)
+  })
+
+  /**
+   * The output-domain assertion: the guard must agree with a known-correct
+   * release ordering at EVERY adjacent pair, not at the pairs someone thought
+   * to enumerate. Every pair is checked in both directions, so a comparator
+   * that is permissive rather than ordered fails here too.
+   */
+  it('agrees with release order at every adjacent pair, in both directions', () => {
+    const ascending = [
+      '0.6.0',
+      '0.7.0-pre.0',
+      '0.7.0-pre.9',
+      '0.7.0-pre.17',
+      '0.7.0-pre.18',
+      '0.7.0',
+      '0.7.1-pre.0',
+      '0.7.1',
+      '0.8.0-pre.0',
+      '0.8.0',
+      '1.0.0',
+    ]
+    for (let i = 0; i < ascending.length - 1; i++) {
+      const [earlier, later] = [ascending[i], ascending[i + 1]]
+      expect(() => assertCanonicalAdvanced(earlier, later), `${earlier} -> ${later} must advance`).not.toThrow()
+      expect(() => assertCanonicalAdvanced(later, earlier), `${later} -> ${earlier} must be refused`).toThrow(
+        /did not advance/i,
+      )
+    }
+  })
+})

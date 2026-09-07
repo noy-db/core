@@ -1,0 +1,557 @@
+/**
+ * Managed-secret mode — rubber-hose-resistant vaults.
+ *
+ * A vault mode where the secret is machine-generated and never
+ * exposed to the user, sealed under a developer-provided
+ * {@link NoydbSealer} (macOS Keychain, Windows Credential
+ * Manager, libsecret, AWS KMS, …). The user has no secret to give
+ * up to coercion — they can't reveal what they don't know.
+ *
+ * ## Components in this file
+ *
+ *   - {@link NoydbSealer} — the interface concrete providers
+ *     implement. Provider implementations live OUTSIDE hub (per-
+ *     platform packages).
+ *   - {@link MemorySealer} — in-memory test provider; uses
+ *     a deterministic per-instance "key" so two providers with
+ *     different ids cannot unseal each other's outputs.
+ *   - {@link RecipientHint} — public material a sender uses to seal
+ *     plaintext for a specific recipient; published by
+ *     {@link RecipientSealer.publishRecipientHint} and transported
+ *     out-of-band to the sender before bundle writes.
+ *   - {@link RecipientSealer} — interface for asymmetric/granted
+ *     providers that support recipient-target sealing (RSA-OAEP,
+ *     cloud-KMS asymmetric, etc.); distinct from self-only
+ *     {@link NoydbSealer} (macOS Keychain, WebAuthn-PRF).
+ *   - {@link MemoryRecipientSealer} — in-process reference
+ *     implementation of both `RecipientSealer` and
+ *     `NoydbSealer` using real WebCrypto RSA-OAEP + AES-GCM;
+ *     safe for tests and same-process sender/recipient scenarios.
+ *   - {@link loadSealedSecret} / {@link saveSealedSecret} —
+ *     plaintext envelope storage at `_meta/sealed-secret`.
+ *     Mirrors the `_meta/handle` and `_meta/public-envelope` AES-
+ *     GCM-bypassed patterns. The sealing layer (provider's job)
+ *     is the security boundary; hub doesn't have a key to encrypt
+ *     with at this layer — that's the whole point of the design.
+ *   - {@link resolveManagedSecret} — orchestrates the "generate +
+ *     seal + persist on first open; unseal on reopen" flow.
+ *     Returns the plaintext secret string that the rest of the
+ *     `createNoydb` keyring path consumes.
+ *
+ * Deferred to follow-ups:
+ *   - Block `rotate-secret` policy gate under managed mode.
+ *   - Mandatory strong-recovery enforcement.
+ *   - Recovery flow under managed mode (generates fresh sealed phrase).
+ *
+ * @see https://github.com/noy-db/docs/blob/main/content/docs/services/session-tiers.md → Managed-secret mode
+ *
+ * @module
+ */
+
+import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import type { NoydbStore, RecipientSealer } from '../../kernel/types.js'
+
+/**
+ * The contract concrete providers (per-platform key stores) implement
+ * to seal and unseal a hub-generated random secret. The plaintext
+ * secret NEVER leaves hub-controlled memory in unsealed form —
+ * the provider receives the bytes, returns opaque sealed bytes, and
+ * later reverses the operation. Hub treats the sealed bytes as
+ * fully opaque.
+ *
+ * Implementations live OUTSIDE `@noy-db/hub` (separate packages
+ * per the issue's "Concrete providers (live outside hub)" note):
+ *
+ * | Platform | Package (TBD) | Backing |
+ * |---|---|---|
+ * | macOS | `@noy-db/seal-macos-keychain` | Security.framework |
+ * | Windows | `@noy-db/seal-wincred` | Credential Manager |
+ * | Linux | `@noy-db/seal-libsecret` | libsecret / secret-service |
+ * | Cloud / server | `@noy-db/seal-aws-kms` | AWS KMS Decrypt |
+ */
+export interface NoydbSealer {
+  /**
+   * Non-sensitive identifier disclosed in the persisted envelope.
+   * Surfaced to consumers via `loadSealedSecret().providerId` so
+   * a vault opened with the wrong provider class can detect the
+   * mismatch and surface a clear error. NOT secret — fine to log.
+   *
+   * Suggested format: `<family>:<scope>` — e.g. `macos-keychain:com.acme.app`,
+   * `aws-kms:arn:aws:kms:us-east-1:123:key/abc`. The hub never
+   * parses this; it's purely audit metadata.
+   */
+  readonly id: string
+
+  /** Seal raw secret bytes. Output bytes are opaque to hub. */
+  seal(secret: Uint8Array): Promise<Uint8Array>
+
+  /**
+   * Reverse {@link seal}. MUST throw on tamper, wrong-provider, or
+   * any other failure — hub treats a thrown error as "this provider
+   * cannot unlock this vault" and surfaces it to the caller.
+   */
+  unseal(sealed: Uint8Array): Promise<Uint8Array>
+}
+
+/**
+ * In-memory test provider. NOT secure — uses a deterministic
+ * per-instance "key" (16-byte SHA-256 of `id`) XOR'd over the
+ * secret plus a 4-byte provider-id fingerprint prefix. The XOR is
+ * sufficient to make different `id` values produce mutually-unsealable
+ * outputs (the contract tests for that), but offers ZERO real
+ * confidentiality — never use outside tests.
+ *
+ * Replace with a real platform provider in production.
+ */
+export class MemorySealer implements NoydbSealer {
+  readonly id: string
+  private readonly fingerprint: Uint8Array
+  private readonly keyBytes: Uint8Array
+
+  constructor(opts: { id: string }) {
+    this.id = opts.id
+    // Deterministic 4-byte fingerprint of the provider id, prepended
+    // to every sealed output so we can detect "wrong provider" at
+    // unseal time without leaking anything sensitive about either
+    // provider's actual key material.
+    const encoded = new TextEncoder().encode(opts.id)
+    let h = 0
+    for (let i = 0; i < encoded.length; i++) {
+      h = (h * 31 + encoded[i]!) >>> 0
+    }
+    this.fingerprint = new Uint8Array([
+      (h >>> 24) & 0xff, (h >>> 16) & 0xff, (h >>> 8) & 0xff, h & 0xff,
+    ])
+    // Deterministic 16-byte "key" derived from the id by repeating
+    // the fingerprint with offsets. Good enough for the XOR-stream
+    // test cipher; never confuse this with real key derivation.
+    this.keyBytes = new Uint8Array(16)
+    for (let i = 0; i < 16; i++) {
+      this.keyBytes[i] = this.fingerprint[i % 4]! ^ (i * 17)
+    }
+  }
+
+  /**
+   * Deterministic 4-byte integrity tag over the ciphertext, keyed by the
+   * same derived bytes. NOT a MAC and not forgery-resistant — a real
+   * provider authenticates with its backend. It exists because the contract
+   * says `unseal` MUST throw on tamper, and a double that silently returns
+   * corrupted bytes is not modelling the contract it stands in for. Without
+   * it, every managed-mode test ran against a provider that could not fail
+   * the way a real one must (found by @noy-db/test-sealer-conformance).
+   */
+  private tag(cipher: Uint8Array): Uint8Array {
+    let a = 0x9e3779b9
+    for (let i = 0; i < cipher.length; i++) {
+      a = ((a ^ (cipher[i]! ^ this.keyBytes[i % 16]!)) * 0x01000193) >>> 0
+    }
+    return new Uint8Array([(a >>> 24) & 0xff, (a >>> 16) & 0xff, (a >>> 8) & 0xff, a & 0xff])
+  }
+
+  async seal(secret: Uint8Array): Promise<Uint8Array> {
+    const cipher = new Uint8Array(secret.length)
+    for (let i = 0; i < secret.length; i++) {
+      cipher[i] = secret[i]! ^ this.keyBytes[i % 16]!
+    }
+    const out = new Uint8Array(8 + secret.length)
+    out.set(this.fingerprint, 0)
+    out.set(this.tag(cipher), 4)
+    out.set(cipher, 8)
+    return out
+  }
+
+  async unseal(sealed: Uint8Array): Promise<Uint8Array> {
+    if (sealed.length < 8) {
+      throw new Error('MemorySealer: sealed input too short')
+    }
+    for (let i = 0; i < 4; i++) {
+      if (sealed[i] !== this.fingerprint[i]) {
+        throw new Error(
+          `MemorySealer("${this.id}"): provider-id mismatch on unseal `
+          + '(sealed bytes were produced by a different provider)',
+        )
+      }
+    }
+    const cipher = sealed.subarray(8)
+    const expected = this.tag(cipher)
+    for (let i = 0; i < 4; i++) {
+      if (sealed[4 + i] !== expected[i]) {
+        throw new Error(
+          `MemorySealer("${this.id}"): integrity check failed on unseal `
+          + '(the sealed bytes were modified after sealing)',
+        )
+      }
+    }
+    const out = new Uint8Array(cipher.length)
+    for (let i = 0; i < cipher.length; i++) {
+      out[i] = cipher[i]! ^ this.keyBytes[i % 16]!
+    }
+    return out
+  }
+}
+
+/**
+ * Public material a sender uses to seal-for-this-recipient. Published by
+ * a recipient's RecipientSealer; transported to the sender out-of-band
+ * (email, S3, in-app message). The sender obtains the hint, supplies it
+ * to writePod's sealedCredentials.perUser[userId].hint, and the
+ * hub seals each user's credential against it. Per foundation §11.4.
+ */
+export type RecipientHint = {
+  readonly v: 1
+  /** Recipient's provider id; matches the SealedAutoUnlockEntry.pid they'll unseal under. */
+  readonly pid: string
+  /** Algorithm the sender uses to produce the seal. Slice 1 ships RSA-OAEP-SHA256 only. */
+  readonly alg: 'rsa-oaep-sha256'
+  /** Public material — alg-specific. For 'rsa-oaep-sha256': { publicKeyPem: string }. */
+  readonly material: Readonly<Record<string, unknown>>
+}
+
+// Hoisted to kernel/types.ts (C3 — enclave self-containment: sealing.ts
+// consumes this as a spine-owned contract type). Re-exported here so existing
+// importers of this module are unaffected.
+export type { RecipientSealer } from '../../kernel/types.js'
+
+/**
+ * Shared RSA-OAEP-SHA256 + AES-GCM seal in the canonical recipient-target
+ * TLV wire format. Mints a fresh 32-byte CEK, AES-GCM-encrypts `plaintext`
+ * under it, RSA-OAEP-SHA256-wraps the CEK to `publicKeyPem`, and packs:
+ *
+ *   byte  0       : version (0x01)
+ *   bytes 1..256  : RSA-OAEP-wrapped CEK (fixed 256 bytes at RSA-2048)
+ *   bytes 257..268: AES-GCM IV (12 bytes)
+ *   bytes 269..   : AES-GCM ciphertext ‖ 16-byte tag
+ *
+ * This is the single source of truth for the wire format — both
+ * {@link MemoryRecipientSealer} and external sealers (e.g. `@noy-db/at-aws-kms`'s
+ * asymmetric-KMS recipient sealer) call it so a blob sealed by one unseals
+ * by the other. WebCrypto RSA-OAEP/SHA-256 here is wire-compatible with
+ * AWS KMS `RSAES_OAEP_SHA_256` (both RSAES-OAEP, SHA-256 hash, MGF1-SHA256,
+ * empty label).
+ *
+ * @public — re-exported from the hub barrel for external sealer packages.
+ */
+export async function sealRsaOaepTlv(plaintext: Uint8Array, publicKeyPem: string): Promise<Uint8Array> {
+  // Parse PEM → SPKI bytes.
+  const b64 = publicKeyPem.replace(/-----BEGIN PUBLIC KEY-----/, '').replace(/-----END PUBLIC KEY-----/, '').replace(/\s+/g, '')
+  const spki = base64ToBytes(b64)
+  const recipientPub = await crypto.subtle.importKey(
+    'spki', spki as BufferSource,
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
+    false, ['encrypt'],
+  )
+  // Mint fresh CEK + IV, AES-GCM encrypt plaintext.
+  const cekBytes = crypto.getRandomValues(new Uint8Array(32))
+  const cek = await crypto.subtle.importKey('raw', cekBytes as BufferSource, 'AES-GCM', false, ['encrypt'])
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, cek, plaintext as BufferSource))
+  // RSA-OAEP-wrap the CEK bytes.
+  const wrapped = new Uint8Array(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, recipientPub, cekBytes as BufferSource))
+  cekBytes.fill(0)
+  if (wrapped.length !== 256) {
+    throw new Error(`sealRsaOaepTlv: expected 256-byte RSA-OAEP wrap, got ${wrapped.length}`)
+  }
+  // TLV layout.
+  const out = new Uint8Array(1 + 256 + 12 + ct.length)
+  out[0] = 0x01
+  out.set(wrapped, 1)
+  out.set(iv, 1 + 256)
+  out.set(ct, 1 + 256 + 12)
+  return out
+}
+
+/**
+ * Parse a {@link sealRsaOaepTlv} blob into its three segments without
+ * decrypting. The `wrapped` CEK is RSA-OAEP-SHA256 ciphertext over a
+ * 32-byte CEK — the unwrap step is pluggable: {@link MemoryRecipientSealer}
+ * decrypts it with a local RSA private key; `@noy-db/at-aws-kms` hands it to
+ * KMS `Decrypt`. After unwrapping, pass the CEK + `iv` + `ct` to
+ * {@link aesGcmOpen}.
+ *
+ * @public — re-exported from the hub barrel for external sealer packages.
+ */
+export function parseRsaOaepTlv(bytes: Uint8Array): { wrapped: Uint8Array; iv: Uint8Array; ct: Uint8Array } {
+  if (bytes.length < 1 + 256 + 12 + 16) {
+    throw new Error('parseRsaOaepTlv: sealed input too short')
+  }
+  if (bytes[0] !== 0x01) {
+    throw new Error(`parseRsaOaepTlv: unknown TLV version ${bytes[0]}`)
+  }
+  return {
+    wrapped: bytes.subarray(1, 1 + 256),
+    iv: bytes.subarray(1 + 256, 1 + 256 + 12),
+    ct: bytes.subarray(1 + 256 + 12),
+  }
+}
+
+/**
+ * AES-GCM-decrypt the `ct` segment of a {@link parseRsaOaepTlv} result under
+ * the unwrapped 32-byte CEK and its `iv`. Throws on a bad tag (tamper) — the
+ * same authenticated-decryption guarantee the TLV relies on.
+ *
+ * @public — re-exported from the hub barrel for external sealer packages.
+ */
+export async function aesGcmOpen(cekBytes: Uint8Array, iv: Uint8Array, ct: Uint8Array): Promise<Uint8Array> {
+  const cek = await crypto.subtle.importKey('raw', cekBytes as BufferSource, 'AES-GCM', false, ['decrypt'])
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as BufferSource }, cek, ct as BufferSource))
+}
+
+/**
+ * Reference implementation of `RecipientSealer` + `NoydbSealer`.
+ * Uses WebCrypto RSA-OAEP-SHA256 (2048-bit) to wrap a fresh 32-byte
+ * AES-GCM CEK, AES-GCM-encrypts plaintext under it, and packs the
+ * result into a self-describing TLV:
+ *
+ *   byte  0       : version (0x01)
+ *   bytes 1..256  : RSA-OAEP-wrapped CEK (fixed 256 bytes at RSA-2048)
+ *   bytes 257..268: AES-GCM IV (12 bytes)
+ *   bytes 269..   : AES-GCM ciphertext ‖ 16-byte tag
+ *
+ * Implements BOTH interfaces. `seal(plaintext)` (self-target) is just
+ * `sealForRecipient(plaintext, this own hint)` — same TLV. Convenient
+ * for tests where one provider plays both ends. Real cloud providers
+ * (`at-aws-kms`, etc.) will pick their own internal layouts; the only
+ * contract is round-trip identity.
+ *
+ * SAFE for production within its scope — the cryptography is real
+ * (RSA-OAEP + AES-GCM via WebCrypto), but the keypair lives in-process
+ * and is regenerated on every construction. Not suitable as a managed
+ * keychain; use it for tests and for shipping bundles where the
+ * recipient instance lives in the same process as the sender (rare).
+ */
+export class MemoryRecipientSealer implements NoydbSealer, RecipientSealer {
+  readonly id: string
+  private readonly keypair: Promise<CryptoKeyPair>
+
+  constructor(opts: { id: string }) {
+    this.id = opts.id
+    this.keypair = crypto.subtle.generateKey(
+      { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      true,
+      ['encrypt', 'decrypt'],
+    )
+  }
+
+  async publishRecipientHint(): Promise<RecipientHint> {
+    const { publicKey } = await this.keypair
+    const spki = await crypto.subtle.exportKey('spki', publicKey)
+    const pem = '-----BEGIN PUBLIC KEY-----\n'
+      + bytesToBase64(new Uint8Array(spki)).match(/.{1,64}/g)!.join('\n')
+      + '\n-----END PUBLIC KEY-----\n'
+    return { v: 1, pid: this.id, alg: 'rsa-oaep-sha256', material: { publicKeyPem: pem } }
+  }
+
+  async sealForRecipient(plaintext: Uint8Array, hint: RecipientHint): Promise<Uint8Array> {
+    if (hint.v !== 1) {
+      throw new Error(`MemoryRecipientSealer.sealForRecipient: unsupported hint.v ${String(hint.v)} (expected 1)`)
+    }
+    if (hint.alg !== 'rsa-oaep-sha256') {
+      throw new Error(`MemoryRecipientSealer.sealForRecipient: unsupported hint.alg '${String(hint.alg)}' (expected 'rsa-oaep-sha256')`)
+    }
+    const pem = hint.material['publicKeyPem']
+    if (typeof pem !== 'string') {
+      throw new Error('MemoryRecipientSealer.sealForRecipient: hint.material.publicKeyPem missing or not a string')
+    }
+    return sealRsaOaepTlv(plaintext, pem)
+  }
+
+  async seal(plaintext: Uint8Array): Promise<Uint8Array> {
+    const hint = await this.publishRecipientHint()
+    return this.sealForRecipient(plaintext, hint)
+  }
+
+  async unseal(bytes: Uint8Array): Promise<Uint8Array> {
+    const { wrapped, iv, ct } = parseRsaOaepTlv(bytes)
+    const { privateKey } = await this.keypair
+    // Local RSA-OAEP-SHA256 unwrap of the CEK — the pluggable step external
+    // sealers replace with KMS Decrypt.
+    const cekBytes = new Uint8Array(await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, wrapped as BufferSource))
+    const pt = await aesGcmOpen(cekBytes, iv, ct)
+    cekBytes.fill(0)
+    return pt
+  }
+}
+
+// ─── Persisted envelope ────────────────────────────────────────────────
+
+/** Reserved id for the managed-secret envelope under `_meta`. */
+export const SEALED_SECRET_RECORD_ID = 'sealed-secret' as const
+
+/** Plaintext payload stored inside the `_meta/sealed-secret` envelope. */
+export interface SealedSecret {
+  readonly _noydb_sealed: 1
+  readonly providerId: string
+  /** Sealed bytes. Base64-encoded on the wire; decoded on load. */
+  readonly sealed: Uint8Array
+}
+
+/**
+ * Wire-format envelope persisted at `_meta/sealed-secret` for
+ * managed-mode vaults. The provider produces raw sealed bytes via
+ * {@link NoydbSealer.seal}; this wrapper carries the dispatch
+ * metadata hub needs to pick the right provider on the unseal path.
+ *
+ * Stability boundary: once shipped, the wire format only grows by
+ * adding optional fields. See the at-* sealing dimension foundation
+ * doc, §11.9.1.
+ *
+ * v1 shape (this release): `{ v: 1, _noydb_sealed: 1, pid, payload }`.
+ *
+ * Legacy shape (earlier releases): `{ _noydb_sealed: 1, providerId, sealed }`
+ * — accepted on read for backwards compatibility; never produced on
+ * write going forward.
+ */
+export interface SealedEnvelope {
+  /** Envelope schema version. v1 is the current shape. */
+  readonly v: 1
+  /** Magic marker for forensics + legacy-shape detection. */
+  readonly _noydb_sealed: 1
+  /** Matches the producing provider's `.id`. Dispatch key on unseal. */
+  readonly pid: string
+  /** Sealed bytes from the provider, base64-encoded on the wire. */
+  readonly payload: string
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!)
+  return btoa(binary)
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64)
+  const out = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+  return out
+}
+
+/**
+ * Parse a `_meta/sealed-secret` `_data` JSON string into the
+ * in-memory {@link SealedSecret} representation. Accepts both:
+ *
+ *   1. v1 wire format `{ v: 1, _noydb_sealed: 1, pid, payload }` —
+ *      the current shape.
+ *   2. Legacy wire format `{ _noydb_sealed: 1, providerId, sealed }` —
+ *      read-only; never written
+ *      going forward.
+ *
+ * Returns `undefined` for any input that doesn't match either shape,
+ * so callers can fall back to "no managed-mode envelope present."
+ *
+ * @internal — exported only for the migration safety-net test suite.
+ */
+export function parseSealedEnvelope(raw: unknown): SealedSecret | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const r = raw as Record<string, unknown>
+  if (r._noydb_sealed !== 1) return undefined
+
+  // v1 shape — preferred.
+  if (
+    r.v === 1
+    && typeof r.pid === 'string'
+    && typeof r.payload === 'string'
+  ) {
+    return {
+      _noydb_sealed: 1,
+      providerId: r.pid,
+      sealed: base64ToBytes(r.payload),
+    }
+  }
+
+  // Legacy shape — earlier releases. Accept on read for compat.
+  if (
+    typeof r.providerId === 'string'
+    && typeof r.sealed === 'string'
+  ) {
+    return {
+      _noydb_sealed: 1,
+      providerId: r.providerId,
+      sealed: base64ToBytes(r.sealed),
+    }
+  }
+
+  return undefined
+}
+
+export async function saveSealedSecret(
+  store: NoydbStore,
+  vault: string,
+  payload: { readonly providerId: string; readonly sealed: Uint8Array },
+): Promise<void> {
+  const persisted: SealedEnvelope = {
+    v: 1,
+    _noydb_sealed: 1,
+    pid: payload.providerId,
+    payload: bytesToBase64(payload.sealed),
+  }
+  const prior = await store.get(vault, '_meta', SEALED_SECRET_RECORD_ID)
+  const env = buildRecordEnvelope(
+    { collection: '_meta', id: SEALED_SECRET_RECORD_ID, version: (prior?._v ?? 0) + 1 },
+    // AES-GCM bypassed — the sealing layer is the security boundary.
+    { iv: '', data: JSON.stringify(persisted) },
+  )
+  await store.put(vault, '_meta', SEALED_SECRET_RECORD_ID, env)
+}
+
+export async function loadSealedSecret(
+  store: NoydbStore,
+  vault: string,
+): Promise<SealedSecret | undefined> {
+  const envelope = await store.get(vault, '_meta', SEALED_SECRET_RECORD_ID)
+  if (!envelope) return undefined
+  try {
+    return parseSealedEnvelope(JSON.parse(envelope._data))
+  } catch {
+    return undefined
+  }
+}
+
+// ─── createNoydb orchestration ─────────────────────────────────────────
+
+/**
+ * Resolve the effective plaintext secret string for a managed-mode
+ * vault. Two paths:
+ *
+ *   1. **First open (no envelope persisted):** generate a 256-bit random
+ *      via `crypto.getRandomValues`, base64-encode for use as a
+ *      secret string, seal the underlying bytes under the
+ *      provider, persist `_meta/sealed-secret`, return the
+ *      base64 string.
+ *
+ *   2. **Reopen (envelope exists):** read + unseal + decode → return.
+ *      A different provider whose `seal` output disagrees on the
+ *      stored bytes throws here, surfaced as a clear error.
+ *
+ * The returned string is the same shape that `secret:` would take in
+ * standard mode — the rest of the keyring path consumes it
+ * unchanged.
+ *
+ * @internal — called from `createNoydb` / `getKeyringInternal`.
+ */
+export async function resolveManagedSecret(
+  store: NoydbStore,
+  vault: string,
+  provider: NoydbSealer,
+): Promise<string> {
+  const existing = await loadSealedSecret(store, vault)
+  if (existing) {
+    if (existing.providerId !== provider.id) {
+      throw new Error(
+        `Managed-mode vault "${vault}" was sealed under provider id `
+        + `"${existing.providerId}" but the current NoydbSealer is `
+        + `"${provider.id}". Pass the same provider that originally enrolled `
+        + 'the vault, or treat this as a fresh enrollment and clear '
+        + '`_meta/sealed-secret` first.',
+      )
+    }
+    const plaintext = await provider.unseal(existing.sealed)
+    return bytesToBase64(plaintext)
+  }
+
+  // First open: mint a 256-bit random, seal, persist.
+  const random = new Uint8Array(32)
+  globalThis.crypto.getRandomValues(random)
+  const sealed = await provider.seal(random)
+  await saveSealedSecret(store, vault, { providerId: provider.id, sealed })
+  return bytesToBase64(random)
+}

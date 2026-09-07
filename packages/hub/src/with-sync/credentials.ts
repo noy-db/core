@@ -1,0 +1,214 @@
+/**
+ * _sync_credentials reserved collection —
+ *
+ * Stores per-adapter OAuth tokens (and any other long-lived sync secrets) as
+ * encrypted records inside the vault itself. Tokens are wrapped with the
+ * compartment's own DEK, live on disk as ciphertext like any other record, and
+ * are accessed only through the dedicated API in this module — never via
+ * `vault.collection('_sync_credentials')`.
+ *
+ * Design decisions
+ * ────────────────
+ *
+ * **Why a reserved collection, not a separate store?**
+ * The compartment's existing encryption stack (AES-256-GCM + collection DEK)
+ * is exactly the right primitive for protecting OAuth tokens at rest. Using a
+ * separate store would require a new encryption surface, new adapter calls,
+ * and a new backup/restore path — all of which already exist for collections.
+ *
+ * **Why not exposed as a regular collection?**
+ * The same reason `_keyring` and `_ledger` aren't: they have invariants that
+ * must be enforced (naming scheme, no cross-user leakage, no schema
+ * validation, no history/ledger writes for privacy). Routing through a
+ * dedicated API enforces those invariants.
+ *
+ * **Token lifecycle:**
+ * - `putCredential(vault, adapterId, token)` — store or overwrite
+ * - `getCredential(vault, adapterId)` — load and decrypt
+ * - `deleteCredential(vault, adapterId)` — remove
+ * - `listCredentials(vault)` — enumerate adapter IDs (not tokens)
+ *
+ * The `adapterId` is the record ID within the `_sync_credentials` collection.
+ * It should be a stable, human-readable identifier for the adapter instance
+ * (e.g. `'google-drive'`, `'dropbox'`, `'s3-prod'`).
+ *
+ * **ACL:** only `owner` and `admin` roles can read/write sync credentials.
+ * Operators, viewers, and clients cannot call this API. The check is made
+ * against the caller's keyring role at call time.
+ */
+
+import { buildRecordAad, buildRecordEnvelope } from '../kernel/enclave/index.js'
+import type { NoydbStore, EncryptedEnvelope } from '../kernel/types.js'
+import type { UnlockedKeyring } from '../with-party/team/keyring.js'
+import { encrypt, openEnvelopeJson } from '../kernel/enclave/index.js'
+import { ensureCollectionDEK } from '../with-party/team/keyring.js'
+import { PermissionDeniedError } from '../kernel/errors.js'
+
+/**
+ * The reserved collection name. Never collides with user collections.
+ * Canonical definition lives in `reserved-secret-collections.ts` (shared with
+ * the `vault.collection()` guard and grant DEK-propagation); re-exported here
+ * for existing consumers.
+ */
+export { SYNC_CREDENTIALS_COLLECTION } from '../with-party/team/reserved-secret-collections.js'
+import { SYNC_CREDENTIALS_COLLECTION } from '../with-party/team/reserved-secret-collections.js'
+
+// ─── Token types ──────────────────────────────────────────────────────
+
+/**
+ * An OAuth/auth token stored in `_sync_credentials`.
+ *
+ * Fields mirror the OAuth2 token response shape. `customData` is an escape
+ * hatch for adapter-specific secrets (API keys, connection strings, etc.)
+ * that don't fit the OAuth2 shape.
+ */
+export interface SyncCredential {
+  /** Stable identifier for the adapter instance (e.g. 'google-drive'). */
+  readonly adapterId: string
+  /** OAuth token type, usually 'Bearer'. */
+  readonly tokenType: string
+  /** The access token. Expires at `expiresAt` if set. */
+  readonly accessToken: string
+  /** Long-lived refresh token for renewing the access token. */
+  readonly refreshToken?: string
+  /** ISO timestamp when `accessToken` expires. Absent means "no expiry". */
+  readonly expiresAt?: string
+  /** Space-separated OAuth scopes. */
+  readonly scopes?: string
+  /** Adapter-specific opaque data (API keys, endpoints, etc.). */
+  readonly customData?: Record<string, string>
+}
+
+// ─── Access check ─────────────────────────────────────────────────────
+
+function requireAdminAccess(keyring: UnlockedKeyring): void {
+  // FR-6: custodian is INTENTIONALLY excluded. Sync credentials are the
+  // firm's hosting/infrastructure secrets (OAuth tokens, connection strings) —
+  // not the custodian's operational scope. A custodian operates the DATA but
+  // must never mint or read transport credentials that could be used to
+  // re-home or impersonate the firm's vault. Do NOT add 'custodian' here.
+  if (keyring.role !== 'owner' && keyring.role !== 'admin') {
+    throw new PermissionDeniedError(
+      `Sync credentials require owner or admin role. Current role: "${keyring.role}"`,
+    )
+  }
+}
+
+// ─── Public API ────────────────────────────────────────────────────────
+
+/**
+ * Store or overwrite a sync credential for the given adapter.
+ *
+ * The credential is encrypted with the `_sync_credentials` collection DEK
+ * (auto-generated on first use). The record ID is the `adapterId`.
+ *
+ * Requires owner or admin role.
+ */
+export async function putCredential(
+  adapter: NoydbStore,
+  vault: string,
+  keyring: UnlockedKeyring,
+  credential: SyncCredential,
+): Promise<void> {
+  requireAdminAccess(keyring)
+
+  const getDek = await ensureCollectionDEK(adapter, vault, keyring)
+  const dek = await getDek(SYNC_CREDENTIALS_COLLECTION)
+
+  // The version is resolved BEFORE the identity, because it is now part of it:
+  // sealing under one version and stamping another produces a record no reader
+  // can open (#1093).
+  const existing = await adapter.get(vault, SYNC_CREDENTIALS_COLLECTION, credential.adapterId)
+  const version = existing ? existing._v + 1 : 1
+
+  const identity = { collection: SYNC_CREDENTIALS_COLLECTION, id: credential.adapterId, version }
+  const { iv, data } = await encrypt(JSON.stringify(credential), dek, buildRecordAad(identity))
+
+  const envelope: EncryptedEnvelope = buildRecordEnvelope(identity, { iv, data })
+
+  await adapter.put(
+    vault,
+    SYNC_CREDENTIALS_COLLECTION,
+    credential.adapterId,
+    envelope,
+    existing ? existing._v : undefined,
+  )
+}
+
+/**
+ * Load and decrypt a sync credential for the given adapter ID.
+ *
+ * Returns `null` if no credential exists for this adapter.
+ * Requires owner or admin role.
+ */
+export async function getCredential(
+  adapter: NoydbStore,
+  vault: string,
+  keyring: UnlockedKeyring,
+  adapterId: string,
+): Promise<SyncCredential | null> {
+  requireAdminAccess(keyring)
+
+  const getDek = await ensureCollectionDEK(adapter, vault, keyring)
+  const dek = await getDek(SYNC_CREDENTIALS_COLLECTION)
+
+  const envelope = await adapter.get(vault, SYNC_CREDENTIALS_COLLECTION, adapterId)
+  if (!envelope) return null
+
+  const plaintext = await openEnvelopeJson({ collection: SYNC_CREDENTIALS_COLLECTION, id: adapterId }, envelope, dek)
+  return JSON.parse(plaintext) as SyncCredential
+}
+
+/**
+ * Delete a sync credential by adapter ID.
+ *
+ * No-op if the credential doesn't exist. Requires owner or admin role.
+ */
+export async function deleteCredential(
+  adapter: NoydbStore,
+  vault: string,
+  keyring: UnlockedKeyring,
+  adapterId: string,
+): Promise<void> {
+  requireAdminAccess(keyring)
+  await adapter.delete(vault, SYNC_CREDENTIALS_COLLECTION, adapterId)
+}
+
+/**
+ * List all adapter IDs that have stored credentials.
+ *
+ * Returns only the IDs, never the credential payloads. Useful for
+ * displaying "connected adapters" in UI without decrypting tokens.
+ * Requires owner or admin role.
+ */
+export async function listCredentials(
+  adapter: NoydbStore,
+  vault: string,
+  keyring: UnlockedKeyring,
+): Promise<string[]> {
+  requireAdminAccess(keyring)
+  return adapter.list(vault, SYNC_CREDENTIALS_COLLECTION)
+}
+
+/**
+ * Check whether a credential exists and whether its access token has expired.
+ *
+ * Returns `{ exists: false }` if no credential is stored, or
+ * `{ exists: true, expired: boolean }` based on the `expiresAt` field.
+ * Requires owner or admin role.
+ */
+export async function credentialStatus(
+  adapter: NoydbStore,
+  vault: string,
+  keyring: UnlockedKeyring,
+  adapterId: string,
+): Promise<{ exists: false } | { exists: true; expired: boolean }> {
+  const credential = await getCredential(adapter, vault, keyring, adapterId)
+  if (!credential) return { exists: false }
+
+  const expired = credential.expiresAt
+    ? Date.now() > new Date(credential.expiresAt).getTime()
+    : false
+
+  return { exists: true, expired }
+}

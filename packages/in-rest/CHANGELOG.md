@@ -1,0 +1,1115 @@
+# @noy-db/in-rest
+
+## 0.7.1-pre.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.7.1-pre.0
+
+## 0.7.0
+
+### Minor Changes
+
+- **Breaking for old clients:** the `409` body no longer discloses the winning writer's version (#1218).
+
+  `createRestHandler`'s CAS-conflict response was `409 { error: { name, message, version } }`. The `version` field is **another principal's progress counter**. A client able to provoke a 409 could learn how far a writer it may hold no read grant for had advanced a record, and by repetition turn that into a write-activity oracle. It is now `409 { error: { name, message } }`.
+
+  ⚠️ **If you are on `@noy-db/to-rest@0.7.0-pre.0` or earlier, upgrade to `0.7.0-pre.1`+ before taking this.** That client _required_ `version` to re-hydrate the error; without it a CAS conflict arrives as a **generic `Error`**, `isConflictError()` returns `false`, and conflict handling silently stops running — retry loops rethrow, and the sync engine misfiles the conflict with no resolution. `to-rest@0.7.0-pre.1` keys off `name` alone and defaults `version` to `NaN`, and handles both the old and new payload; that is why it shipped first. Any other client that keys off `version` needs the same change.
+
+  `name` remains load-bearing and will not be renamed: it is how a client identifies the error. The 409 still means _"your write lost"_ — the client re-reads to learn what won, at the cost of one round trip.
+
+  **Unchanged:** `ConflictError.version` itself, which is still carried in-process and which the sync engine needs. This is the transport boundary only.
+
+  Known consequence, not fixed here: hub's schema-manifest writer forwards a caught conflict's version into `ManifestConflictError`, so a manifest write losing a CAS race **over a REST store** now reports `foundVersion: NaN`. The conflict is still detected and still refused; only the reported number degrades. Hub's CAS retry loops re-read rather than using the value and are unaffected.
+
+### Patch Changes
+
+- Actually declare the framework peers that `peerDependenciesMeta` was annotating.
+
+  The published manifest through `0.7.0-pre.8` looked like this:
+
+  ```json
+  "peerDependencies":     { "@noy-db/hub": "0.7.0-pre.8" },
+  "peerDependenciesMeta": { "h3": {...}, "hono": {...}, "express": {...}, "fastify": {...} }
+  ```
+
+  **`peerDependenciesMeta` only annotates a peer that already exists in `peerDependencies` — it cannot declare one.** So all four entries were **inert**: npm never learned about the packages, consumers got no version range and no resolver signal, and nothing warned. The manifest meanwhile read as though the dependencies were declared and deliberately optional, which is why it survived review.
+
+  Three of the four are genuinely imported at runtime from adapter entry points — `adapters/express.ts`, `adapters/fastify.ts`, `adapters/hono.ts`.
+
+  Now declared as optional peers at the ranges the code is developed and tested against: `express@^5.0.0`, `fastify@^5.0.0`, `hono@^4.0.0`, `h3@^1.13.0`. The `peerDependenciesMeta` block is unchanged and now does what it was always meant to.
+
+  **Nothing breaks.** They were optional before by accident and are optional by declaration now; a consumer using the express adapter already has express. What changes is that npm can see them, warn on a genuinely incompatible version, and show them in the dependency tree.
+
+  Guarded by a new architecture invariant (`peer-meta-declared`) asserting that no `peerDependenciesMeta` entry may lack a matching `peerDependencies` entry — stated on the output condition rather than on the four names that happened to be found, and mutation-checked by re-introducing the defect.
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.7.0
+
+## 0.7.0-pre.16
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.16
+
+## 0.7.0-pre.12
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.12
+
+## 0.7.0-pre.9
+
+### Patch Changes
+
+- Actually declare the framework peers that `peerDependenciesMeta` was annotating.
+
+  The published manifest through `0.7.0-pre.8` looked like this:
+
+  ```json
+  "peerDependencies":     { "@noy-db/hub": "0.7.0-pre.8" },
+  "peerDependenciesMeta": { "h3": {...}, "hono": {...}, "express": {...}, "fastify": {...} }
+  ```
+
+  **`peerDependenciesMeta` only annotates a peer that already exists in `peerDependencies` — it cannot declare one.** So all four entries were **inert**: npm never learned about the packages, consumers got no version range and no resolver signal, and nothing warned. The manifest meanwhile read as though the dependencies were declared and deliberately optional, which is why it survived review.
+
+  Three of the four are genuinely imported at runtime from adapter entry points — `adapters/express.ts`, `adapters/fastify.ts`, `adapters/hono.ts`.
+
+  Now declared as optional peers at the ranges the code is developed and tested against: `express@^5.0.0`, `fastify@^5.0.0`, `hono@^4.0.0`, `h3@^1.13.0`. The `peerDependenciesMeta` block is unchanged and now does what it was always meant to.
+
+  **Nothing breaks.** They were optional before by accident and are optional by declaration now; a consumer using the express adapter already has express. What changes is that npm can see them, warn on a genuinely incompatible version, and show them in the dependency tree.
+
+  Guarded by a new architecture invariant (`peer-meta-declared`) asserting that no `peerDependenciesMeta` entry may lack a matching `peerDependencies` entry — stated on the output condition rather than on the four names that happened to be found, and mutation-checked by re-introducing the defect.
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.9
+
+## 0.7.0-pre.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.8
+
+## 0.7.0-pre.7
+
+### Minor Changes
+
+- **Breaking for old clients:** the `409` body no longer discloses the winning writer's version (#1218).
+
+  `createRestHandler`'s CAS-conflict response was `409 { error: { name, message, version } }`. The `version` field is **another principal's progress counter**. A client able to provoke a 409 could learn how far a writer it may hold no read grant for had advanced a record, and by repetition turn that into a write-activity oracle. It is now `409 { error: { name, message } }`.
+
+  ⚠️ **If you are on `@noy-db/to-rest@0.7.0-pre.0` or earlier, upgrade to `0.7.0-pre.1`+ before taking this.** That client _required_ `version` to re-hydrate the error; without it a CAS conflict arrives as a **generic `Error`**, `isConflictError()` returns `false`, and conflict handling silently stops running — retry loops rethrow, and the sync engine misfiles the conflict with no resolution. `to-rest@0.7.0-pre.1` keys off `name` alone and defaults `version` to `NaN`, and handles both the old and new payload; that is why it shipped first. Any other client that keys off `version` needs the same change.
+
+  `name` remains load-bearing and will not be renamed: it is how a client identifies the error. The 409 still means _"your write lost"_ — the client re-reads to learn what won, at the cost of one round trip.
+
+  **Unchanged:** `ConflictError.version` itself, which is still carried in-process and which the sync engine needs. This is the transport boundary only.
+
+  Known consequence, not fixed here: hub's schema-manifest writer forwards a caught conflict's version into `ManifestConflictError`, so a manifest write losing a CAS race **over a REST store** now reports `foundVersion: NaN`. The conflict is still detected and still refused; only the reported number degrades. Hub's CAS retry loops re-read rather than using the value and are unaffected.
+
+## 0.7.0-pre.6
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.6
+
+## 0.7.0-pre.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.5
+
+## 0.7.0-pre.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.4
+
+## 0.7.0-pre.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.3
+
+## 0.7.0-pre.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.2
+
+## 0.7.0-pre.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.1
+
+## 0.7.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.7.0-pre.0
+
+## 0.6.0
+
+### Major Changes
+
+- **BREAKING (security):** `@noy-db/in-rest` no longer unlocks vaults or handles plaintext. The server is now a ciphertext relay that proxies only `EncryptedEnvelope`s.
+
+  Closes #963 finding 2 (external security review): the old server took the vault passphrase server-side, held unlocked vault handles in an in-memory session store, and returned/accepted decrypted records — so a compromised or curious REST host could read plaintext. It now exposes a single `POST {basePath}/rpc` endpoint that forwards the six `NoydbStore` methods (`get`/`put`/`delete`/`list`/`loadAll`/`saveAll`, plus optional `ping`/`listSince`/`listPage`/`listVaults`) straight to the store and returns envelopes unchanged. Unlock, decryption, and the query DSL move to the client — the same zero-knowledge boundary every other storage backend honors.
+
+  Removed: the `/sessions/*` unlock/session routes, the plaintext `/vaults/*` record + query routes, server-side query parsing, and the in-memory session store. `RestHandlerOptions` drops `user` and `ttlSeconds` and adds a **fail-closed** `authorize?: (req) => boolean | Promise<boolean>` (omit it and every request is `401`) plus an optional `allow` method allowlist for read-only relays. A CAS conflict now surfaces as `409 { error: { name: 'ConflictError', version } }`.
+
+  `@noy-db/in-nuxt` adapts to the new handler: its module `rest` options drop `user`/`ttlSeconds` and gain a server-only `authToken` (kept off the public runtime config), wired into a bearer authorizer.
+
+  Migrate REST clients to a `to-rest` `NoydbStore` (the HTTP mirror of `by-peer`'s `peerStore()`) — tracked in the `noy-db-to` companion repo.
+
+### Patch Changes
+
+- Vocabulary: the user-facing text in these packages now says "secret", matching the `createNoydb` option and the `secret-*` API family. `WebAuthnPRFUnavailableError`'s message told callers to "use the passphrase instead" — an identifier that has not existed since the 0.4.0-pre rename.
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0
+
+## 0.6.0-pre.24
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.24
+
+## 0.6.0-pre.23
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.23
+
+## 0.6.0-pre.22
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.22
+
+## 0.6.0-pre.21
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.21
+
+## 0.6.0-pre.20
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.20
+
+## 0.6.0-pre.19
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.19
+
+## 0.6.0-pre.18
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.18
+
+## 0.6.0-pre.17
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.17
+
+## 0.6.0-pre.16
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.16
+
+## 0.6.0-pre.15
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.15
+
+## 0.6.0-pre.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.14
+
+## 0.6.0-pre.13
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.13
+
+## 0.6.0-pre.12
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.12
+
+## 0.6.0-pre.11
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.11
+
+## 0.6.0-pre.10
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.10
+
+## 0.6.0-pre.9
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.9
+
+## 0.6.0-pre.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.8
+
+## 0.6.0-pre.7
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.7
+
+## 0.6.0-pre.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.6
+
+## 0.6.0-pre.5
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.5
+
+## 0.6.0-pre.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.4
+
+## 0.6.0-pre.3
+
+### Patch Changes
+
+- Vocabulary: the user-facing text in these packages now says "secret", matching the `createNoydb` option and the `secret-*` API family. `WebAuthnPRFUnavailableError`'s message told callers to "use the passphrase instead" — an identifier that has not existed since the 0.4.0-pre rename.
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.3
+
+## 0.6.0-pre.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.2
+
+## 0.6.0-pre.0
+
+### Major Changes
+
+- **BREAKING (security):** `@noy-db/in-rest` no longer unlocks vaults or handles plaintext. The server is now a ciphertext relay that proxies only `EncryptedEnvelope`s.
+
+  Closes #963 finding 2 (external security review): the old server took the vault passphrase server-side, held unlocked vault handles in an in-memory session store, and returned/accepted decrypted records — so a compromised or curious REST host could read plaintext. It now exposes a single `POST {basePath}/rpc` endpoint that forwards the six `NoydbStore` methods (`get`/`put`/`delete`/`list`/`loadAll`/`saveAll`, plus optional `ping`/`listSince`/`listPage`/`listVaults`) straight to the store and returns envelopes unchanged. Unlock, decryption, and the query DSL move to the client — the same zero-knowledge boundary every other storage backend honors.
+
+  Removed: the `/sessions/*` unlock/session routes, the plaintext `/vaults/*` record + query routes, server-side query parsing, and the in-memory session store. `RestHandlerOptions` drops `user` and `ttlSeconds` and adds a **fail-closed** `authorize?: (req) => boolean | Promise<boolean>` (omit it and every request is `401`) plus an optional `allow` method allowlist for read-only relays. A CAS conflict now surfaces as `409 { error: { name: 'ConflictError', version } }`.
+
+  `@noy-db/in-nuxt` adapts to the new handler: its module `rest` options drop `user`/`ttlSeconds` and gain a server-only `authToken` (kept off the public runtime config), wired into a bearer authorizer.
+
+  Migrate REST clients to a `to-rest` `NoydbStore` (the HTTP mirror of `by-peer`'s `peerStore()`) — tracked in the `noy-db-to` companion repo.
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.6.0-pre.0
+
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.5.0
+
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0
+
+## 0.4.0-pre.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.12
+
+## 0.4.0-pre.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.11
+
+## 0.4.0-pre.10
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.10
+
+## 0.4.0-pre.9
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.9
+
+## 0.4.0-pre.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.8
+
+## 0.4.0-pre.7
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.7
+
+## 0.4.0-pre.6
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.6
+
+## 0.4.0-pre.5
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.5
+
+## 0.4.0-pre.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.4
+
+## 0.4.0-pre.3
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.3
+
+## 0.4.0-pre.2
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.2
+
+## 0.4.0-pre.1
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.1
+
+## 0.4.0-pre.0
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.4.0-pre.0
+
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0
+
+## 0.3.0-pre.13
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.13
+
+## 0.3.0-pre.12
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.12
+
+## 0.3.0-pre.11
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.11
+
+## 0.3.0-pre.10
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.10
+
+## 0.3.0-pre.9
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.9
+
+## 0.3.0-pre.8
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.8
+
+## 0.3.0-pre.7
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.7
+
+## 0.3.0-pre.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.6
+
+## 0.3.0-pre.5
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.5
+
+## 0.3.0-pre.4
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.4
+
+## 0.3.0-pre.3
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.3
+
+## 0.3.0-pre.2
+
+### Minor Changes
+
+- 0.3 version line continues — lockstep with `@noy-db/hub` 0.3.0-pre.2 (describe() group/order metadata, \_history in the .noydb pod; see the hub changelog). No package-specific changes beyond the hub realignment.
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.2
+
+## 0.3.0-pre.1
+
+### Minor Changes
+
+- 0.3 version line — lockstep with `@noy-db/hub` 0.3.0-pre.1 (kernel/enclave reorg, family doors, `withX()` service gating; see the hub changelog). No package-specific changes beyond the hub realignment.
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.3.0-pre.1
+
+## 0.2.0-pre.31
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.2.0-pre.31
+
+## 0.2.0-pre.5
+
+Version-only lockstep bump; no source changes since pre.4.
+
+## 0.2.0-pre.4
+
+Version-only lockstep bump; no source changes since pre.3.
+
+## 0.2.0-pre.3
+
+Version-only lockstep bump; no source changes since pre.2.
+
+## 0.2.0-pre.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.2.0-pre.2
+
+## 0.2.0-pre.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.2.0-pre.1
+
+## 0.1.0-pre.16
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.1.0-pre.16
+
+## 0.1.0-pre.15
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.1.0-pre.15
+
+## 0.1.0-pre.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.1.0-pre.14
+
+## 0.1.0-pre.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.1.0-pre.12
+
+## 0.1.0-pre.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.1.0-pre.11
+
+## 0.1.0-pre.9
+
+### Patch Changes
+
+- Updated dependencies — @noy-db/hub@0.1.0-pre.9
+
+## 0.1.0-pre.8
+
+### Patch Changes
+
+- Updated dependencies — @noy-db/hub@0.1.0-pre.8
+
+## 0.1.0-pre.7
+
+### Patch Changes
+
+- Updated dependencies
+  - @noy-db/hub@0.1.0
+
+## 0.1.0-pre.6
+
+### Patch Changes
+
+- # v0.1.0-pre.6 — Per-principal user envelope + pilot-1 client-API unblockers
+
+  ## Per-principal user envelope (`vault.user.*`)
+
+  Every keyring in a vault now gets its own `_users/<keyringId>` envelope, encrypted under a vault-shared `_users` DEK. Hub owns the plumbing (storage, sync, history, lifecycle, encryption, policy gates); apps own the schema. The reference shape lives in the showcase and recipe as copy-paste material — `import { type UserShape } from '@noy-db/hub'` is intentionally NOT a thing.
+
+  ### New API on every Vault
+
+  ```ts
+  // Write-self — own keyringId only (own-only write rule, structural)
+  vault.user.me<T>(): Promise<UserEnvelope<T> | null>
+  vault.user.updateMe<T>(patch: DeepPartial<T>, presented?): Promise<UserEnvelope<T>>
+  vault.user.setMe<T>(payload: T, presented?): Promise<UserEnvelope<T>>
+
+  // Read-anyone — gated by view-team-profiles (default minTier: 2)
+  vault.user.get<T>(keyringId, presented?): Promise<UserEnvelope<T> | null>
+  vault.user.list<T>(presented?): Promise<UserEnvelope<T>[]>
+
+  // Reactive — fires on local writes
+  vault.user.subscribe<T>(keyringId, cb): Unsubscribe
+  vault.user.live<T>(keyringId): LiveUserEnvelope<T>
+  ```
+
+  ### New built-in policy gates
+
+  | Gate                 | PERSONAL_POLICY  | STRICT_POLICY                                    |
+  | -------------------- | ---------------- | ------------------------------------------------ |
+  | `edit-own-profile`   | `{ minTier: 3 }` | `{ minTier: 2, factors: [{ anyOf: ['totp'] }] }` |
+  | `view-team-profiles` | `{ minTier: 2 }` | `{ minTier: 2 }`                                 |
+
+  `view-team-profiles.enabled: false` is the privacy-strict opt-out — `vault.user.list()` silently returns `[me]` only; `vault.user.get(other)` throws `PolicyDeniedError`. The own-only write rule is structural — no policy can relax it.
+
+  ### New on `db.grant()`
+
+  `initialProfile?: T` — admin pre-fill for the new principal's first envelope, seeded under the caller's `_users` DEK. Once the user activates, the own-only rule prevents further admin edits. Bootstrap-only.
+
+  ### New on `team/keyring.ts`
+
+  `listUsersWithEnvelopes<T>(adapter, vault, dek)` — joined enumeration of keyrings + their envelopes. Convenience for admin UIs.
+
+  ### Lifecycle binding
+
+  - `createOwnerKeyring()` eager-provisions the `_users` DEK at vault creation; every subsequent `grant()` propagates it via the existing system-collection branch.
+  - `revoke()` cascade-deletes the principal's envelope alongside the keyring.
+  - DEK rotation re-encrypts every `_users/*` envelope under the fresh DEK (free, since `_users` is in the affected collections set).
+
+  ## Client-API unblockers for pilot-1
+
+  ### `db.enrollWebAuthn(vault, ceremony, presented?)`
+
+  Native WebAuthn enrollment using the **real** internal keyring. Unblocks `pilot-1#31`. The ceremony callback receives the live `UnlockedKeyring` so the `wrapped_kek` references the live KEK (not a synthetic app-layer payload that fails at unlock time). Hub does not import `@noy-db/on-webauthn` (would invert dep graph); consumers wire the on-webauthn `enrollWebAuthn` function in via the ceremony callback.
+
+  ### `db.listWebAuthnSlots(vault)`
+
+  Filter the slot list to webauthn-method slots only. Returns `id`, `enrolledAt`, `credentialId` — useful for "you have N WebAuthn credentials" UI surfaces and `allowCredentials` lookups.
+
+  ### `db.lockVault(vault)`
+
+  Soft-lock that scrubs `keyringCache`, `vaultCache`, `activeTier`, `syncEngines`, `policyEnforcers` for the vault — but preserves `quickUnlock` (PIN resume after lock-screen UX) and `policyCache` (on-disk policy survives lock). Idempotent; the `Noydb` instance remains usable. Unblocks `pilot-1#33`.
+
+  ## Forward-compat (documented, not exported in v1)
+
+  The `UserProfileProvider` interface is documented in `docs/services/user-envelope.md` and `docs/superpowers/specs/2026-05-05-user-envelope-design.md`. Implementation lands post-1.0 alongside managed-passphrase mode (#14).
+
+  ## Documentation
+
+  - `docs/services/user-envelope.md` — full subsystem reference
+  - `docs/recipes/user-preferences.md` — reference shape pattern
+  - `showcases/src/70-user-envelope.showcase.test.ts` — Hub API end-to-end (vitest)
+  - `showcases/src/recipe-user-preferences.recipe.test.ts` — runnable recipe (vitest)
+  - `features.yaml` — registered (validates clean: 26 features, 6 recipes)
+
+  ## Tests
+
+  - 41 new user-envelope tests (storage, API, lifecycle, gates, team integration)
+  - 6 new enroll-webauthn tests
+  - 7 new lock-vault tests
+  - Hub suite: 1297/1297 green. Full repo: 2338/2338 green.
+
+  ## Breaking changes
+
+  None. All additions are additive; default behavior of pre-existing vaults is unchanged. Pre-existing vaults have a documented one-time DEK-rotate workflow when adopting `vault.user.*` for multi-principal reads (see "Edge cases & limits" in `docs/services/user-envelope.md`).
+
+  ## Issues closed
+
+  - #16 — feat(hub): db.enrollWebAuthn() — native WebAuthn enrollment using real keyring
+  - #17 — feat(hub): db.lockVault() — soft lock that clears DEKs without destroying the instance
+  - #18 — feat(hub): \_meta/user/<keyringId> envelope storage primitive
+  - #19 — feat(hub): vault.user.\* API surface + own-only write rule
+  - #20 — feat(hub): keyring lifecycle binding for user envelope (grant/revoke + initialProfile)
+  - #21 — feat(hub): magic-link grant — initialProfile bootstrap (closed as scope-corrected; covered by #20 via GrantOptions.initialProfile on the regular grant path; team/magic-link-grant.ts is tier delegation, not user creation)
+  - #22 — feat(hub): policy gates edit-own-profile + view-team-profiles
+  - #23 — feat(hub): team integration — listKeyringsWithUsers() + presence displayName
+  - #24 — showcase: 70-user-envelope + recipe-user-preferences (vitest)
+  - #25 — docs(user-envelope): subsystem doc + SUBSYSTEMS.md anchor + features.yaml registry
+
+- Updated dependencies
+  - @noy-db/hub@0.1.0

@@ -1,0 +1,45 @@
+{
+  "name": "@noy-db/in-devtools",
+  "version": "0.7.1-pre.0",
+  "description": "Framework-agnostic read-only inspector for a live noy-db — vaults, collections, schema, stats, records, and live writes.",
+  "license": "MIT",
+  "type": "module",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@noy-db/hub": "workspace:^"
+  },
+  "devDependencies": {
+    "@noy-db/hub": "workspace:*",
+    "@noy-db/to-meter": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/in-devtools"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/in-devtools#readme"
+}

@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
+import { createNoydb } from '../../src/kernel/noydb.js'
+import { toMemory } from '../../../to-memory/src/index.js'
+import { coordinatedCutover } from '../../src/with-shape/schema-update/index.js'
+import type { NoydbStore } from '../../src/kernel/types.js'
+
+const oldS = z.object({ id: z.string(), total: z.number() })
+const newS = z.object({ id: z.string(), amount: z.object({ gross: z.number() }) })
+const transform = (d: Record<string, unknown>) => ({ id: d['id'], amount: { gross: d['total'] } })
+
+async function open(store: NoydbStore) {
+  const db = await createNoydb({ store, user: 'a', secret: 'fence-state-pass-1234' })
+  return { db, vault: await db.openVault('demo') }
+}
+
+describe('vault.schemaFenceState()', () => {
+  it('reports normal generation 0 on a fresh vault', async () => {
+    const { vault } = await open(toMemory())
+    expect(await vault.schemaFenceState()).toEqual({ currentSchemaVersion: 0, fenceState: 'normal' })
+  })
+
+  it('reflects the bumped generation after a completed cutover', async () => {
+    const store = toMemory()
+    let v = (await open(store)).vault
+    const o = v.collection('invoices', { schema: oldS, persistJsonSchema: true })
+    await v._drainPendingSchemaWrites()
+    await o.put('i1', { id: 'i1', total: 100 })
+
+    v = (await open(store)).vault
+    v.collection('invoices', { schema: newS, persistJsonSchema: true, schemaUpdate: [coordinatedCutover({ transform })] })
+    await v._drainPendingSchemaWrites()
+    await v.runSchemaCutover()
+
+    // #1197: `schemaHash` MUST survive the cutover's drain transitions. This
+    // assertion was `toEqual({ currentSchemaVersion, fenceState })` and passed
+    // only because every transition erased the hash — an existing test pinning
+    // the defect as expected output. #946 added the field precisely so
+    // "generation N = which schema content" is answerable from here alone.
+    const fence = await v.schemaFenceState()
+    expect(fence.currentSchemaVersion).toBe(1)
+    expect(fence.fenceState).toBe('normal')
+    expect(fence.schemaHash).toEqual(expect.any(String))
+  })
+})

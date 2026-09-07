@@ -1,0 +1,65 @@
+{
+  "name": "@noy-db/by-tabs",
+  "version": "0.7.1-pre.0",
+  "description": "BroadcastChannel multi-tab transport for noy-db — sync between tabs of the same browser without round-tripping the storage backend",
+  "license": "MIT",
+  "author": "vLannaAi <vicio@lanna.ai>",
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/by-tabs#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/by-tabs"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@noy-db/by-peer": "workspace:^",
+    "@noy-db/hub": "workspace:^"
+  },
+  "devDependencies": {
+    "@noy-db/by-peer": "workspace:*",
+    "@noy-db/hub": "workspace:*",
+    "happy-dom": "^18.0.0"
+  },
+  "keywords": [
+    "noy-db",
+    "by-tabs",
+    "broadcast-channel",
+    "multi-tab",
+    "tab-sync",
+    "browser",
+    "realtime",
+    "sync",
+    "encryption",
+    "zero-knowledge"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  }
+}

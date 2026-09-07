@@ -1,0 +1,816 @@
+/**
+ * Multi-record atomic transactions.
+ *
+ * Lets an application stage writes across two or more collections (or
+ * vaults) and commit them all-or-nothing.
+ *
+ * ```ts
+ * await db.transaction(async (tx) => {
+ *   const inv = tx.vault('acme').collection<Invoice>('invoices')
+ *   const pay = tx.vault('acme').collection<Payment>('payments')
+ *   await inv.put(invoiceId, { ...invoice, status: 'paid' })
+ *   await pay.put(paymentId, { invoiceId, amount, paidAt })
+ * })
+ * // If the body throws before returning: nothing persisted.
+ * // If the body returns: all puts committed; any CAS mismatch rolls
+ * // the batch back and surfaces as ConflictError.
+ * ```
+ *
+ * ## Atomicity semantics
+ *
+ * Ops are buffered during the body. On body-return the hub:
+ *
+ * 0. **Drain (#1420)** — waits out any plain `Collection.put()` /
+ *    `.delete()` already in flight on a key this commit touches, so
+ *    the pre-flight below reads a version that includes it. Without
+ *    this the pre-flight cannot see a write that has STARTED but not
+ *    yet reached the store, and one of the two writes vanishes with
+ *    both reporting success.
+ * 1. **Pre-flight** — re-reads every touched envelope and enforces
+ *    any caller-supplied `expectedVersion`. A mismatch throws
+ *    `ConflictError` with *no* writes performed.
+ * 2. **Execute** — re-validates each op's `expectedVersion` against
+ *    the CURRENT stored version (#1420 — the pre-flight's verdict is
+ *    otherwise unchecked all the way to the write, and this path
+ *    carries no store-level CAS the way the atomic one does), then
+ *    calls `Collection.put()` / `.delete()` for each staged op in
+ *    declaration order. History snapshots, ledger appends, and change
+ *    events fire as normal per op.
+ * 3. **Unwind on failure** — if step 2 throws mid-batch, each
+ *    already-committed op is reverted via the raw store (restoring
+ *    the captured prior envelope, or deleting if none existed). The
+ *    ledger is NOT rewritten — audit history preserves the partial
+ *    commit and the revert.
+ *
+ * **Atomic delegation (#906).** Steps 1–3 above describe the OCC
+ * fallback. When the store declares `StoreCapabilities.txAtomic` AND
+ * implements `tx()`, AND the staged batch is statically safe
+ * (`canCommitAtomically` — see `atomic-eligibility.ts`), the commit
+ * instead: prepares every op through `Collection._preparePut` /
+ * `_prepareDelete` (encrypt, resolve the prior version, mint the #589
+ * marker — no observable side effect), submits the whole write set as
+ * ONE `store.tx(ops)` call with a per-leg `expectedVersion`, then
+ * finalizes each op in staged order. The visible difference: history
+ * snapshots, ledger entries and change events all fire AFTER the bytes
+ * are durable, instead of interleaving per op.
+ *
+ * **Crash window.** On the OCC fallback, steps 2–3 are not a
+ * storage-layer transaction — if the process dies between two executed
+ * ops, the on-disk state is partial. The atomic path above closes that
+ * window for the write set itself (`to-memory` and the SQL stores in
+ * `noy-db-to` implement `tx()`); a crash between the batch landing and
+ * the finalize loop finishing still leaves per-op side effects (history,
+ * ledger, cache) incomplete. Stores that cannot commit a batch
+ * atomically (file, S3) omit `tx()` and keep the fallback.
+ *
+ * ## Not covered
+ *
+ * - Cross-sync-peer atomicity. Transactions commit against the
+ *   primary store only; the sync engine pushes on its normal
+ *   schedule. For cross-peer two-phase commit use `SyncTransaction`
+ * via `db.transaction(vaultName)`.
+ * - Read-your-writes within the body. `tx.collection().get(id)`
+ *   returns the most-recently-staged value for that id when one
+ *   exists; if no staged op has touched the id, it reads the current
+ *   committed state. Version numbers returned by `get` reflect the
+ *   pre-transaction state (staged puts have no version yet).
+ *
+ * @module
+ */
+
+import type { Noydb } from '../../kernel/noydb.js'
+import type { Vault } from '../../kernel/vault.js'
+import type { Collection } from '../../kernel/collection.js'
+import type { EncryptedEnvelope, TxOp } from '../../kernel/types.js'
+import type { PreparedPut, PreparedDelete } from '../../kernel/prepared-write.js'
+import { canCommitAtomically } from './atomic-eligibility.js'
+import {
+  AmendmentForbiddenError,
+  ConflictError,
+  InvariantError,
+  ValidationError,
+} from '../../kernel/errors.js'
+import { generateULID } from '../../with-pod/ulid.js'
+import type { GuardExecutor as GuardExecutorModule } from '../../with-audit/guards/executor.js'
+import type { LedgerEntry } from '../history/ledger/entry.js'
+import type { TransactionInvariant } from './invariants.js'
+import type { GuardChange, GuardContext, ReadOnlyVaultFacade } from '../../with-audit/guards/types.js'
+import { bestEffortRevert } from '../../kernel/best-effort-revert.js'
+import { drainKeyedWrites } from '../../kernel/tx-write-gate.js'
+
+/** One op buffered inside a running `TxContext`. @internal */
+export interface StagedOp {
+  type: 'put' | 'delete'
+  vaultName: string
+  collectionName: string
+  id: string
+  record?: unknown
+  expectedVersion?: number
+  /**
+   * Optional human-readable tag forwarded to the resulting ledger
+   * entry's `reason` field. Set by callers via
+   * `tx.vault(v).collection(c).put(id, record, { reason })`.
+   */
+  reason?: string
+}
+
+/**
+ * One executed op (main staged op or recursive side-effect like a
+ * derivation output) paired with the envelope captured before the write.
+ * `revertExecuted` walks this array in reverse on rollback.
+ * @internal
+ */
+export interface ExecutedOp {
+  op: StagedOp
+  priorEnvelope: EncryptedEnvelope | null
+}
+
+/**
+ * Options accepted by `db.transaction({ amendment, reason }, fn)`.
+ * Only the amendment variant uses these — a plain `db.transaction(fn)`
+ * never sees this shape.
+ */
+export interface AmendmentTxOptions {
+  /** Opt into amendment mode. Required to be `true`. */
+  readonly amendment: true
+  /** Human-readable rationale recorded in the ledger entry. Required. */
+  readonly reason: string
+}
+
+/**
+ * Transaction handle passed to the user's body. Use
+ * `tx.vault(name).collection<T>(name)` to get a per-collection
+ * facade; its `put`/`delete`/`get` calls stage ops against the tx.
+ */
+export class TxContext {
+  /** Stable id for this transaction; shared by all writes it performs. */
+  readonly txId: string = generateULID()
+  /** @internal */
+  readonly _ops: StagedOp[] = []
+  /**
+   * @internal — write log built up in Phase 2. Each entry records the
+   * envelope captured BEFORE the write so a mid-batch failure can
+   * restore prior state via `revertExecuted`. Side-effect writes (e.g.
+   * recursive derivation outputs fired inside `Collection.put`) are
+   * appended here in execution order so they roll back alongside the
+   * main staged ops.
+   */
+  readonly _executed: ExecutedOp[] = []
+  /** @internal */
+  readonly _db: Noydb
+  /**
+   * @internal — true when this TxContext was opened in amendment
+   * mode. Toggles the lazy-`beginAmendment` + role-check path on first
+   * `tx.vault(name)` and unlocks the post-Phase-2 invariant + audit run.
+   */
+  readonly _amendment: boolean
+  /** @internal — vaults that have already had `beginAmendment` called. */
+  readonly _amendmentVaults = new Map<string, Vault>()
+
+  /** @internal */
+  constructor(db: Noydb, amendment = false) {
+    this._db = db
+    this._amendment = amendment
+  }
+
+  /** Scope subsequent `collection()` calls to the named vault. */
+  vault(name: string): TxVault {
+    const v = this._db.vault(name)
+    if (this._amendment && !this._amendmentVaults.has(name)) {
+      // Role check is per-vault. The task spec ("only admin or owner
+      // can open an amendment") is implemented lazy-on-first-touch
+      // because the role lives on the vault's keyring, and `tx.vault()`
+      // is the first place we know which vault we're addressing. The
+      // observable effect is identical to an eager check in the single-
+      // vault case the tests exercise; multi-vault amendments check
+      // each touched vault as they first appear.
+      const role = v.role
+      // FR-6: custodian is admin-rank for operational mutations, and an
+      // amendment is an operational (data-correcting) act — not an ownership
+      // meta-capability — so custodian is allowed alongside owner/admin.
+      if (role !== 'admin' && role !== 'owner' && role !== 'custodian') {
+        throw new AmendmentForbiddenError(v.userId, role)
+      }
+      // Amendments require an initialised guard registry — they
+      // produce a structured invariant + change-set audit. A vault
+      // opened without `guardStrategies` (or via the sync fallback
+      // path) has a null registry and cannot run an amendment.
+      const reg = v._getGuardRegistry()
+      if (reg === null) {
+        throw new ValidationError(
+          `Vault "${name}": amendment mode requires at least one ` +
+          `guardStrategy registered via createNoydb({ guardStrategies }). ` +
+          `Open the vault with guardStrategies before calling ` +
+          `db.transaction({ amendment: true }).`,
+        )
+      }
+      reg.beginAmendment()
+      this._amendmentVaults.set(name, v)
+    }
+    return new TxVault(this, v)
+  }
+}
+
+/** Per-vault facade inside a running transaction. */
+export class TxVault {
+  /** @internal */
+  readonly _ctx: TxContext
+  /** @internal */
+  readonly _vault: Vault
+
+  /** @internal */
+  constructor(ctx: TxContext, vault: Vault) {
+    this._ctx = ctx
+    this._vault = vault
+  }
+
+  /** Scope subsequent op calls to the named collection. */
+  collection<T>(name: string): TxCollection<T> {
+    const c = this._vault.collection<T>(name)
+    return new TxCollection<T>(this._ctx, this._vault, c, name)
+  }
+}
+
+/** Per-collection facade inside a running transaction. */
+export class TxCollection<T> {
+  /** @internal */
+  readonly _ctx: TxContext
+  /** @internal */
+  readonly _vault: Vault
+  /** @internal */
+  readonly _coll: Collection<T>
+  /** @internal */
+  readonly _name: string
+
+  /** @internal */
+  constructor(ctx: TxContext, vault: Vault, coll: Collection<T>, name: string) {
+    this._ctx = ctx
+    this._vault = vault
+    this._coll = coll
+    this._name = name
+  }
+
+  /**
+   * Read the current committed value, or the most-recently-staged
+   * value from the same transaction if one exists.
+   */
+  async get(id: string): Promise<T | null> {
+    for (let i = this._ctx._ops.length - 1; i >= 0; i--) {
+      const op = this._ctx._ops[i]!
+      if (
+        op.vaultName === this._vault.name &&
+        op.collectionName === this._name &&
+        op.id === id
+      ) {
+        if (op.type === 'delete') return null
+        return op.record as T
+      }
+    }
+    return this._coll.get(id)
+  }
+
+  /**
+   * Stage a put. Does not write until the transaction body returns.
+   * Supply `{ expectedVersion }` to enforce optimistic concurrency
+   * during the commit pre-flight.
+   */
+  put(id: string, record: T, options?: { expectedVersion?: number; reason?: string }): void {
+    const op: StagedOp = {
+      type: 'put',
+      vaultName: this._vault.name,
+      collectionName: this._name,
+      id,
+      record,
+    }
+    if (options?.expectedVersion !== undefined) op.expectedVersion = options.expectedVersion
+    if (options?.reason !== undefined) op.reason = options.reason
+    this._ctx._ops.push(op)
+  }
+
+  /**
+   * Stage a delete. Does not write until the transaction body returns.
+   * Supply `{ expectedVersion }` to enforce optimistic concurrency
+   * during the commit pre-flight.
+   */
+  delete(id: string, options?: { expectedVersion?: number }): void {
+    const op: StagedOp = {
+      type: 'delete',
+      vaultName: this._vault.name,
+      collectionName: this._name,
+      id,
+    }
+    if (options?.expectedVersion !== undefined) op.expectedVersion = options.expectedVersion
+    this._ctx._ops.push(op)
+  }
+}
+
+/**
+ * Commit plan: pre-flight check + execution + revert plan.
+ *
+ * @internal — driven by `withTransactions()` (via `tx/active.ts`) for
+ * user-facing `db.transaction(...)` calls and by the `amendment` path
+ * in `noydb.ts`. `Collection.putManyAtomic` runs its own Phase 2 loop
+ * but shares the `_activeTxContext` mechanism (and the `revertExecuted`
+ * helper) so nested side-effect derivation writes get registered for
+ * revert alongside the bulk-put source ops.
+ */
+export async function runTransaction<T>(
+  db: Noydb,
+  fn: (tx: TxContext) => Promise<T> | T,
+  options?: AmendmentTxOptions,
+  txInvariants?: ReadonlyArray<TransactionInvariant>,
+): Promise<T> {
+  // ─── Amendment-mode pre-flight ───────────────────────────────
+  // `reason` is the only thing we can validate before the body runs;
+  // the per-vault role check happens lazily on first `tx.vault(name)`
+  // because we don't know which vaults the body will touch ahead of
+  // time. Throwing here keeps the failure mode close to the call site
+  // so the developer doesn't have to walk an async stack to find the
+  // missing-reason mistake.
+  if (options?.amendment) {
+    if (typeof options.reason !== 'string' || options.reason.trim().length === 0) {
+      throw new ValidationError(
+        'db.transaction({ amendment: true }) requires a non-empty `reason` string.',
+      )
+    }
+  }
+
+  const ctx = new TxContext(db, options?.amendment === true)
+  const bodyResult = await fn(ctx)
+
+  if (ctx._ops.length === 0) {
+    // Body produced no ops. If amendment mode was active we still
+    // need to close any opened windows so a subsequent (unrelated)
+    // write doesn't surprise-collect into a stale change-set. Each
+    // `beginAmendment` is matched by exactly one `consumeChanges`.
+    if (ctx._amendment) {
+      for (const v of ctx._amendmentVaults.values()) {
+        // Registry is guaranteed non-null here — `tx.vault(name)`
+        // threw above if it was null before adding to
+        // `_amendmentVaults`.
+        const reg = v._getGuardRegistry()
+        if (reg !== null) {
+          reg.consumeChanges()
+          reg.consumeMeta()
+        }
+      }
+    }
+    return bodyResult
+  }
+
+  // Phase 1 — pre-flight: snapshot every touched envelope and enforce
+  // any caller-supplied expectedVersion. Same (vault, coll, id) touched
+  // more than once in one tx snapshots only the *initial* committed
+  // state; the in-order replay in Phase 2 takes care of successor ops.
+  const priorEnvelopes = new Map<string, EncryptedEnvelope | null>()
+  const store = db._store
+
+  // #1420 — before the first pre-flight read, wait out any plain
+  // `Collection.put()`/`.delete()` already in flight on a key this commit is
+  // about to touch. Without it the pre-flight's re-read cannot see a write
+  // that has started but not yet reached the store, so the check passes
+  // against a stale snapshot and one of the two writes vanishes with both
+  // reporting success. Draining makes the in-flight case behave exactly like
+  // the fully-awaited one, which the pre-flight below already handled
+  // correctly. Deadlock-free by construction — see `kernel/tx-write-gate.ts`.
+  await drainKeyedWrites(store, ctx._ops.map(keyOf))
+
+  // Commit-time changeset invariants need PLAINTEXT prior records
+  // for `before`, but `priorEnvelopes` holds ENCRYPTED envelopes. So for
+  // ops in a watched scope we additionally decrypt the prior record here,
+  // in Phase 1, BEFORE Phase 2 overwrites it. Snapshots only the initial
+  // committed state per (vault, coll, id), matching the envelope snapshot.
+  const invariants = txInvariants ?? []
+  const watchedScopes = new Set(invariants.map(i => i.scope))
+  const plainBefore = new Map<string, unknown>()
+
+  for (const op of ctx._ops) {
+    const key = keyOf(op)
+    if (!priorEnvelopes.has(key)) {
+      const env = await store.get(op.vaultName, op.collectionName, op.id)
+      priorEnvelopes.set(key, env)
+    }
+    if (watchedScopes.has(op.collectionName) && !plainBefore.has(key)) {
+      const prior = await db
+        .vault(op.vaultName)
+        .collection(op.collectionName)
+        .get(op.id)
+      plainBefore.set(key, prior ?? null)
+    }
+    if (op.expectedVersion !== undefined) {
+      const env = priorEnvelopes.get(key) ?? null
+      const actual = env?._v ?? 0
+      if (actual !== op.expectedVersion) {
+        throw new ConflictError(
+          actual,
+          `Transaction pre-flight: ${op.vaultName}/${op.collectionName}/${op.id} ` +
+            `expected v${op.expectedVersion}, found v${actual}`,
+        )
+      }
+    }
+  }
+
+  // Phase 2 — execute via the Collection layer so history snapshots,
+  // ledger entries, and change events fire normally. We capture each
+  // successful op so a mid-batch throw can revert in Phase 3.
+  //
+  // `_activeTxContext` is published on the Noydb instance for the
+  // duration of Phase 2 so recursive writes triggered inside
+  // `Collection.put` (today: eager derivation outputs) can register
+  // their own envelopes onto `ctx._executed` and roll back alongside
+  // the main staged ops. The `finally` clears it before the
+  // amendment commit phase runs.
+  db._setActiveTxContext(ctx)
+  try {
+    if (canCommitAtomically(db, ctx)) {
+      // #906 — the whole batch goes to the store as ONE `tx()` write set.
+      // Tracked here because the atomic path bypasses `Collection.put()`,
+      // which is where an ordinary write enters the queue: without this,
+      // `hub.writeQueue.pending` would read false for the entire commit.
+      // One tracked unit, not one per op — the batch IS one logical write.
+      await db._writeQueueTracker.track(() => commitAtomicBatch(db, ctx, priorEnvelopes))
+    } else {
+      const writtenKeys = new Set<string>()
+      try {
+        for (const op of ctx._ops) {
+          const coll = db.vault(op.vaultName).collection(op.collectionName)
+          const key = keyOf(op)
+          const prior = priorEnvelopes.get(key) ?? null
+          // #1420 — the per-op path replays through `Collection.put()`, which
+          // carries no CAS: whatever the pre-flight decided stands unchecked
+          // until the write lands. The atomic path re-validates by handing
+          // every leg an `expectedVersion` to `store.tx()`; this is that check
+          // for the path that has no store-level batch. Once THIS transaction
+          // has written the key its version has legitimately moved, so a
+          // second op on the same key is exempt — matching Phase 1, which
+          // snapshots (and checks) only the first occurrence per key.
+          if (op.expectedVersion !== undefined && !writtenKeys.has(key)) {
+            const current = await store.get(op.vaultName, op.collectionName, op.id)
+            const actual = current?._v ?? 0
+            if (actual !== op.expectedVersion) {
+              throw new ConflictError(
+                actual,
+                `Transaction execute: ${op.vaultName}/${op.collectionName}/${op.id} ` +
+                  `expected v${op.expectedVersion}, found v${actual}`,
+              )
+            }
+          }
+          // Record the revert plan BEFORE the call so a mid-`coll.put` throw
+          // (e.g. strict-mode derivation failure firing after `store.put`
+          // has already committed the envelope) still has its source write
+          // reverted. `revertExecuted` is best-effort: putting prior back is
+          // idempotent when the failing op never actually wrote, and
+          // `_invalidateCacheEntry` is a no-op when the collection isn't
+          // hydrated.
+          ctx._executed.push({ op, priorEnvelope: prior })
+          if (op.type === 'put') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await coll.put(op.id, op.record as any, op.reason !== undefined ? { reason: op.reason } : undefined)
+          } else {
+            await coll.delete(op.id)
+          }
+          writtenKeys.add(key)
+        }
+      } catch (err) {
+        // Phase 3 — best-effort revert. See helper docstring.
+        await revertExecuted(ctx._executed, store, db)
+        // Drain amendment windows so the next transaction starts clean.
+        if (ctx._amendment) {
+          for (const v of ctx._amendmentVaults.values()) {
+            const reg = v._getGuardRegistry()
+            if (reg !== null) {
+              reg.consumeChanges()
+              reg.consumeMeta()
+            }
+          }
+        }
+        throw err
+      }
+    }
+  } finally {
+    db._clearActiveTxContext(ctx)
+  }
+
+  // ─── Amendment commit phase (only if amendment === true) ────
+  // Body succeeded — now run each touched vault's invariants over the
+  // collected change-set, then append a structured ledger entry. If
+  // any invariant throws, treat it exactly like a mid-Phase-2 failure:
+  // revert every executed op and re-throw the InvariantError.
+  if (ctx._amendment) {
+    // Lazy-load GuardExecutor at the dispatch site — keeps the floor
+    // bundle free of the guards service when amendments aren't used.
+    // Mirrors the deferred-load pattern from elsewhere in this module.
+    const { GuardExecutor } = (await import('../../with-audit/guards/executor.js')) as {
+      GuardExecutor: typeof GuardExecutorModule
+    }
+    try {
+      for (const [vaultName, v] of ctx._amendmentVaults) {
+        const registry = v._getGuardRegistry()
+        // Registry is guaranteed non-null at this point — the
+        // `tx.vault(name)` path that populates `_amendmentVaults`
+        // throws if the registry is null. The defensive check here
+        // is for TypeScript's narrowing.
+        if (registry === null) continue
+        const changesByCollection = registry.consumeChanges()
+        const meta = registry.consumeMeta()
+        if (changesByCollection.size === 0) continue
+
+        const readOnlyVault = v._getReadOnlyFacade()
+        if (readOnlyVault === null) continue
+
+        // Build the invariant ctx once per vault — it's the same shape
+        // every guard sees on the normal `check` path, just with a
+        // synthetic `existing: null` (invariants get the full change
+        // set in their first parameter; `existing` is a per-record
+        // concept that doesn't apply here).
+        const invariantsPassed: string[] = []
+        for (const [collection, changes] of changesByCollection) {
+          const guards = registry.guardsFor(collection).filter(g => g.amendment !== undefined)
+          for (const guard of guards) {
+            await GuardExecutor.runInvariant(guard, changes, {
+              existing: null,
+              vault: readOnlyVault,
+              userId: v.userId,
+              role: v.role,
+            })
+          }
+          if (guards.length > 0) invariantsPassed.push(collection)
+        }
+
+        // Append the audit ledger entry. Silent no-op when the
+        // history strategy isn't configured — the records still
+        // committed, only the multi-record summary is unavailable.
+        const ledger = v._getLedgerOrNull()
+        if (ledger) {
+          const role = v.role as 'admin' | 'owner'
+          const amendment: NonNullable<LedgerEntry['amendment']> = {
+            reason: options!.reason,
+            role,
+            changes: meta,
+            invariantsPassed,
+          }
+          await ledger.append({
+            op: 'amendment',
+            collection: '',
+            id: '',
+            version: 0,
+            actor: v.userId,
+            // No payload to hash — the per-record entries already
+            // captured `payloadHash` at their own append time. We use
+            // a sha256 of the canonical reason string so the field is
+            // populated with something deterministic and non-empty.
+            payloadHash: '',
+            amendment,
+          })
+        }
+        void vaultName
+      }
+    } catch (err) {
+      await revertExecuted(ctx._executed, store, db)
+      throw err instanceof InvariantError ? err : new InvariantError(
+        err instanceof Error ? err.message : `invariant violated: ${String(err)}`,
+      )
+    }
+  }
+
+  // ─── Commit-time changeset invariant phase ───────────
+  // Runs for BOTH ordinary and amendment transactions (placed after the
+  // amendment phase so an amendment commit is still subject to these
+  // set-level constraints). Assemble the changeset from the executed
+  // staged ops, deduped to the LAST write per (vault, coll, id) while
+  // preserving write order, then group `GuardChange` by collection
+  // (scope) and run each matching invariant. A throw mirrors the
+  // amendment-phase failure mode exactly: revert every executed op and
+  // re-throw as `InvariantError`.
+  if (invariants.length > 0) {
+    // Dedup ctx._ops to the last write per key, preserving first-seen
+    // (write) order so the changeset is stable and order-meaningful.
+    const lastOp = new Map<string, StagedOp>()
+    const order: string[] = []
+    for (const op of ctx._ops) {
+      const key = keyOf(op)
+      if (!lastOp.has(key)) order.push(key)
+      lastOp.set(key, op)
+    }
+
+    // Group {before, after} pairs by collection name (the invariant
+    // scope). `before` is the plaintext prior captured in Phase 1 (null
+    // for inserts / unwatched — only watched scopes were captured, and
+    // every grouped key belongs to a watched scope). `after` is the
+    // written record, null for a delete.
+    const changesByScope = new Map<string, GuardChange<unknown>[]>()
+    // Parallel map: scope → the vault name of its (last-seen) op, used to
+    // build the per-invariant read-only ctx (facade + userId + role).
+    const scopeVault = new Map<string, string>()
+    for (const key of order) {
+      const op = lastOp.get(key)!
+      if (!watchedScopes.has(op.collectionName)) continue
+      const before = plainBefore.get(key) ?? null
+      const after = op.type === 'delete' ? null : (op.record ?? null)
+      const change = { before, after } as GuardChange<unknown>
+      const arr = changesByScope.get(op.collectionName)
+      if (arr) arr.push(change)
+      else changesByScope.set(op.collectionName, [change])
+
+      // Stash the vault name alongside so we can build a per-vault ctx.
+      // (All ops in a scope group could span vaults; we resolve the
+      // vault per change below via a parallel map keyed the same way.)
+      scopeVault.set(op.collectionName, op.vaultName)
+    }
+
+    try {
+      for (const inv of invariants) {
+        const changes = changesByScope.get(inv.scope)
+        if (changes === undefined || changes.length === 0) continue
+        const vaultName = scopeVault.get(inv.scope)!
+        const v = db.vault(vaultName)
+        // Prefer the real read-only facade so the invariant can read
+        // sibling collections; fall back to a minimal read-only stub.
+        const facade: ReadOnlyVaultFacade =
+          v._getReadOnlyFacade() ?? {
+            collection<R = unknown>(name: string) {
+              const c = v.collection<R>(name)
+              return {
+                get: (id: string) => c.get(id),
+                list: () => c.list(),
+                query: () => c.query(),
+              }
+            },
+          }
+        const ctxForInv: GuardContext<unknown> = {
+          existing: null,
+          vault: facade,
+          userId: v.userId,
+          role: v.role,
+        }
+        await inv.check(changes, ctxForInv)
+      }
+    } catch (err) {
+      await revertExecuted(ctx._executed, store, db)
+      throw err instanceof InvariantError ? err : new InvariantError(
+        err instanceof Error ? err.message : `invariant violated: ${String(err)}`,
+      )
+    }
+  }
+
+  return bodyResult
+}
+
+/**
+ * One prepared leg of an atomic batch: the `store.tx()` op to submit plus the
+ * carrier its finalize half needs.
+ * @internal
+ */
+interface AtomicLeg {
+  readonly op: StagedOp
+  readonly coll: Collection<unknown>
+  readonly txOp: TxOp
+  readonly prepared: PreparedPut<unknown> | PreparedDelete<unknown>
+}
+
+/**
+ * #906 — the atomic commit path: prepare every staged op, submit the whole
+ * write set as ONE `store.tx()` call, then finalize each op in staged order.
+ *
+ * Only ever reached through `canCommitAtomically` (`atomic-eligibility.ts`),
+ * whose exclusions are what make this safe — no CRDT, no refs, no
+ * derivation/MV source, no unique constraints, no amendment, no id touched
+ * twice. Do not call it without that blessing.
+ *
+ * @internal
+ */
+async function commitAtomicBatch(
+  db: Noydb,
+  ctx: TxContext,
+  priorEnvelopes: ReadonlyMap<string, EncryptedEnvelope | null>,
+): Promise<void> {
+  const store = db._store
+  const legs: AtomicLeg[] = []
+
+  // ─── Prepare ───────────────────────────────────────────────────
+  // Encrypt, resolve the prior version, mint the #589 marker — with zero
+  // observable side effects on the collections the gate admits. A throw here
+  // therefore needs no unwind: nothing has been written yet, and the caller
+  // sees the refusal exactly as it would from `Collection.put()`. The revert
+  // plan is recorded all the same, because a FINALIZE failure below does need
+  // it (same record-before-the-call convention as the OCC loop).
+  for (const op of ctx._ops) {
+    const coll = db.vault(op.vaultName).collection(op.collectionName)
+    // The two refusals `Collection.put()` / `.delete()` assert before anything
+    // else — schema-update gate + schema fence. They live in those wrappers,
+    // not in the prepare halves this path calls, so assert them here, per op.
+    await coll._assertWriteGates()
+    const prior = priorEnvelopes.get(keyOf(op)) ?? null
+    // Every leg carries CAS against the Phase-1 snapshot, so a writer landing
+    // between the body returning and the batch reaching the store loses.
+    const base = { vault: op.vaultName, collection: op.collectionName, id: op.id, expectedVersion: prior?._v ?? 0 }
+    ctx._executed.push({ op, priorEnvelope: prior })
+    if (op.type === 'put') {
+      const prepared = await coll._preparePut(op.id, op.record, op.reason !== undefined ? { reason: op.reason } : undefined)
+      legs.push({ op, coll, prepared, txOp: { type: 'put', ...base, envelope: prepared.envelope } })
+    } else {
+      const prepared = await coll._prepareDelete(op.id, false)
+      if (prepared === null) {
+        // Nothing to delete (no live record / already a marker / shredded) —
+        // the case `_doDelete` answers with `false`. Drop the op and its
+        // revert entry rather than sending a leg for it.
+        ctx._executed.pop()
+        continue
+      }
+      legs.push({
+        op, coll, prepared,
+        // Under sync the delete is a marker PUT at `live._v + 1` (#589);
+        // without sync it is a physical removal.
+        txOp: prepared.marker ? { type: 'put', ...base, envelope: prepared.marker } : { type: 'delete', ...base },
+      })
+    }
+  }
+
+  // Every op turned out to be a no-op delete — same as the OCC loop, which
+  // would have written nothing either. Don't hand the store an empty batch.
+  if (legs.length === 0) return
+
+  // ─── The batch ─────────────────────────────────────────────────
+  // Deliberately NOT inside a revert-guarded try: a rejection means the store
+  // applied nothing (all-or-nothing is the capability we gated on), so there
+  // is nothing to unwind and a revert pass would write over records this
+  // transaction never touched. No ledger entry, history snapshot or change
+  // event has fired either — every one of those lives in finalize below. The
+  // error (a `ConflictError` when a leg lost its CAS) surfaces unwrapped.
+  await store.tx!(legs.map(l => l.txOp))
+
+  // ─── Finalize ──────────────────────────────────────────────────
+  // History snapshot, ledger entry, cache/index update, change event — per op,
+  // in staged order, all AFTER the bytes are durable (where the OCC loop
+  // interleaves them per op). #931: then the after-write observers (user
+  // `onAfterWrite` hooks + the `afterPut`/`afterDelete` observe bus), which
+  // no longer gate eligibility — they cannot refuse a completed write.
+  try {
+    for (const leg of legs) {
+      if (leg.op.type === 'put') await leg.coll._finalizePut(leg.prepared as PreparedPut<unknown>)
+      else await leg.coll._finalizeDelete(leg.prepared as PreparedDelete<unknown>)
+      await leg.coll._fireAtomicAfterWrite(leg.op.type, leg.prepared)
+    }
+  } catch (err) {
+    // The bytes ARE durable now, so this is today's best-effort unwind over
+    // the plan recorded above. No amendment window to drain — the gate
+    // excludes amendment transactions.
+    await revertExecuted(ctx._executed, store, db)
+    throw err
+  }
+}
+
+/**
+ * Phase 3 helper — restore captured prior envelopes via the raw store
+ * to avoid re-firing Collection-level side effects (we don't want a
+ * cascade of change events undoing themselves). The ledger is left
+ * as-is: each committed op appended an entry; the revert is
+ * deliberately NOT recorded as a compensating entry because the
+ * caller-facing contract is "atomic or not at all," not "every write
+ * visible in the audit trail." Auditors who need the intermediate
+ * state can still reconstruct it by walking the ledger through the
+ * failed-tx timestamp.
+ *
+ * Delegates the reverse/best-effort/raw-revert shape to the shared
+ * `bestEffortRevert` helper (`kernel/best-effort-revert.ts`); the cache
+ * invalidation below rides along as that helper's per-leg `compensate`
+ * callback, gated on `db` exactly as before.
+ *
+ * @internal — shared between `runTransaction` and
+ * `Collection.putManyAtomic`. Both register source ops + nested
+ * derivation side-effect ops onto `_executed`; this helper unwinds the
+ * combined list in reverse on rollback.
+ */
+export async function revertExecuted(
+  executed: ReadonlyArray<ExecutedOp>,
+  store: Noydb['_store'],
+  db?: Noydb,
+): Promise<void> {
+  const legs = executed.map(({ op, priorEnvelope }) => ({
+    vaultName: op.vaultName,
+    collectionName: op.collectionName,
+    id: op.id,
+    prior: priorEnvelope,
+  }))
+  await bestEffortRevert(
+    legs,
+    store,
+    db
+      ? async (leg) => {
+          // Sync the Collection-layer cache with what we just wrote at
+          // the raw store. Without this, eager-mode `get` would still
+          // return the rolled-back record from its in-memory map. The
+          // Collection's `_invalidateCacheEntry` is a no-op when the
+          // collection hasn't yet been hydrated.
+          const coll = db.vault(leg.vaultName).collection(leg.collectionName)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (coll as any)._invalidateCacheEntry(leg.id)
+        }
+      : undefined,
+  )
+}
+
+/** @internal — shared (vault, collection, id) key shape; also used by `atomic-eligibility.ts`'s duplicate-key scan. */
+export function keyOf(op: StagedOp): string {
+  return `${op.vaultName}\x00${op.collectionName}\x00${op.id}`
+}

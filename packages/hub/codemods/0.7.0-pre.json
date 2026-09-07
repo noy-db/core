@@ -1,0 +1,294 @@
+{
+  "$comment": "Machine-readable rename map for the noy-db 0.7.0-pre vocabulary change — the port-instance naming rule. A type a satellite IMPLEMENTS is now `Noydb<Stem>`, matching `NoydbStore`, which was already the pattern and is unchanged (689 references across five repos; the scheme accommodates the anchor rather than renaming it). The `Provider` suffix is retired: it marked some port instances and not others, so it distinguished nothing. Every `from` was REMOVED with no alias, per the project's no-legacy-aliases policy — `/kernel` and `/adapter` were both retired that way after consumers migrated. Rows are verified against the live surface by packages/hub/__tests__/codemod-map-0.7.test.ts. ABSENT BY MEASUREMENT, not by oversight: StoreCoordinationProvider and createDefaultCoordinationProvider were renamed in the same sweep but are reachable from NO declared subpath of the published 0.6.0 tarball, so no consumer could hold them — the same reason SubsystemBus is absent from the 0.6 map. Listing them would repeat #1052's over-count.",
+  "renames": [
+    {
+      "from": "SealingKeyProvider",
+      "to": "NoydbSealer",
+      "kind": "type",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "The `at-*` port instance. Published from the root barrel AND @noy-db/hub/cargo in 0.6.0; both keep re-exporting it under the new name."
+    },
+    {
+      "from": "MemorySealingKeyProvider",
+      "to": "MemorySealer",
+      "kind": "identifier",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "The in-memory double an at-* implementor tests against. Follows its interface rather than keeping a suffix the interface no longer has."
+    },
+    {
+      "from": "CoordinationProvider",
+      "to": "NoydbMesh",
+      "kind": "type",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": true,
+      "section": "by-port",
+      "note": "The `by-*` port instance: who is live, and what generation are they on. Named for the participants rather than the wire — `PeerChannel` is the transport, and a mesh has no head, which the previous name's alternatives (Coordinator, Conductor) implied. Published from @noy-db/hub/cargo in 0.6.0; /cargo keeps re-exporting it under the new name."
+    },
+    {
+      "from": "DeviceSealProvider",
+      "to": "NoydbDeviceSeal",
+      "kind": "type",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "Sibling of NoydbSealer for device-bound sealing. Published from the root barrel and @noy-db/hub/team."
+    },
+    {
+      "from": "MemoryDeviceSealProvider",
+      "to": "MemoryDeviceSeal",
+      "kind": "identifier",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "The in-memory double for NoydbDeviceSeal."
+    },
+    {
+      "from": "envSealingProvider",
+      "to": "atEnv",
+      "kind": "identifier",
+      "package": "@noy-db/at-env",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "Factory convention: (prefix)(package)() returns exactly one port instance, matching toMemory()/toFile(). The old name described the return type, which the type already does."
+    },
+    {
+      "from": "EnvSealingProviderOptions",
+      "to": "AtEnvOptions",
+      "kind": "type",
+      "package": "@noy-db/at-env",
+      "safeGlobalReplace": true,
+      "section": "at-port"
+    },
+    {
+      "from": "awsKmsSealingProvider",
+      "to": "atAwsKms",
+      "kind": "identifier",
+      "package": "@noy-db/at-aws-kms",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "awsKmsRecipientSealer is NOT renamed: it returns a RecipientSealer, a different contract from NoydbSealer, so the at<Package>() convention would misdescribe it."
+    },
+    {
+      "from": "gcpKmsSealingProvider",
+      "to": "atGcpKms",
+      "kind": "identifier",
+      "package": "@noy-db/at-gcp-kms",
+      "safeGlobalReplace": true,
+      "section": "at-port"
+    },
+    {
+      "from": "macosKeychainSealingProvider",
+      "to": "atMacosKeychain",
+      "kind": "identifier",
+      "package": "@noy-db/at-macos-keychain",
+      "safeGlobalReplace": true,
+      "section": "at-port"
+    },
+    {
+      "from": "azureKeyVaultSealingProvider",
+      "to": "atAzureKeyvault",
+      "kind": "identifier",
+      "package": "@noy-db/at-azure-keyvault",
+      "safeGlobalReplace": true,
+      "section": "at-port"
+    },
+    {
+      "from": "channelCoordination",
+      "to": "channelMesh",
+      "kind": "identifier",
+      "package": "@noy-db/by-peer",
+      "safeGlobalReplace": true,
+      "section": "by-port",
+      "note": "The transport-agnostic drain-barrier core over any PeerChannel. NOT renamed to byPeer: it is not the (prefix)(package)() factory, it is the shared implementation both by-peer and by-tabs delegate to, and by-tabs would otherwise import a factory named for a package it is not."
+    },
+    {
+      "from": "peerCoordination",
+      "to": "byPeer",
+      "kind": "identifier",
+      "package": "@noy-db/by-peer",
+      "safeGlobalReplace": true,
+      "section": "by-port",
+      "note": "Factory convention: (prefix)(package)() returns exactly one port instance. Still the SAME function object as channelMesh — the identity is asserted by a parity test, so a consumer who switched names has not switched behaviour."
+    },
+    {
+      "from": "tabsCoordination",
+      "to": "byTabs",
+      "kind": "identifier",
+      "package": "@noy-db/by-tabs",
+      "safeGlobalReplace": true,
+      "section": "by-port"
+    },
+    {
+      "from": "coordinationStrategy",
+      "to": "mesh",
+      "kind": "option-key",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": false,
+      "section": "by-port",
+      "where": "src/kernel/types.ts",
+      "note": "createNoydb({ mesh }) — the exact parallel of the store option, which is the other port instance in the same bag. Tagged @internal in 0.6.0 but reachable from NoydbOptions on the root barrel AND ./pod, and taught by name in noy-db-docs core/2.noydb/6.configuration.md, so it is public by every measure that matters. safeGlobalReplace is false: `mesh` is too short and too ordinary to replace blind."
+    },
+    {
+      "from": "coordination",
+      "to": "mesh",
+      "kind": "method",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": false,
+      "section": "by-port",
+      "where": "src/kernel/noydb.ts",
+      "note": "The `Noydb.coordination` getter — how an external orchestrator (@klum-db/lobby) drives the port through the handle. safeGlobalReplace is false: `coordination` is an ordinary English word and appears as such throughout the family's prose. Measured: zero property accesses in any sibling repo today."
+    },
+    {
+      "from": "ShamirRecoveryProvider",
+      "to": "NoydbShamir",
+      "kind": "type",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": true,
+      "section": "on-port",
+      "note": "The LAST `Provider`-suffixed port instance on the published surface, and the only `on-*` entry among hub's injected ports — `store`/`sealingKey`/`deviceSeal`/`mesh` are the others. Not renamed to `NoydbRecovery`: the contract is Shamir-specific (`splitToShares`/`combineShares`, k-of-n), so a generic name would over-claim what hub accepts. Its module moved with it: with-party/team/shamir-recovery-provider.ts → noydb-shamir.ts."
+    },
+    {
+      "from": "ShamirRecoveryProvider",
+      "to": "NoydbShamir",
+      "kind": "type",
+      "package": "@noy-db/on-shamir",
+      "safeGlobalReplace": true,
+      "section": "on-port",
+      "note": "on-shamir exports a structural MIRROR of hub's port under its own name, because hub devDepends on this package and a peer edge back is a build cycle — measured: turbo refuses `@noy-db/on-shamir#build, @noy-db/hub#build` outright. Renamed in lockstep and deliberately to the SAME name, so the duplication is legible rather than disguised; hub compiles the two against each other in noydb-shamir-satellite.test-d.ts."
+    },
+    {
+      "from": "toString",
+      "to": "asCsv",
+      "kind": "identifier",
+      "package": "@noy-db/as-csv",
+      "safeGlobalReplace": false,
+      "section": "as-port",
+      "note": "The as-* inversion (ADR 0004). `toString(vault, opts)` becomes `vault.export(asCsv(fmtOpts), { collections })` — hub gates, reads and redacts; the format only encodes. Options SPLIT: eol/columns/columnTypes go to asCsv(), collections/redact to vault.export(). Requires formatsStrategy: withFormats(). safeGlobalReplace is false: `toString` is Object.prototype's method name and appears on every value in the language."
+    },
+    {
+      "from": "fromString",
+      "to": "asCsv",
+      "kind": "identifier",
+      "package": "@noy-db/as-csv",
+      "safeGlobalReplace": false,
+      "section": "as-port",
+      "note": "`fromString(vault, csv, opts)` becomes `vault.import(asCsv(fmtOpts), csv, { collection, policy, idKey })`. The returned ImportPlan is now hub's — same shape, one definition. safeGlobalReplace is false: several as-* packages export a `fromString` and they migrate on their own schedule."
+    },
+    {
+      "from": "AsCSVImportOptions",
+      "to": "FormatImportOptions",
+      "kind": "type",
+      "package": "@noy-db/as-csv",
+      "toPackage": "@noy-db/hub/as",
+      "safeGlobalReplace": true,
+      "section": "as-port",
+      "note": "Split across the new boundary: collection/policy/idKey are hub's FormatImportOptions on `/as`; columnTypes is an asCsv() option. `toPackage` records that the target moved REPOSITORIES of ownership — the type is hub's now, not as-csv's, which no other row in either map has needed to say."
+    },
+    {
+      "from": "toString",
+      "to": "asSql",
+      "kind": "identifier",
+      "package": "@noy-db/as-sql",
+      "safeGlobalReplace": false,
+      "section": "as-port",
+      "note": "`toString(vault, opts)` becomes `vault.export(asSql(fmtOpts), { collections, redact })`. EXPORT-ONLY: as-sql declares no decode(), so `vault.import(asSql(), ...)` throws naming the format. ⚠️ Removing an export called `toString` fails SILENTLY at the call site: a bare `toString(x)` resolves to globalThis.toString and returns '[object Undefined]' instead of throwing ReferenceError. Grep for the call, do not rely on a red build."
+    },
+    {
+      "from": "toString",
+      "to": "asXml",
+      "kind": "identifier",
+      "package": "@noy-db/as-xml",
+      "safeGlobalReplace": false,
+      "section": "as-port",
+      "note": "`toString(vault, opts)` becomes `vault.export(asXml(fmtOpts), { collections, redact })`. Options SPLIT: rootElement/recordElement/fields/pretty/xmlDeclaration/namespace/fieldTypes are the format's; collection and redact are hub's. Same silent-removal hazard as as-sql: a bare `toString(x)` resolves to globalThis.toString rather than throwing."
+    },
+    {
+      "from": "fromString",
+      "to": "asXml",
+      "kind": "identifier",
+      "package": "@noy-db/as-xml",
+      "safeGlobalReplace": false,
+      "section": "as-port",
+      "note": "`fromString(vault, xml, opts)` becomes `vault.import(asXml(fmtOpts), xml, { collection, policy, idKey })`."
+    },
+    {
+      "from": "fromString",
+      "to": "asJson",
+      "kind": "identifier",
+      "package": "@noy-db/as-json",
+      "safeGlobalReplace": false,
+      "section": "as-port",
+      "note": "`fromString(vault, json, opts)` becomes `vault.import(asJson(), json, { policy, idKey })`. JSON carries collection names in the payload, so unlike as-csv and as-xml it needs no `{ collection }`. `toString` and `toObject` are NOT removed here — a document is not bytes, so NoydbFormat<string> cannot express toObject, and removing one while keeping the other would be a worse API than keeping both as thin wrappers over vault.export."
+    },
+    {
+      "from": "fromObject",
+      "to": "asJson",
+      "kind": "identifier",
+      "package": "@noy-db/as-json",
+      "safeGlobalReplace": false,
+      "section": "as-port",
+      "note": "`fromObject(vault, doc, opts)` becomes `vault.import(asJson(), JSON.stringify(doc), opts)` — the port takes bytes, so a caller holding a parsed document serialises it first."
+    },
+    {
+      "from": "FenceState",
+      "to": "FenceDoc",
+      "kind": "type",
+      "package": "@noy-db/hub",
+      "safeGlobalReplace": false,
+      "section": "by-port",
+      "note": "A DE-DUPLICATION, not a rename: `./by` declared its own two-field interface that was a hand-copy of the vault's `FenceDoc` (measured mutually assignable under --strict --exactOptionalPropertyTypes), and `./cargo` re-exported that duplicate. Both now name `FenceDoc`; the duplicate is gone. A DIFFERENT type of the same name — the `FenceState` string union on the ROOT barrel — is NOT renamed and must not be rewritten, which is why safeGlobalReplace is false (#1188). Judge by import source: `from '@noy-db/hub/by'` or `/cargo` renames; `from '@noy-db/hub'` does not.",
+      "subpaths": [
+        "./by",
+        "./cargo"
+      ]
+    },
+    {
+      "from": "AwsKmsSealingProviderOptions",
+      "to": "AtAwsKmsOptions",
+      "kind": "type",
+      "package": "@noy-db/at-aws-kms",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "The options type for the renamed factory. `at-env` renamed its pair together (EnvSealingProviderOptions -> AtEnvOptions); these four renamed the FACTORY and left the options type carrying the retired `SealingProvider` vocabulary, so 0.7.0-pre.0 shipped `atAwsKms()` taking an `AwsKmsSealingProviderOptions`. Convention: `at<Pkg>()` takes `At<Pkg>Options` (#1204)."
+    },
+    {
+      "from": "GcpKmsSealingProviderOptions",
+      "to": "AtGcpKmsOptions",
+      "kind": "type",
+      "package": "@noy-db/at-gcp-kms",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "The options type for the renamed factory. `at-env` renamed its pair together (EnvSealingProviderOptions -> AtEnvOptions); these four renamed the FACTORY and left the options type carrying the retired `SealingProvider` vocabulary, so 0.7.0-pre.0 shipped `atAwsKms()` taking an `AwsKmsSealingProviderOptions`. Convention: `at<Pkg>()` takes `At<Pkg>Options` (#1204)."
+    },
+    {
+      "from": "AzureKeyVaultSealingProviderOptions",
+      "to": "AtAzureKeyvaultOptions",
+      "kind": "type",
+      "package": "@noy-db/at-azure-keyvault",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "The options type for the renamed factory. `at-env` renamed its pair together (EnvSealingProviderOptions -> AtEnvOptions); these four renamed the FACTORY and left the options type carrying the retired `SealingProvider` vocabulary, so 0.7.0-pre.0 shipped `atAwsKms()` taking an `AwsKmsSealingProviderOptions`. Convention: `at<Pkg>()` takes `At<Pkg>Options` (#1204)."
+    },
+    {
+      "from": "MacosKeychainSealingProviderOptions",
+      "to": "AtMacosKeychainOptions",
+      "kind": "type",
+      "package": "@noy-db/at-macos-keychain",
+      "safeGlobalReplace": true,
+      "section": "at-port",
+      "note": "The options type for the renamed factory. `at-env` renamed its pair together (EnvSealingProviderOptions -> AtEnvOptions); these four renamed the FACTORY and left the options type carrying the retired `SealingProvider` vocabulary, so 0.7.0-pre.0 shipped `atAwsKms()` taking an `AwsKmsSealingProviderOptions`. Convention: `at<Pkg>()` takes `At<Pkg>Options` (#1204)."
+    }
+  ],
+  "unretired": [
+    "@noy-db/hub/as",
+    "@noy-db/hub/at",
+    "@noy-db/hub/on",
+    "@noy-db/hub/by"
+  ],
+  "$unretiredComment": "Subpaths this line RE-INTRODUCES after an earlier line retired them. `/by` is the second, on identical grounds: @noy-db/test-mesh-conformance publishes the NoydbMesh contract as an executable suite, and by-peer/by-tabs bind the seam. Re-introducing it also EXPOSED A GAP IN THE 0.4 MAP: that prune removed seven subpaths and recorded five, so `/by` and `/with` had no row until 2026-08-22 — the un-retired guard refuses a path no earlier map says was retired, and it was right. `/at` was removed in 0.4.0 (see codemods/0.4.0-pre.json, kind:'subpath') because it 'had zero importers' — it was a second place to find a type already on the root barrel. It returns now because something stands behind it: @noy-db/test-sealer-conformance publishes the NoydbSealer contract as an executable suite, and the five at-* packages bind the seam. Listing a subpath here is a CLAIM, and codemod-map.test.ts refuses it unless the subpath actually resolves — so this field cannot be used to silence the retired-subpath guard without shipping the seam. Purely additive: the root barrel and /cargo keep exporting everything they did, so a consumer who followed the 0.4 row onto the root barrel is untouched.",
+  "version": "0.7.0-pre"
+}

@@ -1,0 +1,506 @@
+/**
+ * Public `vault.user.*` API surface.
+ *
+ * Three families:
+ *  - Write-self: `me` / `updateMe` / `setMe` — always target the writer's
+ *    own keyringId. **Own-only write rule** is structural — no method
+ *    exists to write someone else's envelope.
+ *  - Read-anyone: `get` / `list` — read other principals' envelopes
+ *    (subject to `view-team-profiles` policy gate).
+ *  - Reactive: `subscribe` / `live` — in-process event emission on local
+ *    writes. Cross-instance updates land via the team/sync engine and
+ *    surface to subscribers when the sync diff replays through this API.
+ *
+ * @see design-history/2026-05-05-user-envelope-design.md
+ *
+ * @module
+ */
+import { PolicyDeniedError } from '../../../kernel/errors.js'
+import {
+  loadUserEnvelope,
+  saveUserEnvelope,
+  listUserEnvelopeIds,
+} from './storage.js'
+import type {
+  UserEnvelope,
+  DeepPartialOrNull,
+  Unsubscribe,
+  UserEnvelopePresented,
+  LiveUserEnvelope,
+  VaultUserApi,
+  UserApiDeps,
+  UserApiFactory,
+} from '../../../kernel/types.js'
+import {
+  persistUserVisibility,
+  readUserVisibility,
+} from '../visibility.js'
+import type { UserVisibility } from '../types.js'
+import type { ExportAccessibleOptions } from '../../../with-audit/portability/export-accessible.js'
+import type { WithdrawAccessibleOptions, WithdrawResult } from '../../../with-audit/portability/withdraw-accessible.js'
+import type {
+  RequestWithdrawalOptions,
+  RequestWithdrawalResult,
+  WithdrawalRequest,
+  WithdrawalRequestStatus,
+  ApproveWithdrawalOptions,
+  RejectWithdrawalOptions,
+} from '../../../with-audit/portability/request-withdrawal.js'
+
+interface ChangeListener<T = unknown> {
+  (env: UserEnvelope<T> | null): void
+}
+
+/**
+ * Implementation behind `vault.user`. Constructed once per Vault via
+ * {@link createUserApi}, holds the writer's keyringId in closure so
+ * `updateMe`/`setMe` cannot target any other principal — the own-only
+ * rule is enforced at the type level (no `set(otherKeyringId, …)`
+ * method) AND at runtime (the keyringId argument simply doesn't exist
+ * on the write path).
+ */
+export class UserApi implements VaultUserApi {
+  /** keyringId → set of listeners. Wildcard '*' fires on every change. */
+  private readonly listeners = new Map<string, Set<ChangeListener>>()
+
+  private readonly adapter: UserApiDeps['adapter']
+  private readonly vaultName: UserApiDeps['vaultName']
+  /** The writer's own keyringId. Frozen at construction time. */
+  private readonly writerKeyringId: UserApiDeps['writerKeyringId']
+  private readonly getDek: UserApiDeps['getDek']
+  /**
+   * Policy-gate validator. When omitted, gates are skipped — useful
+   * for low-level tests that exercise the storage layer directly.
+   * Production paths always wire the Noydb-backed implementation.
+   */
+  private readonly checkGate?: UserApiDeps['checkGate']
+  /**
+   * Noydb-backed `exportMyAccessibleData`, injected by the Vault
+   * (which holds the keyring + bundle machinery). Omitted in low-level tests.
+   */
+  private readonly exportAccessible?: UserApiDeps['exportAccessible']
+  /**
+   * Noydb-backed `unilateralWithdrawal`, injected by the Vault.
+   * Destructive — extract + dispose (delete | freeze). Omitted in low-level tests.
+   */
+  private readonly unilateralWithdraw?: UserApiDeps['unilateralWithdraw']
+  /**
+   * Noydb-backed two-party withdrawal ceremony, injected by the
+   * Vault. requestWithdraw = requester side; the rest = owner side.
+   */
+  private readonly requestWithdraw?: UserApiDeps['requestWithdraw']
+  private readonly listWithdrawals?: UserApiDeps['listWithdrawals']
+  private readonly approveWithdraw?: UserApiDeps['approveWithdraw']
+  private readonly rejectWithdraw?: UserApiDeps['rejectWithdraw']
+
+  constructor(deps: UserApiDeps) {
+    this.adapter = deps.adapter
+    this.vaultName = deps.vaultName
+    this.writerKeyringId = deps.writerKeyringId
+    this.getDek = deps.getDek
+    this.checkGate = deps.checkGate
+    this.exportAccessible = deps.exportAccessible
+    this.unilateralWithdraw = deps.unilateralWithdraw
+    this.requestWithdraw = deps.requestWithdraw
+    this.listWithdrawals = deps.listWithdrawals
+    this.approveWithdraw = deps.approveWithdraw
+    this.rejectWithdraw = deps.rejectWithdraw
+  }
+
+  /**
+   * File a two-party withdrawal request for the caller's accessible
+   * scope. Non-destructive (writes a pending request); an owner later approves
+   * or rejects. This is the path for read-only roles (`client`/`viewer`) that
+   * cannot self-serve a destructive `unilateralWithdrawal`. Gated by
+   * `user-request-withdrawal` (enabled by default).
+   */
+  async requestWithdrawal(opts: RequestWithdrawalOptions = {}): Promise<RequestWithdrawalResult> {
+    if (this.checkGate) await this.checkGate('user-request-withdrawal')
+    if (!this.requestWithdraw) {
+      throw new Error('requestWithdrawal requires a Noydb-backed vault (not a bare UserApi)')
+    }
+    return this.requestWithdraw(opts)
+  }
+
+  /** Owner side: list filed withdrawal requests (optionally by status). */
+  async listWithdrawalRequests(opts: { status?: WithdrawalRequestStatus } = {}): Promise<WithdrawalRequest[]> {
+    if (!this.listWithdrawals) {
+      throw new Error('listWithdrawalRequests requires a Noydb-backed vault (not a bare UserApi)')
+    }
+    return this.listWithdrawals(opts)
+  }
+
+  /**
+   * Owner side: approve a pending request. Extracts the requester's
+   * recorded scope under firm authority, disposes of the source per the
+   * request's disposition, and returns the re-keyed bundle to hand back. Gated
+   * by `approve-user-withdrawal` (tier-2 default) + owner/admin role.
+   */
+  async approveWithdrawal(requestId: string, opts: ApproveWithdrawalOptions = {}): Promise<WithdrawResult> {
+    if (this.checkGate) await this.checkGate('approve-user-withdrawal')
+    if (!this.approveWithdraw) {
+      throw new Error('approveWithdrawal requires a Noydb-backed vault (not a bare UserApi)')
+    }
+    return this.approveWithdraw(requestId, opts)
+  }
+
+  /** Owner side: reject a pending request (no data is touched). */
+  async rejectWithdrawal(requestId: string, opts: RejectWithdrawalOptions = {}): Promise<WithdrawalRequest> {
+    if (this.checkGate) await this.checkGate('approve-user-withdrawal')
+    if (!this.rejectWithdraw) {
+      throw new Error('rejectWithdrawal requires a Noydb-backed vault (not a bare UserApi)')
+    }
+    return this.rejectWithdraw(requestId, opts)
+  }
+
+  /**
+   * Single-party withdrawal: export the caller's accessible scope
+   * (re-keyed) and dispose of the source (`delete` or `freeze`). Gated by the
+   * fail-closed built-in `client-unilateral-withdraw` policy — undefined or
+   * disabled → throws (use `requestWithdrawal`). The firm enables it at vault
+   * creation.
+   */
+  async unilateralWithdrawal(opts: WithdrawAccessibleOptions): Promise<WithdrawResult> {
+    if (this.checkGate) await this.checkGate('client-unilateral-withdraw')
+    if (!this.unilateralWithdraw) {
+      throw new Error('unilateralWithdrawal requires a Noydb-backed vault (not a bare UserApi)')
+    }
+    return this.unilateralWithdraw(opts)
+  }
+
+  /**
+   * Export the calling user's accessible scope as a portable, re-keyed
+   * `.noydb` bundle. Non-destructive and **always allowed** (data sovereignty
+   * by construction) but audited. Scope = the caller's DEK access set.
+   */
+  async exportMyAccessibleData(opts: ExportAccessibleOptions = {}): Promise<Uint8Array> {
+    if (!this.exportAccessible) {
+      throw new Error('exportMyAccessibleData requires a Noydb-backed vault (not a bare UserApi)')
+    }
+    return this.exportAccessible(opts)
+  }
+
+  // ─── Write-self ──────────────────────────────────────────────────────
+
+  /** Read the writer's own envelope. Returns null if never written. */
+  async me<T = unknown>(): Promise<UserEnvelope<T> | null> {
+    const dek = await this.getDek()
+    return loadUserEnvelope<T>(this.adapter, this.vaultName, this.writerKeyringId, dek)
+  }
+
+  /**
+   * Deep-merge a partial patch into the writer's own envelope. Creates
+   * the envelope on first call. Optimistic-concurrency safe — a stale
+   * `_v` (parallel writer on another device) throws `ConflictError`.
+   *
+   * Patch semantics:
+   *   - `undefined` (or omitted key) — skip; existing value preserved
+   *   - `null` — delete the field from the merged result
+   *   - any other value — overwrite (deep-merge for plain objects,
+   *     replace for primitives / arrays)
+   *
+   * To clear a field, pass `null` rather than `undefined`. Callers
+   * with shape `T = string | null` where `null` is a meaningful value
+   * should use `setMe` for that specific field instead — `null` here
+   * always means delete.
+   *
+   * Gated by the `edit-own-profile` policy gate (default `minTier: 3`).
+   * Pass `presented` to satisfy tightened policies that require a
+   * factor proof (e.g. STRICT_POLICY's TOTP requirement).
+   */
+  async updateMe<T extends object = Record<string, unknown>>(
+    patch: DeepPartialOrNull<T>,
+    presented?: UserEnvelopePresented,
+  ): Promise<UserEnvelope<T>> {
+    if (this.checkGate) await this.checkGate('edit-own-profile', presented)
+    const dek = await this.getDek()
+    const current = await loadUserEnvelope<T>(
+      this.adapter,
+      this.vaultName,
+      this.writerKeyringId,
+      dek,
+    )
+    const merged: T = current ? deepMerge(current.data, patch) : (patch as unknown as T)
+    const written = await saveUserEnvelope<T>(
+      this.adapter,
+      this.vaultName,
+      this.writerKeyringId,
+      merged,
+      dek,
+      current?._v ?? 0,
+    )
+    this.fireChange(this.writerKeyringId, written)
+    return written
+  }
+
+  /**
+   * Replace the writer's own envelope with `payload`. Use sparingly —
+   * `updateMe` is the canonical mutation. No `expectedVersion` check;
+   * callers explicitly take last-write-wins semantics.
+   *
+   * Gated by `edit-own-profile`. See `updateMe` for `presented` usage.
+   */
+  async setMe<T = unknown>(
+    payload: T,
+    presented?: UserEnvelopePresented,
+  ): Promise<UserEnvelope<T>> {
+    if (this.checkGate) await this.checkGate('edit-own-profile', presented)
+    const dek = await this.getDek()
+    const written = await saveUserEnvelope<T>(
+      this.adapter,
+      this.vaultName,
+      this.writerKeyringId,
+      payload,
+      dek,
+    )
+    this.fireChange(this.writerKeyringId, written)
+    return written
+  }
+
+  // ─── Visibility ──────────────────────────────────────────────────────
+
+  /**
+   * Read the current user's visibility flag from
+   * `_meta/visibility/<keyringId>`. Returns `{ hidden: false }` when no
+   * document has been persisted (the default-visible case).
+   */
+  async getMyVisibility(): Promise<UserVisibility> {
+    const persisted = await readUserVisibility(this.adapter, this.vaultName, this.writerKeyringId)
+    return persisted ?? { hidden: false }
+  }
+
+  /**
+   * Update the current user's visibility in the team directory.
+   *
+   * - `hidden: true` — opt out of the default `listUsersWithEnvelopes`
+   *   listing. `owner`/`admin` callers can still see the user by passing
+   *   `{ includeHidden: true }`.
+   * - `hidden: false` — opt back in.
+   *
+   * Own-only by construction: the keyringId argument doesn't exist on
+   * this method, so no caller can hide or unhide another principal.
+   *
+   * Honest caveat: this is a UX flag, not a privacy guarantee. The
+   * envelope ciphertext at `_users/<keyringId>` and the keyring file at
+   * `_keyring/<userId>` are both still observable to anyone with direct
+   * store read access. See `https://github.com/noy-db/docs/blob/main/content/docs/services/user-envelope.md` →
+   * "Directory visibility".
+   */
+  async setMyVisibility(visibility: UserVisibility): Promise<void> {
+    await persistUserVisibility(
+      this.adapter,
+      this.vaultName,
+      this.writerKeyringId,
+      { hidden: visibility.hidden },
+    )
+  }
+
+  // ─── Read-anyone ─────────────────────────────────────────────────────
+
+  /**
+   * Read another principal's envelope by their keyringId. Returns null
+   * if the principal exists but has no envelope yet, or if the
+   * keyringId does not exist at all.
+   *
+   * Gated by `view-team-profiles` (default `minTier: 2`) — but ONLY for
+   * cross-principal reads. Reading your own envelope (`keyringId ===
+   * self`) is never gated; that's just `me()` written long-form.
+   */
+  async get<T = unknown>(
+    keyringId: string,
+    presented?: UserEnvelopePresented,
+  ): Promise<UserEnvelope<T> | null> {
+    if (this.checkGate && keyringId !== this.writerKeyringId) {
+      await this.checkGate('view-team-profiles', presented)
+    }
+    const dek = await this.getDek()
+    return loadUserEnvelope<T>(this.adapter, this.vaultName, keyringId, dek)
+  }
+
+  /**
+   * Read every persisted envelope in the vault. Order is store-defined.
+   *
+   * Gated by `view-team-profiles`. Default policy (`minTier: 2`) lets
+   * any authenticated session read all envelopes. Two privacy-strict
+   * opt-outs:
+   *
+   *  - `view-team-profiles.enabled: false` → list() returns only the
+   *    caller's own envelope (silent self-fallback, no thrown error).
+   *  - `view-team-profiles.minTier: 1` + insufficient tier → throws
+   *    `PolicyDeniedError` with `reason: 'insufficient-tier'`. The
+   *    caller is expected to elevate, not silently degrade.
+   *
+   * The asymmetry is deliberate: `enabled: false` is a deliberate
+   * design choice ("nobody sees teammate profiles in this app");
+   * `insufficient-tier` is "you need to authenticate further". Different
+   * UX prompts for different intents.
+   */
+  async list<T = unknown>(presented?: UserEnvelopePresented): Promise<UserEnvelope<T>[]> {
+    if (this.checkGate) {
+      try {
+        await this.checkGate('view-team-profiles', presented)
+      } catch (err) {
+        if (err instanceof PolicyDeniedError && err.reason === 'disabled') {
+          // Privacy-strict opt-out: quietly return only self.
+          const me = await this.me<T>()
+          return me ? [me] : []
+        }
+        throw err
+      }
+    }
+    const dek = await this.getDek()
+    const ids = await listUserEnvelopeIds(this.adapter, this.vaultName)
+    const envelopes = await Promise.all(
+      ids.map((id) => loadUserEnvelope<T>(this.adapter, this.vaultName, id, dek)),
+    )
+    return envelopes.filter((e): e is UserEnvelope<T> => e !== null)
+  }
+
+  // ─── Reactive ────────────────────────────────────────────────────────
+
+  /**
+   * Listen for changes to a specific keyringId's envelope. The callback
+   * fires synchronously after every successful local `updateMe` /
+   * `setMe` for that principal.
+   *
+   * Cross-instance changes (a teammate edits their profile on their
+   * device, the sync engine pulls the diff onto this device) will fire
+   * subscribers when the sync layer replays the write through this API.
+   * In v1, subscribers do NOT fire on raw store changes — wire your sync
+   * layer to call back through `vault.user.setMe` / `updateMe` if you
+   * need that.
+   *
+   * Pass keyringId `'*'` to fire on every change in the vault.
+   */
+  subscribe<T = unknown>(
+    keyringId: string,
+    cb: (env: UserEnvelope<T> | null) => void,
+  ): Unsubscribe {
+    let listeners = this.listeners.get(keyringId)
+    if (!listeners) {
+      listeners = new Set()
+      this.listeners.set(keyringId, listeners)
+    }
+    const wrapped: ChangeListener = cb as ChangeListener
+    listeners.add(wrapped)
+    return () => {
+      listeners?.delete(wrapped)
+      if (listeners && listeners.size === 0) {
+        this.listeners.delete(keyringId)
+      }
+    }
+  }
+
+  /**
+   * Reactive handle that caches the current value and re-reads on every
+   * change for the given keyringId. Convenient for framework bindings:
+   *
+   *   const live = vault.user.live<UserShape>(vault.userId)
+   *   live.subscribe(env => render(env?.data))
+   *
+   * Initial value is `null` until the first `current()` call materializes
+   * it via `vault.user.get()`. Call `stop()` when done to release the
+   * subscription.
+   */
+  live<T = unknown>(keyringId: string): LiveUserEnvelope<T> {
+    let value: UserEnvelope<T> | null = null
+    let primed = false
+    const unsubscribe = this.subscribe<T>(keyringId, (env) => {
+      value = env
+    })
+
+    return {
+      current(): UserEnvelope<T> | null {
+        if (!primed) {
+          primed = true
+          // First call: kick off a read but return synchronously. The
+          // subscriber will be re-fired by the next write or the caller
+          // can await `vault.user.get()` directly for an immediate read.
+        }
+        return value
+      },
+      subscribe: (cb) => this.subscribe<T>(keyringId, cb),
+      stop: unsubscribe,
+    }
+  }
+
+  // ─── Internal: change emission ───────────────────────────────────────
+
+  private fireChange<T>(keyringId: string, env: UserEnvelope<T> | null): void {
+    const targeted = this.listeners.get(keyringId)
+    if (targeted) for (const l of targeted) l(env)
+    const wildcard = this.listeners.get('*')
+    if (wildcard) for (const l of wildcard) l(env)
+  }
+}
+
+/**
+ * Build the `vault.user` API implementation from its dependencies. This is
+ * the real {@link UserApiFactory} — `createNoydb()` dynamically imports it
+ * and stashes it on the `Noydb` instance so `Vault`'s constructor can call
+ * it synchronously.
+ */
+export const createUserApi: UserApiFactory = (deps: UserApiDeps): VaultUserApi => new UserApi(deps)
+
+/**
+ * Recursive plain-object deep merge with delete intent.
+ *
+ * Patch semantics:
+ *   - `undefined` — skip the key; source value preserved
+ *   - `null` — delete the key from output (lodash `_.merge` /
+ *     Firestore `FieldValue.delete()` semantics)
+ *   - plain object — recurse (deep merge)
+ *   - any other value — replace (arrays are replaced, not concatenated)
+ *
+ * Safe against the JS quirk where an own property explicitly set to
+ * `undefined` is iterated by `Object.entries`. We dispatch on the value
+ * BEFORE writing, so `{ k: undefined }` triggers the skip branch rather
+ * than overwriting `out[k]` with undefined.
+ */
+function deepMerge<T>(source: T, patch: DeepPartialOrNull<T>): T {
+  if (!isPlainObject(source) || !isPlainObject(patch)) {
+    // Top-level non-object replace. `null` patch at the leaf level
+    // would have been caught by the parent recursion's branch table;
+    // at the top level it means "set the whole envelope to null,"
+    // which the type system already prevents (T extends object).
+    return patch as unknown as T
+  }
+  const out: Record<string, unknown> = { ...(source as Record<string, unknown>) }
+  for (const [key, patchVal] of Object.entries(patch as Record<string, unknown>)) {
+    if (patchVal === undefined) {
+      // Skip — preserve the source value at this key. Matches the
+      // pre-existing behavior so callers who never used `null` see no diff.
+      continue
+    }
+    if (patchVal === null) {
+      // Delete intent. `delete` rather than `out[key] = undefined`
+      // because JSON.stringify drops undefined fields silently and
+      // we want the deletion to be visible to consumers iterating
+      // the merged object (e.g. `Object.keys(merged.profile)`).
+      delete out[key]
+      continue
+    }
+    const sourceVal = (source as Record<string, unknown>)[key]
+    if (isPlainObject(patchVal)) {
+      // Recurse for any plain-object patch — including the "source is
+      // missing this key" case. Without recursing through a synthetic
+      // empty source, nested `null` deletions in the patch would land
+      // as literal `null` values instead of triggering the delete
+      // branch (e.g. `{ app: { signature: null } }` against a missing
+      // `app` would emit `{ app: { signature: null } }` instead of
+      // `{ app: {} }`).
+      const recurseSource = isPlainObject(sourceVal) ? sourceVal : {}
+      out[key] = deepMerge(recurseSource, patchVal as DeepPartialOrNull<typeof recurseSource>)
+    } else {
+      out[key] = patchVal
+    }
+  }
+  return out as T
+}
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  if (x === null || typeof x !== 'object') return false
+  if (Array.isArray(x)) return false
+  const proto = Object.getPrototypeOf(x) as object | null
+  return proto === Object.prototype || proto === null
+}

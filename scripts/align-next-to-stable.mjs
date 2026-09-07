@@ -1,0 +1,402 @@
+#!/usr/bin/env node
+/**
+ * scripts/align-next-to-stable.mjs
+ *
+ * After a STABLE publish, point `next` at the stable too.
+ *
+ * ## Why this exists
+ *
+ * The two channels carry an invariant: `@next` runs AHEAD of `@latest`. A
+ * stable cut breaks it mechanically and with nobody making a mistake —
+ * `0.6.0 > 0.6.0-pre.24`, because a prerelease sorts BELOW its own release, so
+ * the moment `latest` moves to the stable, `next` is behind it for every
+ * package at once. Nothing is broken; the tags simply stop meaning what the
+ * family says they mean, and the sweep starts reporting a lying tag across the
+ * whole line.
+ *
+ * Pointing both tags at the stable is self-correcting: the next prerelease
+ * publish moves `next` forward again and the invariant returns on its own.
+ *
+ * ## This is NOT `repoint-pre-only-latest.mjs`, and the difference is the
+ * ## FAILURE POSTURE — do not "fix" this to match it
+ *
+ * That script never fails its caller, deliberately: a stale `latest` on a
+ * pre-only package is cosmetic, and reddening a release over it only trains
+ * people to stop reading the log.
+ *
+ * This one runs as part of DELIVERING A STABLE, across every package that
+ * ships together. A half-applied state here is worse than a loud failure — it
+ * is precisely the state a human then repairs by hand, and a workstation
+ * `npm dist-tag add` needs an interactive OTP that CI never has to supply.
+ * So: exit non-zero, and print the recovery command for every package that did
+ * not land.
+ *
+ * ## Usage
+ *
+ *   node scripts/align-next-to-stable.mjs --version=0.6.0 [--dry-run]
+ *
+ * The version is pushed IN as a parameter rather than read from CI context, so
+ * the whole thing is runnable from a terminal. It has to be: the trigger that
+ * fires it in anger (`release` with `prerelease == false`) cannot happen until
+ * a real stable cut, so a step that reached into `github.*` could only ever be
+ * tested by cutting one.
+ *
+ * Requires `NODE_AUTH_TOKEN` (the CI automation token). That token bypasses
+ * 2FA — verified from CI, and bounded to `dist-tag`: `npm deprecate` has NOT
+ * been shown to work without an OTP and must not be assumed to.
+ */
+
+import { execFileSync } from 'node:child_process'
+import { isAfter } from './release/version-advanced.mjs'
+import { readFileSync, readdirSync, appendFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+/**
+ * Packages on their own version line, which the lockstep normalizer skips.
+ * Excluded BY NAME rather than left to the version check below, so that a day
+ * when a version coincidentally matches does not silently enrol it.
+ *
+ * EMPTY since #1313: `create-noy-db` was never MEANT to have its own line — the
+ * normaliser skipped it by name shape (unscoped), and the drift broke every
+ * scaffolded install. It rides the lockstep line now, so the lockstep pass
+ * aligns its `next` with everyone else's. The own-line pass below (#1305) is
+ * kept as machinery for a package that genuinely declares its own line; add
+ * one here only together with a written reason in its README.
+ */
+export const OWN_VERSION_LINE = []
+
+/** A prerelease sorts below its own release — the entire reason this exists. */
+const isPrerelease = (v) => v.includes('-')
+
+/**
+ * DERIVED, never hardcoded. A hardcoded roster is what broke noy-db-to's docs
+ * bridge twice: `to-browser-fs` debuted as the 18th store, was never added to
+ * the list it needed to be in, and the build died on the first unregistered
+ * entry — twice, with both runs green.
+ */
+export function derivePackages(packagesDir, readManifest, readDir = readdirSync) {
+  const out = []
+  for (const dir of readDir(packagesDir).sort()) {
+    let m
+    try {
+      m = readManifest(join(packagesDir, dir, 'package.json'))
+    } catch {
+      continue // not a package directory
+    }
+    if (!m?.name || m.private === true) continue
+    out.push({ pkg: m.name, version: m.version })
+  }
+  return out
+}
+
+/**
+ * Split the derived set into what we will act on and what we will not, with a
+ * stated reason for every exclusion. A package left out silently is
+ * indistinguishable from a package that was never there.
+ */
+export function planAlignment(derived, target) {
+  const targets = []
+  const excluded = []
+  for (const { pkg, version } of derived) {
+    if (OWN_VERSION_LINE.includes(pkg)) {
+      excluded.push({ pkg, why: `own version line (${version}); not part of the lockstep cut` })
+      continue
+    }
+    if (version !== target) {
+      // Not a skip. Every lockstep package is normalized to one version before
+      // a release, so a mismatch means the normalizer did not run or did not
+      // finish — and aligning the rest would leave a partial line.
+      excluded.push({ pkg, why: `LOCKSTEP VIOLATION: manifest says ${version}, expected ${target}` })
+      continue
+    }
+    targets.push({ pkg, version })
+  }
+  return { targets, excluded, lockstepBroken: excluded.some((e) => e.why.startsWith('LOCKSTEP')) }
+}
+
+/**
+ * THE LOAD-BEARING HALF, extracted as a pure function so it is testable at
+ * all. It never fires in a passing run, which is exactly why it would
+ * otherwise go uncovered while the easy derivation logic got all the tests.
+ *
+ * The catastrophic case it exists for: a wrong `--version` turns this into
+ * `npm dist-tag add <pkg>@<never-published> next` across the whole line. So
+ * the check is not "did the publish succeed" but "is `latest` ALREADY exactly
+ * where this run claims it is" — which is only true if the publish this run is
+ * finishing is the one that put it there.
+ */
+export function decideAction(tags, version) {
+  if (isPrerelease(version)) {
+    return { action: 'refuse', why: `${version} is a prerelease; this job only follows a STABLE publish` }
+  }
+  if (tags.latest === undefined) {
+    return { action: 'refuse', why: 'no `latest` tag on the registry — cannot confirm the stable published' }
+  }
+  if (tags.latest !== version) {
+    return {
+      action: 'refuse',
+      why: `\`latest\` is ${tags.latest}, not ${version} — refusing to point \`next\` at a version this run did not publish`,
+    }
+  }
+  if (tags.next === version) return { action: 'skip', why: `\`next\` already at ${version}` }
+  return { action: 'align', why: `\`next\`: ${tags.next ?? '(none)'} → ${version}` }
+}
+
+/**
+ * #1305 — the counterpart `OWN_VERSION_LINE` never had.
+ *
+ * An own-line package exits pre mode with everyone else, so its `latest`
+ * advances at a stable cut while its `next` stays where the pre line left it
+ * (`create-noy-db`: latest 0.3.4, next 0.3.4-pre.17 after the 0.7.0 cut). The
+ * lockstep pass is told not to touch it; this pass is what IS told to.
+ *
+ * The invariant is over the OUTPUT — no published package ends a release with
+ * `next` sorting below `latest` — and it is computed from the package's OWN
+ * tags. It never sees `--version`: that is what keeps a coincidental version
+ * match from enrolling an own-line package onto the lockstep number, which is
+ * the risk the by-name exclusion above exists to prevent.
+ *
+ * `next` AHEAD of `latest` is the normal in-flight state and is left alone.
+ */
+export function decideOwnLineAction(tags) {
+  if (tags.latest === undefined) return { action: 'skip', why: 'no `latest` — nothing stable to align onto' }
+  if (isPrerelease(tags.latest)) {
+    return { action: 'skip', why: `\`latest\` is ${tags.latest}, a prerelease — not the inversion this pass repairs` }
+  }
+  if (tags.next === tags.latest) return { action: 'skip', why: `\`next\` already at ${tags.latest}` }
+  if (tags.next !== undefined && isAfter(tags.next, tags.latest)) {
+    return { action: 'skip', why: `\`next\` ${tags.next} is ahead of \`latest\` ${tags.latest} — in flight, left alone` }
+  }
+  return { action: 'align', version: tags.latest, why: `\`next\`: ${tags.next ?? '(none)'} → ${tags.latest}` }
+}
+
+// ── everything below is I/O; the decisions above are pure ──────────────────
+
+const firstLine = (err) => (err?.stderr?.toString() ?? err?.message ?? '').split('\n')[0]
+
+/** Block the thread. Fine here: this script is a linear release step. */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/**
+ * Re-read until every package reports the new `next`, or the attempts run out.
+ * Returns the ones still unconfirmed — NOT the ones that failed. Collapsing
+ * "the write errored" into "I could not confirm it yet" is what turned a
+ * successful release into a red job telling someone to repair 52 packages by
+ * hand.
+ */
+export function confirmMoved(pkgs, version, note, opts = {}) {
+  const { attempts = 4, delayMs = 15_000, read = readDistTags, sleep = sleepSync } = opts
+  let pending = [...pkgs]
+  for (let i = 0; i < attempts && pending.length > 0; i++) {
+    if (i > 0) sleep(delayMs)
+    const stillPending = []
+    for (const pkg of pending) {
+      let after
+      try {
+        after = read(pkg)
+      } catch {
+        stillPending.push(pkg)
+        continue
+      }
+      if (after.next === version) note(`- \`${pkg}\` — ✅ \`next\` → ${version}`)
+      else stillPending.push(pkg)
+    }
+    pending = stillPending
+    if (pending.length > 0 && i < attempts - 1) {
+      note(`(${pending.length} not yet visible; re-checking after ${delayMs / 1000}s — registry caching)`)
+    }
+  }
+  return pending
+}
+
+function readDistTags(pkg) {
+  const raw = execFileSync('npm', ['view', pkg, 'dist-tags', '--json'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return JSON.parse(raw || '{}')
+}
+
+function main() {
+  const args = process.argv.slice(2)
+  const dryRun = args.includes('--dry-run')
+  const version = args.find((a) => a.startsWith('--version='))?.slice('--version='.length)
+
+  if (!version || !/^\d+\.\d+\.\d+/.test(version)) {
+    console.error(`[align] --version=X.Y.Z is required (got: ${version ?? 'nothing'})`)
+    process.exit(1)
+  }
+
+  const summary = []
+  const note = (line) => {
+    console.log(`[align] ${line}`)
+    summary.push(line)
+  }
+  const flush = (heading) => {
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${heading}\n\n${summary.join('\n')}\n\n`)
+    }
+  }
+
+  // npm reports write-path auth failures as 404, never 401 — deliberately, so
+  // status codes cannot be used to probe which private packages exist. Without
+  // establishing identity first, a later 404 is ambiguous between a dead
+  // credential and a missing package, and the wrong one gets investigated.
+  if (!dryRun) {
+    try {
+      const who = execFileSync('npm', ['whoami'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+      note(`authenticated as \`${who}\``)
+    } catch {
+      note('❌ `npm whoami` failed — no usable credential. Every later 404 would be ambiguous.')
+      flush('npm dist-tag alignment — ABORTED')
+      process.exit(1)
+    }
+  }
+
+  const derived = derivePackages('packages', (p) => JSON.parse(readFileSync(p, 'utf8')))
+  const { targets, excluded, lockstepBroken } = planAlignment(derived, version)
+
+  note(`target ${version} · ${targets.length} package(s) · ${excluded.length} excluded`)
+  for (const e of excluded) note(`- \`${e.pkg}\` — excluded: ${e.why}`)
+
+  if (lockstepBroken) {
+    note('❌ refusing to align a partially-normalized line. Fix the versions and re-run.')
+    flush('npm dist-tag alignment — ABORTED')
+    process.exit(1)
+  }
+
+  // ── PASS 1: write ────────────────────────────────────────────────────────
+  const written = []
+  const failed = [] // the `dist-tag add` itself errored or was refused
+  for (const { pkg } of targets) {
+    let tags
+    try {
+      tags = readDistTags(pkg)
+    } catch (err) {
+      note(`- \`${pkg}\` — ❌ could not read dist-tags: ${firstLine(err)}`)
+      failed.push(pkg)
+      continue
+    }
+
+    const { action, why } = decideAction(tags, version)
+    if (action === 'refuse') {
+      note(`- \`${pkg}\` — ❌ REFUSED: ${why}`)
+      failed.push(pkg)
+      continue
+    }
+    if (action === 'skip') {
+      note(`- \`${pkg}\` — ${why}`)
+      continue
+    }
+    if (dryRun) {
+      note(`- \`${pkg}\` — would align ${why}`)
+      continue
+    }
+
+    try {
+      execFileSync('npm', ['dist-tag', 'add', `${pkg}@${version}`, 'next'], { stdio: 'pipe' })
+      written.push(pkg)
+    } catch (err) {
+      note(`- \`${pkg}\` — ❌ FAILED: ${firstLine(err)}`)
+      failed.push(pkg)
+    }
+  }
+
+  // ── PASS 1b: own-line packages, against their OWN tags (#1305) ────────────
+  //
+  // Excluded from the lockstep pass by name, so nothing above touched them —
+  // and until this pass existed nothing else did either: every stable cut left
+  // create-noy-db with `next` below `latest`. Same write path, same tag, but
+  // the target version is read from the registry per package, never from
+  // `--version`.
+  const ownWritten = [] // [{ pkg, version }]
+  const ownFailed = []  // [{ pkg, version }]
+  for (const { pkg } of derived.filter((d) => OWN_VERSION_LINE.includes(d.pkg))) {
+    let tags
+    try {
+      tags = readDistTags(pkg)
+    } catch (err) {
+      note(`- \`${pkg}\` (own line) — ❌ could not read dist-tags: ${firstLine(err)}`)
+      ownFailed.push({ pkg, version: '<its latest>' })
+      continue
+    }
+    const { action, version: own, why } = decideOwnLineAction(tags)
+    if (action === 'skip') {
+      note(`- \`${pkg}\` (own line) — ${why}`)
+      continue
+    }
+    if (dryRun) {
+      note(`- \`${pkg}\` (own line) — would align ${why}`)
+      continue
+    }
+    try {
+      execFileSync('npm', ['dist-tag', 'add', `${pkg}@${own}`, 'next'], { stdio: 'pipe' })
+      ownWritten.push({ pkg, version: own })
+    } catch (err) {
+      note(`- \`${pkg}\` (own line) — ❌ FAILED: ${firstLine(err)}`)
+      ownFailed.push({ pkg, version: own })
+    }
+  }
+
+  // ── PASS 2: confirm, with settling ───────────────────────────────────────
+  //
+  // A zero exit is not evidence the tag moved — but neither is one stale read
+  // evidence that it did not. npm's read-after-write is NOT immediately
+  // consistent: `npm view` is served through a CDN, and reading straight back
+  // after a write returns the previous value often enough that the FIRST run of
+  // this job reported all 52 packages failed while every one of them had in
+  // fact moved. It then printed 52 OTP recovery commands for packages that
+  // needed no repair, which is a worse outcome than saying nothing.
+  //
+  // So: verify all of them AFTER all the writes, then re-check only the
+  // stragglers, a few times.
+  //
+  // ⚠️ LOAD-BEARING AND EASY TO PORT AWAY: `confirmMoved` reads in the SAME
+  // ORDER these were written. That is what gives every package roughly one
+  // pass-duration of settle instead of leaving the last-written ones with
+  // none — write i lands at `i·w`, its read happens at `n·w + i·r`, so the
+  // settle floor is `n·r`, the whole read pass. Reverse the read loop for any
+  // reason and the tail drops to ~zero.
+  //
+  // It also scales the WRONG way for a small repo: at 52 packages one pass is
+  // ~80s, at 3 packages it is ~4s. So this ordering is not the safety
+  // mechanism — the retry below is. Do not port the two-pass split without it.
+  const unconfirmed = confirmMoved(written, version, note)
+  for (const { pkg, version: own } of ownWritten) unconfirmed.push(...confirmMoved([pkg], own, note))
+
+  if (unconfirmed.length > 0) {
+    note('')
+    note(`⚠️ **${unconfirmed.length} package(s) could not be CONFIRMED within the settle window.**`)
+    note('The write did not error — this is very likely registry caching, not a failure.')
+    note('**Check before repairing; these are probably already correct:**')
+    note('```')
+    for (const pkg of unconfirmed) note(`npm view ${pkg} dist-tags`)
+    note('```')
+  }
+
+  if (failed.length > 0 || ownFailed.length > 0) {
+    note('')
+    note(`❌ **${failed.length + ownFailed.length} package(s) did not land. The line is HALF-APPLIED.**`)
+    note('Recover from a workstation (these need an interactive OTP):')
+    note('```')
+    for (const pkg of failed) note(`npm dist-tag add ${pkg}@${version} next --otp=<code>`)
+    for (const { pkg, version: own } of ownFailed) note(`npm dist-tag add ${pkg}@${own} next --otp=<code>`)
+    note('```')
+    flush('npm dist-tag alignment — FAILED')
+    process.exit(1)
+  }
+
+  if (unconfirmed.length > 0) {
+    flush('npm dist-tag alignment — UNCONFIRMED')
+    process.exit(1)
+  }
+
+  note(`✅ \`next\` and \`latest\` both at ${version} across ${targets.length} package(s)`)
+  if (ownWritten.length > 0) note(`✅ own-line: ${ownWritten.map((w) => `\`${w.pkg}\` → ${w.version}`).join(', ')}`)
+  flush('npm dist-tag alignment')
+}
+
+// Importing this module must not perform a release action.
+if (process.argv[1] && process.argv[1].endsWith('align-next-to-stable.mjs')) main()

@@ -1,0 +1,352 @@
+/**
+ * Time-machine queries — point-in-time reads reconstructed from the
+ * existing history + ledger infrastructure.
+ *
+ * ## Usage
+ *
+ * ```ts
+ * const vault = await db.openVault('acme', { secret })
+ * const q1End = vault.at('2026-03-31T23:59:59Z')
+ * const invoice = await q1End.collection<Invoice>('invoices').get('inv-001')
+ * // → the record as it stood at the close of Q1 2026
+ * ```
+ *
+ * ## How it works
+ *
+ * Every write path already fans out into two persistence lanes:
+ *
+ * 1. `saveHistory(...)` persists a **full encrypted envelope snapshot**
+ *    per version under the `_history` collection (one envelope per
+ *    version, keyed by `{collection}:{id}:{paddedVersion}`). Each
+ *    envelope carries its own `_ts` (the write timestamp).
+ * 2. `ledger.append(...)` appends a hash-chained audit entry that
+ *    records the `op` (put / delete), `version`, and `ts`.
+ *
+ * Reconstruction at a target timestamp T is therefore:
+ *
+ * - Find the newest history envelope for `(collection, id)` whose
+ *   `_ts ≤ T` — that's the state the record was in at T.
+ * - Check the ledger for any `op: 'delete'` entry for the same
+ *   `(collection, id)` with `entry.ts` in `(latestEnvelope._ts, T]` —
+ *   if present, the record was deleted before T, so return `null`.
+ * - Decrypt the surviving envelope with the current collection DEK
+ *   (DEKs are per-collection but stable across versions — the same
+ *   key encrypts v1 and v15 of a record).
+ *
+ * No delta replay. The existing `history.ts` module already stores
+ * complete snapshots; we just pick the right one.
+ *
+ * ## Read-only contract
+ *
+ * Every write method on `CollectionInstant` throws
+ * {@link ReadOnlyAtInstantError}. A historical view is a *read*
+ * surface — mutating the past would require either a branch/shadow
+ * mechanism (tracked under shadow vaults) or a rewrite of
+ * history, which breaks the ledger's tamper-evidence guarantee.
+ *
+ * @module
+ */
+import type { EncryptedEnvelope, NoydbStore } from '../../kernel/types.js'
+import type { LedgerStore } from './ledger/store.js'
+import { getHistory, historyIdentity } from './history.js'
+
+/**
+ * An envelope together with **the address it was fetched from**.
+ *
+ * The time machine resolves a record's state at an instant from two different
+ * places — the live collection, or a `_history` snapshot — and those are sealed
+ * against different identities (#1041). Returning the envelope alone discards
+ * the one fact the reader needs to open it, which is precisely the read-side
+ * data-flow gap that binding identity exposes.
+ */
+interface ResolvedEnvelope {
+  readonly envelope: EncryptedEnvelope
+  readonly ref: { readonly collection: string; readonly id: string }
+}
+import { openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { ReadOnlyAtInstantError } from '../../kernel/errors.js'
+import { liveRecordIsElevated } from '../../kernel/tier-visibility.js'
+
+/**
+ * Narrow view of a {@link Vault}'s internals that
+ * {@link VaultInstant} needs. Passed in by `Vault.at()` rather than
+ * constructed here so all crypto + adapter access stays inside the
+ * Vault class.
+ *
+ * Not exported from the public barrel — consumers should get a
+ * `VaultInstant` via `vault.at(ts)`, never by constructing one
+ * directly.
+ */
+export interface VaultEngine {
+  readonly adapter: NoydbStore
+  /** Vault name (the compartment). */
+  readonly name: string
+  /**
+   * `true` when the vault was opened with a secret (the normal
+   * case). `false` in plaintext-mode vaults (`encrypt: false`) — in
+   * that case `envelope._data` is raw JSON and we skip the DEK lookup.
+   */
+  readonly encrypted: boolean
+  /**
+   * Resolves the DEK used to decrypt a given collection's envelopes.
+   * Not called when `encrypted` is false.
+   */
+  getDEK(collection: string): Promise<EnclaveKey>
+  /**
+   * Lazily-initialised ledger. We consult it to detect deletes that
+   * happened between the latest history snapshot and the target
+   * timestamp. `null` when history is disabled for this vault — in
+   * that case time-machine reads fall back to history-only
+   * reconstruction (which may miss deletes).
+   */
+  getLedger(): LedgerStore | null
+}
+
+/**
+ * A vault at a fixed instant. Produced by `vault.at(timestamp)`.
+ * Carries no session state of its own — every read is a fresh
+ * lookup through the vault's adapter.
+ *
+ * Cheap to construct; safe to throw away. Create one per query.
+ */
+export class VaultInstant {
+  constructor(
+    private readonly engine: VaultEngine,
+    /** Fully-resolved target timestamp (ISO-8601 UTC). */
+    public readonly timestamp: string,
+  ) {}
+
+  /** Get a point-in-time view of a collection. */
+  collection<T = unknown>(name: string): CollectionInstant<T> {
+    return new CollectionInstant<T>(this.engine, this.timestamp, name)
+  }
+}
+
+/**
+ * A read-only collection view anchored to a past instant.
+ *
+ * Every write method throws {@link ReadOnlyAtInstantError} — see the
+ * module docstring for why. The read surface is intentionally smaller
+ * than the live {@link Collection}: `get` and `list` cover the
+ * "what did the books look like on date X" use case without pulling
+ * in the full query DSL / joins / aggregates at this stage. Follow-up
+ * work tracked under.
+ */
+export class CollectionInstant<T = unknown> {
+  constructor(
+    private readonly engine: VaultEngine,
+    private readonly targetTs: string,
+    public readonly name: string,
+  ) {}
+
+  /**
+   * Return the record as it existed at the target timestamp, or
+   * `null` if the record had not been created yet or had already been
+   * deleted by then.
+   *
+   * Gated on the LIVE record's current tier — #730, mirroring the #712
+   * read-gate `history()`/`getVersion()` already apply: an elevated record
+   * is invisible through the whole time-machine surface, not just a
+   * decrypt failure. See {@link resolveVisibleEnvelope}.
+   *
+   * Decrypts through {@link openEnvelopeJson}, the `_cek`-aware envelope
+   * body opener — a snapshot from a `perRecordKeys` collection is encrypted
+   * under its own per-record CEK (wrapped in `_cek`), not the collection
+   * DEK directly.
+   */
+  async get(id: string): Promise<T | null> {
+    const found = await this.resolveVisibleEnvelope(id)
+    if (!found) return null
+    // The envelope may be the LIVE record or a `_history` snapshot, and the two
+    // are sealed against different identities (#1041). `resolveEnvelope` carries
+    // the address down with the bytes precisely so this read can name it.
+    const plaintext = this.engine.encrypted
+      ? await openEnvelopeJson(found.ref, found.envelope, await this.engine.getDEK(this.name))
+      : found.envelope._data
+    return JSON.parse(plaintext) as T
+  }
+
+  /**
+   * IDs of records that existed (had at least one `put` and were not
+   * subsequently deleted) at the target timestamp.
+   *
+   * Implemented as a linear scan over history + ledger. Performance
+   * is bounded by total history size (not live-vault size), so the
+   * memory-first vault-scale cap (1K–50K records × average history
+   * depth) still applies.
+   */
+  async list(): Promise<string[]> {
+    const historyIds = await collectHistoryIds(this.engine.adapter, this.engine.name, this.name)
+    const liveIds = await this.engine.adapter.list(this.engine.name, this.name)
+    const candidateIds = new Set<string>([...historyIds, ...liveIds])
+    const alive: string[] = []
+    for (const id of candidateIds) {
+      const env = await this.resolveVisibleEnvelope(id)
+      if (env) alive.push(id)
+    }
+    return alive.sort()
+  }
+
+  // ── write guards ───────────────────────────────────────────────────
+
+  async put(_id: string, _record: T): Promise<never> {
+    throw new ReadOnlyAtInstantError('put', this.targetTs)
+  }
+  async delete(_id: string): Promise<never> {
+    throw new ReadOnlyAtInstantError('delete', this.targetTs)
+  }
+  async update(_id: string, _patch: Partial<T>): Promise<never> {
+    throw new ReadOnlyAtInstantError('update', this.targetTs)
+  }
+
+  // ── internals ─────────────────────────────────────────────────────
+
+  /**
+   * {@link resolveEnvelope}, additionally gated on the record's LIVE
+   * (current, not historical) tier — #730. Mirrors the #712 read-gate
+   * `history()`/`getVersion()` apply: history snapshots keep their
+   * tier-0-wrapped CEKs and carry no `_tier` of their own, so an elevated
+   * record's prior versions would otherwise stay tier-0-decryptable here.
+   * `null` for a resolved envelope carrying its own `_tier > 0` (a
+   * tier-aware snapshot reached some other way) or whose LIVE record is
+   * currently elevated — both `get()` and `list()` route through this so
+   * the invisibility law holds on the whole time-machine read surface, not
+   * just a decrypt failure.
+   */
+  private async resolveVisibleEnvelope(id: string): Promise<ResolvedEnvelope | null> {
+    const found = await this.resolveEnvelope(id)
+    if (!found || (found.envelope._tier ?? 0) > 0) return null
+    if (await liveRecordIsElevated(this.engine.adapter, this.engine.name, this.name, id)) return null
+    return found
+  }
+
+  /**
+   * Return the envelope that represents the record's state at
+   * `targetTs`, accounting for deletes. `null` if the record didn't
+   * exist at that instant.
+   *
+   * ## Why we use the ledger as the authoritative timeline
+   *
+   * The per-version history snapshots saved by `saveHistory()` do
+   * carry a `_ts` field, but that timestamp is the moment the
+   * snapshot was *captured* (i.e. the instant right before the
+   * subsequent overwrite), not the original write time. The ledger,
+   * by contrast, records `ts` at the moment of each `put` / `delete`
+   * — it's the only source that tracks the real timeline. So:
+   *
+   *   1. Walk the ledger; find the latest entry for `(collection, id)`
+   *      with `ts ≤ targetTs`.
+   *   2. If that entry is a `delete`, the record was gone at the
+   *      target instant — return null.
+   *   3. Otherwise it's a `put` with a specific `version`. Load the
+   *      envelope for that version from history, falling back to the
+   *      live collection for the most recent version.
+   *
+   * ## Fallback when the ledger is disabled
+   *
+   * If the vault has history disabled, `getLedger()` returns null and
+   * we fall back to comparing envelope `_ts` fields. This is
+   * approximate and gets the *last write* right but may confuse the
+   * intermediate versions; adopters needing accurate time-machine
+   * reads should leave history enabled.
+   */
+  private async resolveEnvelope(id: string): Promise<ResolvedEnvelope | null> {
+    const ledger = this.engine.getLedger()
+    if (ledger) {
+      return this.resolveViaLedger(id, ledger)
+    }
+    return this.resolveViaEnvelopeTs(id)
+  }
+
+  private async resolveViaLedger(id: string, ledger: LedgerStore): Promise<ResolvedEnvelope | null> {
+    const entries = await ledger.entries()
+    // Entries are already ordered by index which is the mutation order.
+    let latest: { op: 'put' | 'delete'; version: number } | null = null
+    for (const e of entries) {
+      if (e.collection !== this.name || e.id !== id) continue
+      if (e.ts > this.targetTs) break   // entries are time-ordered by index
+      // `amendment` + `lifecycle` entries are audit-only summaries — they
+      // carry no (collection, id) tuple of their own and would never match
+      // the filter above. The narrow here is a type guard, not a runtime
+      // skip.
+      // `forget` is a subject-erasure summary with empty (collection, id) —
+      // never matches the filter above; the narrow is a type guard.
+      if (e.op === 'amendment' || e.op === 'lifecycle' || e.op === 'forget') continue
+      // `migration` is a record rewrite (cutover) — resolve it like a put.
+      latest = { op: e.op === 'migration' ? 'put' : e.op, version: e.version }
+    }
+    if (!latest) return null
+    if (latest.op === 'delete') return null
+    return this.loadVersion(id, latest.version)
+  }
+
+  private async resolveViaEnvelopeTs(id: string): Promise<ResolvedEnvelope | null> {
+    const history = await getHistory(
+      this.engine.adapter, this.engine.name, this.name, id,
+    )
+    const live = await this.engine.adapter.get(this.engine.name, this.name, id)
+    // Each candidate keeps the address it came from — a snapshot and the live
+    // record are sealed against different identities, and this map is exactly
+    // where that provenance used to be discarded (#1041).
+    const byVersion = new Map<number, ResolvedEnvelope>()
+    for (const e of history) {
+      byVersion.set(e._v, { envelope: e, ref: historyIdentity(this.name, id, e._v) })
+    }
+    if (live) byVersion.set(live._v, { envelope: live, ref: { collection: this.name, id } })
+    const sorted = [...byVersion.values()].sort((a, b) =>
+      a.envelope._ts < b.envelope._ts ? 1 : a.envelope._ts > b.envelope._ts ? -1 : 0,
+    )
+    return sorted.find((e) => e.envelope._ts <= this.targetTs) ?? null
+  }
+
+  /**
+   * Fetch the envelope for a specific version. The live record (most
+   * recent put) lives in the main collection; prior versions live in
+   * `_history`. We check live first because the common case after a
+   * delete is that we're trying to load the last-live version from
+   * history, and skipping live for the current-version case avoids a
+   * redundant lookup.
+   */
+  private async loadVersion(id: string, version: number): Promise<ResolvedEnvelope | null> {
+    const live = await this.engine.adapter.get(this.engine.name, this.name, id)
+    if (live && live._v === version) {
+      return { envelope: live, ref: { collection: this.name, id } }
+    }
+
+    // Direct lookup by (collection, id, version) — avoids scanning all history.
+    //
+    // This used to rebuild the key inline as
+    // `${name}:${id}:${padStart(10,'0')}` — a SECOND definition of the history
+    // layout, free to drift from `historyId`'s. It now goes through
+    // `historyIdentity`, the same function `saveHistory` writes with, so the
+    // read address and the write address cannot disagree (#1041).
+    const ref = historyIdentity(this.name, id, version)
+    const envelope = await this.engine.adapter.get(this.engine.name, ref.collection, ref.id)
+    return envelope ? { envelope, ref } : null
+  }
+}
+
+/**
+ * Scan the `_history` collection once and collect every distinct
+ * `recordId` for the given collection. History keys follow the
+ * shape `<collection>:<recordId>:<paddedVersion>`; we split on the
+ * last two colons (delimiter-safe because `paddedVersion` is
+ * exactly 10 digits).
+ */
+async function collectHistoryIds(
+  adapter: NoydbStore,
+  vault: string,
+  collection: string,
+): Promise<string[]> {
+  const all = await adapter.list(vault, '_history')
+  const prefix = `${collection}:`
+  const seen = new Set<string>()
+  for (const key of all) {
+    if (!key.startsWith(prefix)) continue
+    const lastColon = key.lastIndexOf(':')
+    if (lastColon <= prefix.length) continue
+    const middle = key.slice(prefix.length, lastColon)
+    seen.add(middle)
+  }
+  return [...seen]
+}

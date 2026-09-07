@@ -1,0 +1,32 @@
+import { describe, expect, it } from 'vitest'
+import { coordinatedCutover } from '../../src/with-shape/schema-update/cutover.js'
+import type { SchemaDelta } from '../../src/with-shape/schema-update/types.js'
+
+const delta = (kind: SchemaDelta['kind']): SchemaDelta =>
+  ({ collection: 'invoices', kind, added: [], removed: [], changed: [] })
+const ctx = { collection: 'invoices' }
+const transform = (d: Record<string, unknown>) => ({ ...d, migrated: true })
+
+describe('coordinatedCutover', () => {
+  it('returns cutover (with the transform) on a non-additive delta', async () => {
+    const d = await coordinatedCutover({ transform }).onSchemaDelta(delta('non-additive'), ctx)
+    expect(d.action).toBe('cutover')
+    if (d.action === 'cutover') expect(d.transform).toBe(transform)
+  })
+  it('allows additive and none', async () => {
+    const s = coordinatedCutover({ transform })
+    expect(await s.onSchemaDelta(delta('additive'), ctx)).toEqual({ action: 'allow' })
+    expect(await s.onSchemaDelta(delta('none'), ctx)).toEqual({ action: 'allow' })
+  })
+
+  // #946 regression fix: a renamed-only delta (kind: 'additive', renamed
+  // populated) must STILL fire the transform — a pure rename carries no
+  // data migration on its own; without this the caller's TransformFn never
+  // runs and existing values are orphaned under the old key.
+  it('returns cutover (with the transform) on a renamed-only additive delta', async () => {
+    const renamedDelta: SchemaDelta = { ...delta('additive'), renamed: [{ from: 'a', to: 'b' }] }
+    const d = await coordinatedCutover({ transform }).onSchemaDelta(renamedDelta, ctx)
+    expect(d.action).toBe('cutover')
+    if (d.action === 'cutover') expect(d.transform).toBe(transform)
+  })
+})

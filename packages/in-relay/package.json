@@ -1,0 +1,56 @@
+{
+  "name": "@noy-db/in-relay",
+  "version": "0.7.1-pre.0",
+  "description": "Relay server half for noy-db — a frame dispatcher over a NARROWED store profile, where saveAll and listVaults are absent by construction",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@noy-db/hub": "workspace:^"
+  },
+  "devDependencies": {
+    "@noy-db/hub": "workspace:*"
+  },
+  "license": "MIT",
+  "author": "vLannaAi <vicio@lanna.ai>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/in-relay"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "noy-db",
+    "in-rest",
+    "rest",
+    "http",
+    "api"
+  ],
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/in-relay#readme",
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  }
+}

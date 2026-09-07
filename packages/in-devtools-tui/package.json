@@ -1,0 +1,50 @@
+{
+  "name": "@noy-db/in-devtools-tui",
+  "version": "0.7.1-pre.0",
+  "description": "Interactive terminal inspector for a live noy-db (ink TUI over @noy-db/in-devtools).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "noydb-inspect": "./dist/bin.js"
+  },
+  "main": "./dist/bin.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noy-db/to-meter": "workspace:*",
+    "ink": "^5.0.1",
+    "react": "^18.3.1"
+  },
+  "peerDependencies": {
+    "@noy-db/hub": "workspace:^",
+    "@noy-db/in-devtools": "workspace:^"
+  },
+  "devDependencies": {
+    "@noy-db/hub": "workspace:*",
+    "@noy-db/in-devtools": "workspace:*",
+    "ink-testing-library": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.12"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/in-devtools-tui"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/in-devtools-tui#readme"
+}

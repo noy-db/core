@@ -1,0 +1,148 @@
+# @noy-db/test-format-conformance
+
+The `as-*` export gate, published as an executable suite.
+
+```ts
+import { runFormatConformanceTests } from '@noy-db/test-format-conformance'
+import { asMyformat, download, write } from '../src/index.js'
+
+runFormatConformanceTests('as-myformat', {
+  tier: 'plaintext',            // or 'bundle' for an encrypted-pod format (then omit `format`)
+  format: 'myformat',
+  vault: () => seededExportCapableVault(),
+  // The format's WHOLE surface: the inverted entry (hub owns the read —
+  // ADR 0004) plus any argument-shape wrappers the package still exports.
+  exports: [
+    { name: 'vault.export(asMyformat())', run: (v) => v.export(asMyformat(), { collections: ['invoices'] }) },
+    { name: 'download', run: (v) => download(v, opts) },
+    { name: 'write',    run: (v) => write(v, path, { ...opts, acknowledgeRisks: true }) },
+  ],
+  imports: [
+    { name: 'vault.import(asMyformat())', run: (v) => v.import(asMyformat(), payload, { collection: 'invoices' }) },
+  ],
+  writeWithoutAcknowledgement: (v, path) => write(v, path, opts),
+})
+```
+
+(For a complete, compiling fixture see `packages/as-csv/__tests__/conformance.test.ts` —
+the canonical consumer.)
+
+## What it checks
+
+`as-*` is the one place plaintext leaves the vault. Every package calls
+`vault.assertCanExport('plaintext', <format>)`, and that call is the whole
+boundary. Nine packages had converged on the same shape by convention, and
+convention is what the next format author reads instead of a contract.
+
+For **every** entry point the fixture lists:
+
+- it **refuses** when `assertCanExport` denies, and
+- it refuses **before reading a single record**.
+
+Plus: the `write` path refuses without `acknowledgeRisks: true`.
+
+## Gated is not the property. Gated BEFORE decrypting is.
+
+A gate called after `exportStream` has run refuses the caller *and decrypts
+anyway*. That is the property a delegation refactor breaks silently — move the
+gate from `toObject` into `download` and every existing test still passes.
+
+Proven, not asserted: moving as-csv's gate inside its `exportStream` loop
+leaves both "REFUSES" cases green and fails all three "before reading" cases.
+
+## The two ways this suite could have been vacuous
+
+Both were real, and both were found by trying to break it rather than by
+reading it.
+
+**A refusal is only evidence when the same call would otherwise succeed.**
+The kit's first case runs an entry point on the *ungated* vault and requires it
+to resolve. On its first run it failed `as-zip` — whose export path opens a
+blob slot, so the fixture vault was refusing on *blob storage*, not on the
+export gate. **Six green cases in a file I had just declared passing were
+passing for the wrong reason.**
+
+**`rejects.toThrow()` is absorbed by whichever guard fires first.** The
+acknowledgement case originally used a vault with no `exportCapability` grant,
+so `write` refused at the export gate and never reached the flag — deleting the
+acknowledgement guard from as-csv left the suite green. Fixed twice over: the
+case now matches on `/acknowledgeRisks/`, and the fixture is required to supply
+an export-capable vault.
+
+## Why a Proxy and not a fake Vault
+
+A hand-written double would drift from `Vault`, and would only ever exercise
+the methods whoever wrote it thought of. The fixture supplies a **real** vault
+and the kit wraps it, so an entry point reaching for some other decrypting
+method is still observed.
+
+## Mutation-checked
+
+| mutation | result |
+|---|---|
+| as-csv: gate deleted | 6 fail |
+| as-csv: gate moved after the read | 3 fail — the "before reading" cases only |
+| as-csv: `acknowledgeRisks` guard deleted | 1 fails |
+| as-zip: gate deleted | 6 fail |
+
+## All nine formats bind it
+
+`as-blob` · `as-csv` · `as-json` · `as-ndjson` · `as-noydb` · `as-sql` ·
+`as-xlsx` · `as-xml` · `as-zip`.
+
+Wiring them found that the family is **two capability tiers**, not one:
+
+| tier | packages | gate |
+|---|---|---|
+| `plaintext` | eight | `assertCanExport('plaintext', <format>)` |
+| `bundle` | `as-noydb` | `assertCanExport('bundle')` — no format |
+
+`as-noydb` emits an **encrypted** pod, so it also has **no `acknowledgeRisks`
+gate**, and its source says so twice. Its fixture therefore declares no
+acknowledgement case — and the suite prints
+`write: SKIPPED — … UNVERIFIED here` rather than staying quiet, which is the
+difference between a documented absence and a hole.
+
+`as-aws-s3` is not in the list: it exports `asAwsS3(options)` and is a
+**destination, not a format**.
+
+## The vacuity guard earned its place twice
+
+It fired on `as-zip` (no `withBlobs()`) and on `as-blob` (no blob attached to
+the seeded record). In both cases six refusal assertions were green and
+meaningless. Neither would have been visible from reading the output.
+
+## This kit is for EGRESS, not only for `as-*`
+
+The family prefix is not the criterion. **Anything that puts plaintext where the
+vault no longer controls it is an export**, and belongs here — which includes
+bindings that are not `as-*` packages at all.
+
+| projection | egress? | gated |
+|---|---|---|
+| `as-csv`, `as-xlsx`, `as-sql`, … | writes a file | ✅ |
+| `as-aws-s3` | pushes to a bucket — a **destination**, not a format | ✅ |
+| a `ui-*` binding rendering to a screen | the user already unlocked the vault | ❌ not egress |
+| **a `ui-*` binding pushing into Google Sheets / Excel-web / Airtable / Retool** | **a third party persists and indexes it** | ✅ **use this kit** |
+
+> **A UI that exports is an export.** Rendering locally is covered by unlock and
+> the ACL. Handing plaintext to a service that keeps a copy is the same act
+> `as-csv` performs, and it calls the same gate:
+> `assertCanExport('plaintext', <your format id>)`.
+
+Since `ExportFormat` is an **open** union, your id does not need to be one hub
+ships — `{ plaintext: ['gsheet'] }` is a grantable capability. Before that
+change a third-party id could be *checked* and never *granted*, so the only way
+to authorise one was the `'*'` wildcard.
+
+### What this contract is, honestly
+
+`as-*` packages refuse because **hub's own export paths call the gate**. A
+binding written outside this repo can simply not call it, and nothing stops it.
+So this is a **convention plus an executable check**, not an enforcement
+boundary — the same footing `to-*` runs on. Saying otherwise would repeat the
+mistake this kit was built to correct: a security claim that reads as
+enforcement and enforces nothing.
+
+Passing this suite is what makes the claim checkable. See
+`docs/adr/0005-no-ui-port.md` in the `noy-db` repo for the reasoning.

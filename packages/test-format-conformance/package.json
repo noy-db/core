@@ -1,0 +1,57 @@
+{
+  "name": "@noy-db/test-format-conformance",
+  "version": "0.7.1-pre.0",
+  "description": "Parameterized contract tests for noy-db as-* formats — the export-gate suite every plaintext projection must pass",
+  "license": "MIT",
+  "author": "vLannaAi <vicio@lanna.ai>",
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/test-format-conformance#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/test-format-conformance"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@noy-db/hub": "workspace:^",
+    "vitest": "^3.0.0"
+  },
+  "devDependencies": {
+    "@noy-db/hub": "workspace:*",
+    "vitest": "^3.0.0"
+  },
+  "keywords": [
+    "noy-db",
+    "conformance",
+    "export",
+    "plaintext",
+    "testing"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
