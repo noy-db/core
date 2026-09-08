@@ -1,8 +1,8 @@
 {
   "name": "@noy-db/test-adapter-conformance",
-  "version": "0.7.1-pre.0",
+  "version": "0.8.0-pre.0",
   "description": "Parameterized adapter contract tests for noy-db stores — the conformance suite every NoydbStore implementation must pass",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/test-adapter-conformance#readme",
   "repository": {
@@ -26,7 +26,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=22.0.0"

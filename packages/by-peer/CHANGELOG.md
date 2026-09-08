@@ -1,5 +1,11 @@
 # Changelog — by-peer
 
+## 0.8.0-pre.0
+
+Relicensed from MIT to Apache-2.0 from this version on. Earlier versions remain MIT.
+
+`serveMultiPeerStore()` — one browser peer accepting N invites (star topology), one token per peer (#1239). Each accepted invite is one `servePeerStore` underneath; revocation is per peer, a token is bound to the channel it was accepted on, an empty token is refused at `accept()`, and nothing is recorded about who called what.
+
 ## 0.7.1-pre.0
 
 ### Patch Changes

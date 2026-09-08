@@ -1,5 +1,11 @@
 # @noy-db/in-relay
 
+## 0.8.0-pre.0
+
+Relicensed from MIT to Apache-2.0 from this version on. Earlier versions remain MIT.
+
+The notify server-push frame, beside the request frame (#1238): `createRelayNotifier()` + `createRelayHandler({ store, notify })`. A subscription names one vault; each successful `put` / `delete` / `tx` op is announced by address (`vault/collection/id`, op, `ts`) with a per-subscription contiguous `seq` — never the envelope. At-most-once; reconcile a gap with `listSince`.
+
 ## 0.7.1-pre.0
 
 ### Patch Changes

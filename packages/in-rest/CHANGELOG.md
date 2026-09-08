@@ -1,5 +1,9 @@
 # @noy-db/in-rest
 
+## 0.8.0-pre.0
+
+Relicensed from MIT to Apache-2.0 from this version on. Earlier versions remain MIT.
+
 ## 0.7.1-pre.0
 
 ### Patch Changes
