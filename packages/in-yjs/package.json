@@ -1,8 +1,8 @@
 {
   "name": "@noy-db/in-yjs",
-  "version": "0.7.1-pre.0",
+  "version": "0.8.0-pre.0",
   "description": "Yjs Y.Doc interop for noy-db — collaborative rich-text fields with encrypted-at-rest Yjs state",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/in-yjs#readme",
   "repository": {
@@ -26,7 +26,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=22.0.0"

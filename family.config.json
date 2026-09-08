@@ -3,7 +3,7 @@
   "manager": "pnpm",
   "binds": null,
   "publishes": true,
-  "gates": ["versions-uniform"],
+  "gates": ["versions-uniform", "check-license"],
   "localChecks": [
     "pnpm check:architecture",
     "pnpm check:codemods",

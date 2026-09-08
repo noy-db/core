@@ -1,8 +1,8 @@
 {
   "name": "@noy-db/hub",
-  "version": "0.7.1-pre.0",
+  "version": "0.8.0-pre.0",
   "description": "Zero-knowledge, offline-first, encrypted document store — core library with AES-256-GCM, PBKDF2, multi-user keyring, and sync engine",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/hub#readme",
   "repository": {
@@ -253,7 +253,8 @@
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    "codemods"
+    "codemods",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=22.0.0"

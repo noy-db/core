@@ -1,8 +1,8 @@
 {
   "name": "@noy-db/to-meter",
-  "version": "0.7.1-pre.0",
+  "version": "0.8.0-pre.0",
   "description": "Store observability for noy-db — a metered pass-through store that records per-method latency percentiles, error rates and liveness on real traffic, plus one-shot synthetic probes (runStoreProbe / probeTopology) for suitability reports.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/to-meter#readme",
   "repository": {
@@ -26,7 +26,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=22.0.0"

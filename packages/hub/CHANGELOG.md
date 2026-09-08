@@ -1,5 +1,88 @@
 # Changelog — hub
 
+## 0.8.0-pre.0
+
+Relicensed from MIT to Apache-2.0 from this version on. Earlier versions remain MIT.
+
+`@noy-db/shamir` is published for the first time under a surviving number (its `0.7.1-pre.0` was withdrawn). `revokeAuthenticator` lands (vLannaAi/noy-db#1445). `repository.url` now points at `github.com/noy-db/core`.
+
+Query tiers: the DSL ships in four groups, and a Find-only consumer stops paying for the other three (#1458).
+
+`@noy-db/hub/query` now carries **Find** and nothing else — `where` (ten operators), `or`, `and`, `filter`, `wherePredicate`, `orderBy`, `limit`, `offset`, `page`, `after`, `first`, `toArray`, `count`, `exists`, `ids`, `toPlan`. The other three groups are side-effect subpaths:
+
+```ts
+import '@noy-db/hub/query/live'     // subscribe, live
+import '@noy-db/hub/query/reduce'   // aggregate, groupBy, window, distinct, dateTrunc
+import '@noy-db/hub/query/relate'   // the joins, traverse, ancestorsOf, descendantsOf, explain
+```
+
+One line at your app's entry patches the methods onto `Query.prototype` **and** merges their types, so no call site changes. `collection.scan()` is split the same way — `scan().aggregate()` / `scan().groupBy()` come with Reduce, `scan().join()` with Relate.
+
+**Consumers of `@noy-db/hub` (the root barrel) do nothing.** The root barrel imports all three groups, so every method and every re-export is exactly where it was. This is breaking only for code that imports from `@noy-db/hub/query` directly; `codemods/0.8.0-pre.json` lists the moved symbols and the imports to add.
+
+Calling a method whose group is not imported does not compile — the method's type ships with its subpath. If a cast gets one past `tsc`, it throws `QueryExtensionMissingError`, which names the method and the subpath rather than `TypeError: q.join is not a function`.
+
+Measured: `import { Query } from '@noy-db/hub/query'` plus `where().orderBy().limit().toArray()` was 80,743 B minified / 26,036 B gzipped, of which 33,589 B was Relate, Reduce and Live code the query never touched — and importing the barrel cost the same as using it, because a bundler cannot drop a method of a class. `scripts/check-bundle.mjs` now measures each group as a scenario, with a control per group asserting the side-effect import still brings its code in.
+
+A materialized view can declare a **window** — a running total, a ranking, or a look at the neighbouring row (#1411).
+
+```ts
+withMaterializedView({
+  name: 'clientRollup',
+  unionSources: [{ collection: 'payments', map: (r) => ({ client: r.client, period: r.period, amount: r.amount }) }],
+  groupBy: ['client', 'period'],
+  aggregate: { total: sum('amount') },
+  moneyFields: { amount: THB, total: THB, cumulative: THB },
+  window: {
+    partitionBy: 'client',
+    orderBy: 'period',
+    select: { cumulative: runningMoneySum('total') },
+  },
+  rowKey: (row) => `${row.client}:${row.period}`,
+})
+```
+
+Runs after `groupBy` + `aggregate` and before `derive`, which is the order the useful shape needs: aggregate per (client, period), then accumulate *across* periods. Available on the `unionSources` and `projection` forms; the `query` form is unchanged, because a `Query` already has `.window(...).select(...)`.
+
+**Money is exact.** Reducer slots are rewritten through the same money binding `aggregate` uses, from the view's own `moneyFields`, so `runningMoneySum` accumulates in BigInt. Without that rewrite a running total over decimal strings returns `0.6000000000000001` where the aggregate on the same rows returns `'0.60'`.
+
+`moneyFields` no longer requires `aggregate` — a window's reducer slots are money-rewritten too, so a view declaring a window and no aggregate is now valid. `window.select` keys are refused if they collide with a `groupBy` key (a group key is the row's identity and feeds `rowKey`), and an empty `select` is refused.
+
+The window folds into `queryHash`, so re-parameterising one forces a refresh. `partitionBy` and `orderBy` are deliberately **not** sorted into the hash, unlike the groupBy and aggregate keys beside them: group buckets are commutative and window keys are not, so sorting them would let a real semantic change reuse a stored hash. A view that declares no window hashes byte-identically to before.
+
+Periods, blobs and materialized views — a pilot-reported round (#1450–#1456, #1411).
+
+- **#1454 — the periods family is not reachable through `vault.collection()`.** `_periods`, `_period_reopens`, `_period_freezes`, `_period_archives` and `_period_target_purges` now throw `ReservedCollectionNameError`, the same door as `_sync_credentials` and `_manifest`. Measured before: two `put()`s through the public handle rewrote a close, erased its append-only reopen log and unsealed the cell on the next cold open, undetected. `loadPeriods()` now verifies the inter-period hash chain and throws the new `PeriodChainError` when an interior close was rewritten or deleted under the engine; the newest close in a timeline has no successor hashing it, which is why the refusal, not the chain, is the fix. `chainAnchor` hashes the STORED record shape (return-only reopen/freeze/archive fields stripped), so a close following a reopen verifies.
+- **#1455 — a business date the gate cannot read is refused, not admitted.** With a `dateField`, a `Date` value is compared as the ISO string it will be stored as; a number, boolean or object throws `ValidationError`; absent / `null` means the record carries no business date and belongs to no period. The per-record `_ts` fallback the `endDate` docstring promised is withdrawn rather than implemented — it would have sealed every dateless row written before a vault-wide close. `PeriodClosedError` gains structured `dateField` and `side`.
+- **#1456 — reopening a period frees the records in its window.** A value is owned by the closed period with the smallest `endDate` at or after it; when that owner is reopened, no later close vetoes it. Reopening January with February and March closed frees January-dated rows and leaves February's sealed.
+- **#1452 — a sealed record's attachments are sealed with it.** `blob(id).put/delete/publish/deleteVersion/adoptExternal` run the owning record's `beforePut` gate with `incoming = existing`, so closed periods AND record guards refuse an attachment change exactly as they would refuse the record's update. A record with no stored body is not gated.
+- **#1451 — `collection.delete(id)` releases the record's blob references.** Ref-counted: an erasable blob shreds at refCount 0, shared content survives the deletion of one holder, a legacy blob's slot is gone and its chunks await reclaim.
+- **#1453 — legacy blobs have a reclaim path and `compact()` can see them.** `CompactionResult.unreferencedLegacyBlobs` counts key-less index rows at `refCount <= 0` on every run; `compact({ reclaimLegacyBlobs: true })` deletes them chunks-first. `BlobSet.delete()`'s docstring no longer names a `vault.blobGC()` that never existed.
+- **#1450 — on record: a UNION MV arm's `map` receives virtual via fields**, with correct values. It arrived with #1416 and is intended; it is now pinned by a test so a read-path refactor cannot take it away silently.
+- **#1411 — a UNION MV arm can declare a `joinOn` leg:** `join: [{ target, as, on, mode?, maxRows? }]` is `Query.joinOn()` in declaration form — composite equality or a range, predicate as data. The predicate folds into `queryHash` and the target joins the dependency set without a `sources` entry. `window` on MV declarations stays open (strategy-coupling design question).
+
+Period membership refuses a malformed business date instead of comparing it (#1459).
+
+#1455 made the guard refuse a `dateField` value that is neither a string nor a `Date`. Strings were still passed straight into the lexicographic comparison, so `'hello'` was written and — the case that matters — `'2026-6-15'` was written **into a sealed June**: it names a real day, but as text it sorts above `'2026-06-30'`.
+
+Both sides are now validated against the set that orders correctly: **zero-padded** `YYYY`, `YYYY-MM` or `YYYY-MM-DD`, optionally with a time. Coarser is fine — `'2026-01'` is how a monthly cycle is written, and it orders correctly — but unpadded is not. `closePeriod({ endDate })` refuses a malformed cutoff at the close, and `record[dateField]` is refused at the write with a `ValidationError` naming the field and the value. Absent and `null` still mean "no business date and no period" (#1455), unchanged.
+
+⚠️ Two inputs previously refused for the wrong reason now fail for the right one: `''` and `'15/06/2026'` were caught only because they sort below every plausible `endDate` — the period gate firing on garbage. They are `ValidationError` about the input now, not `PeriodClosedError`. Code catching `PeriodClosedError` around a write with an unvalidated date string should widen to `ValidationError`.
+
+`TamperedError` means exactly "AEAD failed under this key" (lanna-db #4). `reason` gains `'key-absent'` (thrown by the DEK resolver when a keyring holds no DEK for a reserved collection that already holds sealed records — #1288), plus the reserved `'generation-mismatch'` / `'foreign-stamp'` values (declared, not emitted). A credential-derived key that fails to open a wrapped-DEK blob now surfaces `InvalidKeyError`, never `TamperedError` (#1318). With the periods strategy active, `grant()` mints the grantor's `_periods` DEK first, so every grantee who may write a subject collection can read the gate that admits the write (#1288 ask 2).
+
+`Array.isArray` on a cold collection's pending result now returns `true`, so the idiomatic guard cannot silently swallow the read (#1462).
+
+`toArray()` is declared `T[]`, so `Array.isArray(rows) ? rows : []` is the ordinary defensive shape for the declared type — and on an unhydrated collection it returned `[]`, restoring #1414's silent empty read behind code that looks like it handles the edge case. The pending result's proxy target is now `[]` rather than `{}`; `IsArray` unwraps a proxy to its target, so the check answers `true` and the guard falls through to the throwing path. Every content access still throws `CollectionNotHydratedError` — the target is classified, never read.
+
+The docstring no longer claims the result "throws on any other use". It now enumerates the two operations that stay silent and cannot be made to throw — `typeof` (answered from the value's type) and truthiness (`ToBoolean` never calls a trap) — with the reason for each. That phrasing is what a consumer calibrates against, and a probe written against "any other use" passes vacuously because the phrase names no specific use.
+
+Export `./package.json` so a consumer can read hub's own manifest.
+
+Node refuses `require.resolve('@noy-db/hub/package.json')` with `ERR_PACKAGE_PATH_NOT_EXPORTED` unless the exports map names it — and hub's never did, on any version published. A consumer that needs the installed hub's exports map (`@noy-db/ui-nuxt` decides which query groups to register from it; `noy-db-as`'s codemod-row checker reads the same path) had to resolve the entry and walk up directories to find the manifest.
+
+Additive, no seam change, and nothing a bundler ships.
+
 ## 0.7.1-pre.0
 
 ### Patch Changes
