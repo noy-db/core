@@ -7,6 +7,9 @@ on:
 permissions:
   contents: read
   id-token: write
+  # verify reads snapshot.yml's runs; a reusable workflow's token is capped by
+  # its caller's grants, so this is needed here too, not only in .github.
+  actions: read
 jobs:
   release:
     uses: noy-db/.github/.github/workflows/release.yml@v1
