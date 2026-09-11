@@ -88,6 +88,8 @@ export {
   generateIV,
   wrapKey,
   unwrapKey,
+  mintCanary,
+  checkCanary,
   bufferToBase64,
   base64ToBuffer,
   derivePresenceKey,

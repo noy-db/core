@@ -2716,8 +2716,6 @@ function checkEnclaveBarrelOnly() {
 // overcount, identical to Check 11's helper choice). `*.test.ts` files are
 // skipped — tests may drive WebCrypto directly to build oracles.
 const SUBTLE_OUTSIDE_ENCLAVE = new Map([
-  ['packages/hub/src/with-party/team/echo-secret.ts', 4],
-  ['packages/hub/src/with-party/team/keyring.ts', 1],
   ['packages/hub/src/with-party/team/magic-link-grant.ts', 3],
   ['packages/hub/src/with-party/team/managed-secret.ts', 9],
   ['packages/hub/src/with-sync/presence.ts', 5],

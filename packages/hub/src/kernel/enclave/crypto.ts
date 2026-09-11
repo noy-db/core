@@ -287,6 +287,33 @@ export async function unwrapKey(
   }
 }
 
+// ─── Canary ────────────────────────────────────────────────────────────
+//
+// "Is this KEK the right one?" is answered by wrapping a CONSTANT key under
+// it and seeing whether the wrap opens later. AES-KW is deterministic
+// (RFC 3394 fixed IV), so the same constant under the same KEK always yields
+// the same bytes — every write site can re-mint on persist. The keyring
+// canary (32 zero bytes) and the echo prompt/echo verifiers (32 × 0x5a) are
+// both this primitive with a different constant.
+
+/** Wrap the constant AES-GCM key built from `plaintext` under `kek`. */
+export async function mintCanary(kek: CryptoKey, plaintext: Uint8Array): Promise<string> {
+  const constant = await subtle.importKey(
+    'raw', plaintext as BufferSource, { name: 'AES-GCM', length: KEY_BITS }, true, ['encrypt', 'decrypt'],
+  )
+  return wrapKey(constant, kek)
+}
+
+/** True iff `wrapped` unwraps under `kek` — the KEK is right AND the bytes are intact. */
+export async function checkCanary(wrapped: string, kek: CryptoKey): Promise<boolean> {
+  try {
+    await unwrapKey(wrapped, kek)
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ─── Per-record CEK wrapping ───────────────────────────────────────────
 
 /**

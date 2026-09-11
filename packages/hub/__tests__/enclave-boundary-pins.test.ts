@@ -22,6 +22,10 @@ import {
   bufferToBase64,
   base64ToBuffer,
   importTransferKey,
+  mintCanary,
+  checkCanary,
+  deriveKey,
+  generateSalt,
 } from '../src/kernel/enclave/index.js'
 import { sealDeks } from '../src/with-cargo/extract-partition.js'
 import { unsealDeks } from '../src/with-cargo/adopt-partition.js'
@@ -37,6 +41,12 @@ import {
   TransferSealError,
 } from '../src/kernel/errors.js'
 import { MemoryDeviceSeal } from '../src/with-party/team/device-seal.js'
+import {
+  buildEchoBlock,
+  verifyPrompt,
+  resolveEchoReveal,
+} from '../src/with-party/team/echo-secret.js'
+import { WrongPromptError } from '../src/kernel/errors.js'
 
 const subtle = globalThis.crypto.subtle
 
@@ -214,4 +224,55 @@ describe('transfer seal — iv ‖ AES-GCM(JSON{collection: base64 rawDEK}) unde
     await expect(unsealDeks(seal, wrong)).rejects.toBeInstanceOf(TransferSealError)
     await expect(unsealDeks(seal, new Uint8Array(16))).rejects.toBeInstanceOf(TransferSealError)
   })
+})
+
+// ─── Task 5: keyring canary + echo verifiers ──────────────────────────────────
+
+describe('mintCanary / checkCanary', () => {
+  it('is deterministic per (kek, plaintext), equals raw AES-KW of the imported constant, and checks false under another KEK', async () => {
+    const salt = generateSalt()
+    const kek = await deriveKey('pw', salt)
+    const zeros = new Uint8Array(32)
+    const a = await mintCanary(kek, zeros)
+    expect(await mintCanary(kek, zeros)).toBe(a)
+
+    // oracle: raw AES-KW wrap of the same constant under a raw-derived KEK
+    const k = await subtle.importKey('raw', zeros, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+    const kekRaw = await subtle.deriveKey(
+      { name: 'PBKDF2', salt: salt as BufferSource, iterations: 600_000, hash: 'SHA-256' },
+      await subtle.importKey('raw', new TextEncoder().encode('pw'), 'PBKDF2', false, ['deriveKey']),
+      { name: 'AES-KW', length: 256 }, false, ['wrapKey', 'unwrapKey'],
+    )
+    const wrapped = new Uint8Array(await subtle.wrapKey('raw', k, kekRaw, 'AES-KW'))
+    expect(base64ToBuffer(a)).toEqual(wrapped)
+
+    expect(await checkCanary(a, kek)).toBe(true)
+    expect(await checkCanary(a, await deriveKey('other', salt))).toBe(false)
+    expect(await checkCanary('not base64!!', kek)).toBe(false)
+  }, 30_000)
+})
+
+describe('echo block — verifiers are AES-KW canaries; portable reveal is AES-GCM under the prompt', () => {
+  it('verifies the right prompt, reveals the echo, and a wrong prompt is WrongPromptError', async () => {
+    const parts = { prompt: 'what colour', echo: 'blue', key: 'k' }
+    const block = await buildEchoBlock(parts, { kind: 'portable' })
+    expect(await verifyPrompt(block, 'what colour')).toBe(true)
+    expect(await verifyPrompt(block, 'nope')).toBe(false)
+    expect(await resolveEchoReveal(block, 'what colour')).toBe('blue')
+    await expect(resolveEchoReveal(block, 'nope')).rejects.toBeInstanceOf(WrongPromptError)
+
+    // oracle: the portable blob opens under raw WebCrypto with the prompt-derived key
+    if (block.reveal.kind !== 'portable') throw new Error('unreachable')
+    const gcm = await subtle.deriveKey(
+      { name: 'PBKDF2', salt: base64ToBuffer(block.reveal.salt), iterations: 600_000, hash: 'SHA-256' },
+      await subtle.importKey('raw', new TextEncoder().encode('what colour'), 'PBKDF2', false, ['deriveKey']),
+      { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
+    )
+    const pt = await subtle.decrypt(
+      { name: 'AES-GCM', iv: base64ToBuffer(block.reveal.iv) },
+      gcm,
+      base64ToBuffer(block.reveal.blob),
+    )
+    expect(new TextDecoder().decode(pt)).toBe('blue')
+  }, 60_000)
 })
