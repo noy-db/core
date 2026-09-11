@@ -21,13 +21,21 @@ import {
   decryptBytes,
   bufferToBase64,
   base64ToBuffer,
+  importTransferKey,
 } from '../src/kernel/enclave/index.js'
+import { sealDeks } from '../src/with-cargo/extract-partition.js'
+import { unsealDeks } from '../src/with-cargo/adopt-partition.js'
 import {
   createSession,
   resolveSession,
   revokeAllSessions,
 } from '../src/with-party/session/session.js'
-import { SessionNotFoundError, NoydbError } from '../src/kernel/errors.js'
+import {
+  SessionNotFoundError,
+  NoydbError,
+  ValidationError,
+  TransferSealError,
+} from '../src/kernel/errors.js'
 import { MemoryDeviceSeal } from '../src/with-party/team/device-seal.js'
 
 const subtle = globalThis.crypto.subtle
@@ -168,5 +176,42 @@ describe('MemoryDeviceSeal — iv(12) ‖ AES-GCM ct', () => {
     const err = await seal.unseal(bad).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(NoydbError)
     expect((err as NoydbError).code).toBe('DEVICE_SEAL_UNSEAL_FAILED')
+  })
+})
+
+// ─── Task 4: partition transfer seal ──────────────────────────────────────────
+
+describe('importTransferKey', () => {
+  it('imports 32 raw bytes as a non-extractable AES-GCM key and refuses any other length', async () => {
+    const raw = crypto.getRandomValues(new Uint8Array(32))
+    const k = await importTransferKey(raw)
+    expect(k.extractable).toBe(false)
+    const { iv, data } = await encryptBytes(new Uint8Array([1, 2, 3]), k)
+    // oracle: the same raw bytes under raw WebCrypto open it
+    const ok = await subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt'])
+    const pt = await subtle.decrypt({ name: 'AES-GCM', iv: base64ToBuffer(iv) }, ok, base64ToBuffer(data))
+    expect(new Uint8Array(pt)).toEqual(new Uint8Array([1, 2, 3]))
+    await expect(importTransferKey(new Uint8Array(16))).rejects.toBeInstanceOf(ValidationError)
+  })
+})
+
+describe('transfer seal — iv ‖ AES-GCM(JSON{collection: base64 rawDEK}) under a 32-byte key', () => {
+  it('opens under raw WebCrypto with the returned transfer key, round-trips, and a wrong key is TransferSealError', async () => {
+    const dek = await rawDek()
+    const { seal, transferKey } = await sealDeks(new Map([['invoices', dek]]))
+    expect(seal.alg).toBe('aes-256-gcm-pre-shared')
+
+    const combined = base64ToBuffer(seal.payload)
+    const k = await subtle.importKey('raw', transferKey as BufferSource, 'AES-GCM', false, ['decrypt'])
+    const pt = await subtle.decrypt({ name: 'AES-GCM', iv: combined.slice(0, 12) }, k, combined.slice(12))
+    const map = JSON.parse(new TextDecoder().decode(pt)) as Record<string, string>
+    expect(map.invoices).toBe(await rawBase64(dek))
+
+    const back = await unsealDeks(seal, transferKey)
+    expect(await rawBase64(back.get('invoices')!)).toBe(await rawBase64(dek))
+
+    const wrong = crypto.getRandomValues(new Uint8Array(32))
+    await expect(unsealDeks(seal, wrong)).rejects.toBeInstanceOf(TransferSealError)
+    await expect(unsealDeks(seal, new Uint8Array(16))).rejects.toBeInstanceOf(TransferSealError)
   })
 })

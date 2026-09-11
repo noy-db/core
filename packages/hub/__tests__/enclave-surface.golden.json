@@ -53,6 +53,7 @@
     "hmacSha256Hex",
     "importCek",
     "importDekSet",
+    "importTransferKey",
     "isDeleteMarker",
     "isRewrappedUnder",
     "isTombstone",

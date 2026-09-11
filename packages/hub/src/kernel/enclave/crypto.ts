@@ -360,6 +360,19 @@ export async function importCek(rawKey: Uint8Array): Promise<CryptoKey> {
   return subtle.importKey('raw', rawKey as BufferSource, { name: 'AES-GCM', length: KEY_BITS }, false, ['decrypt'])
 }
 
+/**
+ * Import a raw 32-byte pre-shared key as a NON-extractable AES-256-GCM key
+ * (encrypt + decrypt). The transfer seal (`with-cargo`) and the RSA-OAEP
+ * TLV's per-blob CEK (`managed-secret`) both hand raw bytes to the enclave
+ * here; the bytes never become a key anywhere else.
+ */
+export async function importTransferKey(raw: Uint8Array): Promise<CryptoKey> {
+  if (raw.byteLength !== 32) {
+    throw new ValidationError(`transfer key must be 32 bytes, got ${raw.byteLength}.`)
+  }
+  return subtle.importKey('raw', raw as BufferSource, { name: 'AES-GCM', length: KEY_BITS }, false, ['encrypt', 'decrypt'])
+}
+
 // ─── Encrypt / Decrypt ─────────────────────────────────────────────────
 
 export interface EncryptResult {

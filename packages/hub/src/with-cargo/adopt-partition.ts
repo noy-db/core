@@ -7,7 +7,10 @@
  *
  * @module
  */
-import { base64ToBuffer, wrapKey, type EnclaveKey } from '../kernel/enclave/index.js'
+import {
+  base64ToBuffer, bufferToBase64, wrapKey, importTransferKey, decryptBytes, importDekSet,
+  type EnclaveKey,
+} from '../kernel/enclave/index.js'
 import { TransferSealError, AdoptionStateError, ValidationError } from '../kernel/errors.js'
 import type { NoydbStore, VaultSnapshot, KeyringFile } from '../kernel/types.js'
 import { createOwnerKeyring, requireRosterKey } from '../with-party/team/keyring.js'
@@ -38,15 +41,11 @@ export async function unsealDeks(
       `transfer key must be 32 bytes, got ${transferKey.byteLength}.`,
     )
   }
-  const key = await crypto.subtle.importKey('raw', transferKey as BufferSource, 'AES-GCM', false, ['decrypt'])
+  const key = await importTransferKey(transferKey)
   const raw = base64ToBuffer(seal.payload)
-  let plaintext: ArrayBuffer
+  let plaintext: Uint8Array
   try {
-    plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: raw.slice(0, 12) as BufferSource },
-      key,
-      raw.slice(12) as BufferSource,
-    )
+    plaintext = await decryptBytes(bufferToBase64(raw.slice(0, 12)), bufferToBase64(raw.slice(12)), key)
   } catch {
     throw new TransferSealError(
       'transfer seal could not be opened — wrong transfer key (AES-GCM authentication failed).',
@@ -58,14 +57,9 @@ export async function unsealDeks(
   } catch {
     throw new TransferSealError('transfer seal payload is not valid JSON after decryption.')
   }
-  const deks = new Map<string, EnclaveKey>()
-  for (const [collection, b64] of Object.entries(dekMap)) {
-    // Extractable: the recipient must be able to re-wrap these under their
-    // own KEK (AES-KW) at owner-creation. Matches generateDEK.
-    const dek = await crypto.subtle.importKey('raw', base64ToBuffer(b64) as BufferSource, 'AES-GCM', true, ['encrypt', 'decrypt'])
-    deks.set(collection, dek)
-  }
-  return deks
+  // Extractable: the recipient re-wraps these under their own KEK (AES-KW)
+  // at owner-creation — importDekSet mints them the way generateDEK does.
+  return importDekSet(dekMap)
 }
 
 export interface AdoptPartitionOptions {
