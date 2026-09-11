@@ -606,6 +606,11 @@ export async function sha256Hex(data: Uint8Array): Promise<string> {
     .join('')
 }
 
+/** SHA-256 of raw bytes, as bytes. */
+export async function sha256Bytes(data: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.digest('SHA-256', data as unknown as BufferSource))
+}
+
 // ─── HMAC-SHA-256 ─────────────────────────────
 
 /**
@@ -787,6 +792,23 @@ export async function derivePresenceKey(dek: CryptoKey, collectionName: string):
   return subtle.importKey(
     'raw',
     bits,
+    { name: 'AES-GCM', length: KEY_BITS },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+/**
+ * HKDF-SHA256 → non-extractable AES-256-GCM key from caller-supplied input
+ * key material. The magic-link content key derives here from
+ * `(serverSecret, SHA-256(token), info)`; `salt`/`info` are the caller's
+ * domain separation, this function adds none.
+ */
+export async function hkdfAesGcmKey(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array): Promise<CryptoKey> {
+  const key = await subtle.importKey('raw', ikm as BufferSource, 'HKDF', false, ['deriveKey'])
+  return subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: salt as BufferSource, info: info as BufferSource },
+    key,
     { name: 'AES-GCM', length: KEY_BITS },
     false,
     ['encrypt', 'decrypt'],

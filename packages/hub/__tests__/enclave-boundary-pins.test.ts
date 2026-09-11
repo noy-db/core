@@ -26,7 +26,13 @@ import {
   checkCanary,
   deriveKey,
   generateSalt,
+  sha256Bytes,
+  hkdfAesGcmKey,
 } from '../src/kernel/enclave/index.js'
+import {
+  deriveMagicLinkContentKey,
+  MAGIC_LINK_CONTENT_INFO_PREFIX,
+} from '../src/with-party/team/magic-link-grant.js'
 import { sealDeks } from '../src/with-cargo/extract-partition.js'
 import { unsealDeks } from '../src/with-cargo/adopt-partition.js'
 import {
@@ -275,4 +281,48 @@ describe('echo block — verifiers are AES-KW canaries; portable reveal is AES-G
     )
     expect(new TextDecoder().decode(pt)).toBe('blue')
   }, 60_000)
+})
+
+// ─── Task 6: magic-link-grant.ts ──────────────────────────────────────────────
+
+async function oracleContentKey(secret: string, token: string, vault: string): Promise<CryptoKey> {
+  const salt = await subtle.digest('SHA-256', new TextEncoder().encode(token))
+  const ikm = await subtle.importKey('raw', new TextEncoder().encode(secret), 'HKDF', false, ['deriveKey'])
+  return subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode(MAGIC_LINK_CONTENT_INFO_PREFIX + vault) },
+    ikm, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
+  )
+}
+
+describe('sha256Bytes / hkdfAesGcmKey', () => {
+  it('match raw WebCrypto', async () => {
+    const d = new TextEncoder().encode('abc')
+    expect(await sha256Bytes(d)).toEqual(new Uint8Array(await subtle.digest('SHA-256', d)))
+
+    const k = await hkdfAesGcmKey(
+      new TextEncoder().encode('ikm'),
+      new Uint8Array(32).fill(3),
+      new TextEncoder().encode('info'),
+    )
+    expect(k.extractable).toBe(false)
+    const { iv, data } = await encryptBytes(new Uint8Array([9]), k)
+    const oracle = await subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32).fill(3), info: new TextEncoder().encode('info') },
+      await subtle.importKey('raw', new TextEncoder().encode('ikm'), 'HKDF', false, ['deriveKey']),
+      { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
+    )
+    const back = await subtle.decrypt({ name: 'AES-GCM', iv: base64ToBuffer(iv) }, oracle, base64ToBuffer(data))
+    expect(new Uint8Array(back)).toEqual(new Uint8Array([9]))
+  })
+})
+
+describe('magic-link content key — HKDF(secret, salt = SHA-256(token), info = prefix + vault)', () => {
+  it('what the module derives opens what the oracle encrypts', async () => {
+    const k = await deriveMagicLinkContentKey('server-secret', 'TOKEN123', 'acme')
+    const o = await oracleContentKey('server-secret', 'TOKEN123', 'acme')
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const ct = await subtle.encrypt({ name: 'AES-GCM', iv }, o, new TextEncoder().encode('grant'))
+    const pt = await subtle.decrypt({ name: 'AES-GCM', iv }, k, ct)
+    expect(new TextDecoder().decode(pt)).toBe('grant')
+  })
 })

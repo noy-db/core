@@ -70,6 +70,7 @@ export {
   encryptDeterministic,
   decryptDeterministic,
   sha256Hex,
+  sha256Bytes,
   hmacSha256Hex,
   deriveBlobAddressKey, // #1126
 } from './crypto.js'
@@ -93,6 +94,7 @@ export {
   bufferToBase64,
   base64ToBuffer,
   derivePresenceKey,
+  hkdfAesGcmKey,
   deriveDeterministicKey,
   deriveSealedFieldKey,
   deriveSealedFieldKeyFromCek,
