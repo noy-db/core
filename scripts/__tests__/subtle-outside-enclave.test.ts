@@ -1,5 +1,5 @@
 /**
- * #1319 — `check-architecture`'s `subtle-outside-enclave` ratchet.
+ * #1319 — `check-architecture`'s `subtle-outside-enclave` BAN.
  *
  * `enclave-barrel-only` bans a file outside `kernel/enclave/**` from
  * IMPORTING past the barrel. It says nothing about a file calling
@@ -7,14 +7,16 @@
  * contract just as completely — and is how `wrapped-deks.ts:100` came to
  * `exportKey('raw', dek)` on a key type the barrel says a fork may redefine.
  *
- * The ratchet baselines the files that do it today and fails on a NEW one.
- * It is exercised here against the real script and the real tree: a probe
- * file with one `subtle.digest(` call is dropped under `hub/src`, the script
- * is expected to name it, and the probe is removed again.
+ * Introduced as a RATCHET over ten grandfathered files (38 calls); driven to
+ * zero one file per commit during the capsule seam's Stage A and turned into
+ * a flat ban. It is exercised here against the real script and the real
+ * tree: a probe file with one `subtle.digest(` call is dropped under
+ * `hub/src`, the script is expected to name it, and the probe is removed
+ * again.
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -30,11 +32,21 @@ afterEach(() => {
   if (existsSync(PROBE)) rmSync(PROBE)
 })
 
-describe('check-architecture — subtle-outside-enclave ratchet', () => {
-  it('the tree as committed passes (every baselined file still calls subtle; nothing new does)', () => {
+describe('check-architecture — subtle-outside-enclave ban', () => {
+  it('the tree as committed has NO direct crypto.subtle call outside kernel/enclave', () => {
     const { status, out } = runCheck()
     expect(out).not.toMatch(/subtle-outside-enclave/)
     expect(status).toBe(0)
+  })
+
+  // NOTE: match the DECLARATION, not a populated one. An earlier form of this
+  // test required an inner `[` (`new Map([ [`), which an EMPTY map does not
+  // have — so it passed while `const SUBTLE_OUTSIDE_ENCLAVE = new Map([])` was
+  // still sitting in the script, ready to be refilled. The point of the ban is
+  // that there is nowhere to add an exception.
+  it('there is no grandfather map any more — the check is a ban, not a ratchet', () => {
+    const src = readFileSync(SCRIPT, 'utf8')
+    expect(src).not.toMatch(/SUBTLE_OUTSIDE_ENCLAVE\s*=\s*new Map\(/)
   })
 
   it('a NEW file calling crypto.subtle outside kernel/enclave fails, naming the check and the door', () => {
