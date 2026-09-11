@@ -27,7 +27,8 @@ import {
   resolveSession,
   revokeAllSessions,
 } from '../src/with-party/session/session.js'
-import { SessionNotFoundError } from '../src/kernel/errors.js'
+import { SessionNotFoundError, NoydbError } from '../src/kernel/errors.js'
+import { MemoryDeviceSeal } from '../src/with-party/team/device-seal.js'
 
 const subtle = globalThis.crypto.subtle
 
@@ -149,5 +150,23 @@ describe('session — token payload is AES-GCM(iv, JSON{deks: exportDekSet}) und
     } finally {
       revokeAllSessions()
     }
+  })
+})
+
+// ─── Task 3: device-seal.ts ───────────────────────────────────────────────────
+
+describe('MemoryDeviceSeal — iv(12) ‖ AES-GCM ct', () => {
+  it('seals to 12 + len + 16 bytes, unseals, and rejects a flipped byte with DEVICE_SEAL_UNSEAL_FAILED', async () => {
+    const seal = new MemoryDeviceSeal({ id: 'dev-1' })
+    const plain = new TextEncoder().encode('echo')
+    const sealed = await seal.seal(plain)
+    expect(sealed.byteLength).toBe(12 + plain.byteLength + 16)
+    expect(await seal.unseal(sealed)).toEqual(plain)
+
+    const bad = sealed.slice()
+    bad.set([bad[20]! ^ 0x01], 20)
+    const err = await seal.unseal(bad).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(NoydbError)
+    expect((err as NoydbError).code).toBe('DEVICE_SEAL_UNSEAL_FAILED')
   })
 })
