@@ -965,6 +965,23 @@ export function resolveCollectionConfig<T>(opts: CollectionOpts<T>) {
   //   IRRELEVANT — `spec.sources`. This guard never reads it, so declaring it
   //             cannot bring a shape into coverage.
   //
+  // ⚠️ SCOPE — "SILENT" above labels THIS GUARD'S COVERAGE (whether it fires),
+  // NOT the visibility of a virtual field anywhere. It is not a statement that
+  // virtual fields are invisible to a materialized view, and it has been read
+  // that way: core#8 (2026-09-11) was filed as a regression by a consumer on
+  // exactly that reading. Since #1450 a union arm's `map` DOES receive virtual
+  // via fields, with their computed values — `presentSync` on the synchronous
+  // read path the executor drains through (#1416). Pinned by
+  // `__tests__/1450-mv-map-sees-virtual-via.test.ts`.
+  //
+  // ⚠️ UNMEASURED, and therefore deliberately not restated above: whether the
+  // first paragraph's counter-factual — "reads the stored row, finds nothing,
+  // buckets every row under an `undefined` key" — still describes what would
+  // happen absent this guard, now that #1450 presents virtuals on that path.
+  // The guard refuses at config time, so the case never runs and the question
+  // is not load-bearing. But do not cite that sentence as evidence for what an
+  // MV sees today, and measure before rewriting it.
+  //
   // ⛔ Two earlier framings of this comment were WRONG and both propagated:
   // "an aggregate with explicit `sources` IS caught" (withdrawn in #1278 as
   // inherited-not-measured) and "the self-constructing single-query shape is
