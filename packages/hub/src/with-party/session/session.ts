@@ -41,13 +41,15 @@
  * even if the session key is still in the Map.
  */
 
-import { bufferToBase64, base64ToBuffer, type EnclaveKey } from '../../kernel/enclave/index.js'
+import {
+  bufferToBase64, base64ToBuffer, exportDekSet, importDekSet,
+  generateEphemeralKey, encryptBytes, decryptBytes,
+} from '../../kernel/enclave/index.js'
 import { generateULID } from '../../with-pod/ulid.js'
 import type { Role } from '../../kernel/types.js'
 import type { UnlockedKeyring } from '../team/keyring.js'
 import { SessionExpiredError, SessionNotFoundError } from '../../kernel/errors.js'
 
-const subtle = globalThis.crypto.subtle
 
 // Default session TTL: 60 minutes
 const DEFAULT_TTL_MS = 60 * 60 * 1000
@@ -118,55 +120,21 @@ export async function createSession(
   const sessionId = generateULID()
   const expiresAt = new Date(Date.now() + ttlMs).toISOString()
 
-  // Generate a fresh non-extractable session key.
-  // AES-256-GCM is used here (rather than AES-KW) because the session key
-  // wraps raw key bytes (the exported KEK) rather than a CryptoKey object.
-  const sessionKey = await subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    false, // non-extractable — this is the tab-scope security invariant
-    ['encrypt', 'decrypt'],
-  )
+  // Non-extractable — the tab-scope security invariant (see module doc).
+  const sessionKey = await generateEphemeralKey()
 
-  // Export the KEK as raw bytes so we can wrap it.
-  // The KEK is AES-256-KW, which must have been importable (extractable: true)
-  // to allow wrapKey — it is, because unwrapKey sets extractable: true for
-  // DEKs, but the KEK itself is derived with extractable: false (see
-  // crypto.ts deriveKey). We use a separate raw export + encrypt path.
-  //
-  // Wait — the KEK is AES-KW with extractable:false. We cannot export it.
-  // Instead, we wrap the DEKs (which ARE extractable) and the salt+role+userId
-  // metadata together. This means resolveSession() reconstructs an
-  // UnlockedKeyring by re-wrapping the DEKs list from the token.
-  //
-  // Simpler approach: export each DEK (they're extractable) and encrypt
-  // the serialized DEK map with the session key. The keyring is reconstructed
-  // from the session token without the original KEK — only DEKs matter for
-  // record operations.
-  //
-  // This is the right design: sessions don't need the KEK (no re-grant,
-  // no re-derive during session lifetime). They need the DEK set.
-
-  const dekMap: Record<string, string> = {}
-  for (const [collName, dek] of keyring.deks) {
-    const raw = await subtle.exportKey('raw', dek)
-    dekMap[collName] = bufferToBase64(raw)
-  }
-
+  // Sessions do not need the KEK (no re-grant, no re-derive during the
+  // session lifetime). They need the DEK set, which IS extractable.
   const payload = JSON.stringify({
     userId: keyring.userId,
     displayName: keyring.displayName,
     role: keyring.role,
     permissions: keyring.permissions,
-    deks: dekMap,
+    deks: await exportDekSet(keyring.deks),
     salt: bufferToBase64(keyring.salt),
   })
 
-  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12))
-  const encrypted = await subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    sessionKey,
-    new TextEncoder().encode(payload),
-  )
+  const { iv, data } = await encryptBytes(new TextEncoder().encode(payload), sessionKey)
 
   const token: SessionToken = {
     _noydb_session: 1,
@@ -175,8 +143,8 @@ export async function createSession(
     vault,
     role: keyring.role,
     expiresAt,
-    wrappedKek: bufferToBase64(encrypted),
-    kekIv: bufferToBase64(iv),
+    wrappedKek: data,
+    kekIv: iv,
   }
 
   sessionKeyStore.set(sessionId, sessionKey)
@@ -207,16 +175,9 @@ export async function resolveSession(token: SessionToken): Promise<UnlockedKeyri
     throw new SessionNotFoundError(token.sessionId)
   }
 
-  const iv = base64ToBuffer(token.kekIv)
-  const ciphertext = base64ToBuffer(token.wrappedKek)
-
-  let plaintext: ArrayBuffer
+  let plaintext: Uint8Array
   try {
-    plaintext = await subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      sessionKey,
-      ciphertext,
-    )
+    plaintext = await decryptBytes(token.kekIv, token.wrappedKek, sessionKey)
   } catch {
     throw new SessionNotFoundError(token.sessionId)
   }
@@ -230,17 +191,7 @@ export async function resolveSession(token: SessionToken): Promise<UnlockedKeyri
     salt: string
   }
 
-  const deks = new Map<string, EnclaveKey>()
-  for (const [collName, rawBase64] of Object.entries(payload.deks)) {
-    const dek = await subtle.importKey(
-      'raw',
-      base64ToBuffer(rawBase64),
-      { name: 'AES-GCM', length: 256 },
-      true,
-      ['encrypt', 'decrypt'],
-    )
-    deks.set(collName, dek)
-  }
+  const deks = await importDekSet(payload.deks)
 
   return {
     userId: payload.userId,

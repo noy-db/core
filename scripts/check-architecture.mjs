@@ -2718,7 +2718,6 @@ function checkEnclaveBarrelOnly() {
 const SUBTLE_OUTSIDE_ENCLAVE = new Map([
   ['packages/hub/src/with-cargo/adopt-partition.ts', 3],
   ['packages/hub/src/with-cargo/extract-partition.ts', 3],
-  ['packages/hub/src/with-party/session/session.ts', 5],
   ['packages/hub/src/with-party/team/device-seal.ts', 3],
   ['packages/hub/src/with-party/team/echo-secret.ts', 4],
   ['packages/hub/src/with-party/team/keyring.ts', 1],

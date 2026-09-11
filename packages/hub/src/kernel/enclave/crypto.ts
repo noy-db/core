@@ -211,6 +211,16 @@ export async function generateDEK(): Promise<CryptoKey> {
   )
 }
 
+/**
+ * Generate a NON-extractable AES-256-GCM key for in-memory-only use — a
+ * session key, a device seal. Unlike {@link generateDEK} it can never be
+ * wrapped or exported: WebCrypto enforces that, and it is the tab-scope
+ * invariant `with-party/session` and `device-seal` rely on.
+ */
+export async function generateEphemeralKey(): Promise<CryptoKey> {
+  return subtle.generateKey({ name: 'AES-GCM', length: KEY_BITS }, false, ['encrypt', 'decrypt'])
+}
+
 // ─── DEK-Set Codec ─────────────────────────────────────────────────────
 //
 // The portable form of a DEK set — `{ collection: base64(rawKey) }` — is the

@@ -44,6 +44,7 @@
     "exportDekSet",
     "findByDet",
     "generateDEK",
+    "generateEphemeralKey",
     "generateIV",
     "generateRecoverySecret",
     "generateSalt",

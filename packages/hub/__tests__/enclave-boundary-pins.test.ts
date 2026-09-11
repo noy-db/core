@@ -15,6 +15,19 @@ import {
   clearDevUnlock,
 } from '../src/with-party/session/dev-unlock.js'
 import type { UnlockedKeyring } from '../src/with-party/team/keyring.js'
+import {
+  generateEphemeralKey,
+  encryptBytes,
+  decryptBytes,
+  bufferToBase64,
+  base64ToBuffer,
+} from '../src/kernel/enclave/index.js'
+import {
+  createSession,
+  resolveSession,
+  revokeAllSessions,
+} from '../src/with-party/session/session.js'
+import { SessionNotFoundError } from '../src/kernel/errors.js'
 
 const subtle = globalThis.crypto.subtle
 
@@ -74,5 +87,67 @@ describe('dev-unlock — DEK payload is the exportDekSet shape', () => {
 
     clearDevUnlock('v', 'alice')
     expect(sessionStorage.getItem('noydb:dev-unlock:v:alice')).toBeNull()
+  })
+})
+
+// ─── Task 2: session.ts ───────────────────────────────────────────────────────
+
+describe('generateEphemeralKey', () => {
+  it('mints a NON-extractable AES-GCM key that encryptBytes/decryptBytes accept', async () => {
+    const k = await generateEphemeralKey()
+    expect(k.extractable).toBe(false)
+    expect(k.algorithm).toMatchObject({ name: 'AES-GCM', length: 256 })
+    const { iv, data } = await encryptBytes(new TextEncoder().encode('x'), k)
+    expect(new TextDecoder().decode(await decryptBytes(iv, data, k))).toBe('x')
+    await expect(subtle.exportKey('raw', k)).rejects.toThrow()
+  })
+})
+
+describe('session — token payload is AES-GCM(iv, JSON{deks: exportDekSet}) under the session key', () => {
+  it('round-trips and carries base64(raw DEK) per collection', async () => {
+    const dek = await rawDek()
+    const keyring = {
+      userId: 'alice',
+      displayName: 'Alice',
+      role: 'owner',
+      permissions: {},
+      deks: new Map([['invoices', dek]]),
+      kek: null,
+      salt: new Uint8Array(32).fill(1),
+      authenticators: [],
+    } as unknown as UnlockedKeyring
+    try {
+      const { token } = await createSession(keyring, 'v')
+      expect(typeof token.wrappedKek).toBe('string')
+      expect(typeof token.kekIv).toBe('string')
+
+      const back = await resolveSession(token)
+      expect(await rawBase64(back.deks.get('invoices')!)).toBe(await rawBase64(dek))
+      expect(back.kek).toBeNull()
+    } finally {
+      revokeAllSessions()
+    }
+  })
+
+  it('still throws SessionNotFoundError — not TamperedError — when the payload is corrupt', async () => {
+    const keyring = {
+      userId: 'alice',
+      displayName: 'Alice',
+      role: 'owner',
+      permissions: {},
+      deks: new Map([['invoices', await rawDek()]]),
+      kek: null,
+      salt: new Uint8Array(32).fill(1),
+      authenticators: [],
+    } as unknown as UnlockedKeyring
+    try {
+      const { token } = await createSession(keyring, 'v')
+      const bytes = base64ToBuffer(token.wrappedKek)
+      bytes.set([bytes[0]! ^ 0xff], 0)
+      const tampered = { ...token, wrappedKek: bufferToBase64(bytes) }
+      await expect(resolveSession(tampered)).rejects.toBeInstanceOf(SessionNotFoundError)
+    } finally {
+      revokeAllSessions()
+    }
   })
 })
