@@ -6,9 +6,12 @@
  * `__tests__/no-runtime-dependencies.test.ts` asserts mutual assignability,
  * so drift fails typecheck rather than surfacing at a consumer.
  */
-export type Normalizer = 'trim' | 'lower' | 'upper' | 'alnum-upper' | 'digits' | 'cents' | 'iso-date'
+// Not exported: hub's attestation subpath never put these two on its surface
+// (only the five below plus `SignatureScheme`), and tsc still emits them into
+// the .d.ts as local declarations because `AttestationFieldSchema` names them.
+type Normalizer = 'trim' | 'lower' | 'upper' | 'alnum-upper' | 'digits' | 'cents' | 'iso-date'
 
-export interface AttestationFieldSpec {
+interface AttestationFieldSpec {
   readonly path: string
   readonly normalize: Normalizer
 }

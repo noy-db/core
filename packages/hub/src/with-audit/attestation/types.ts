@@ -8,8 +8,6 @@
  * inside `with-audit/attestation/`.
  */
 export type {
-  Normalizer,
-  AttestationFieldSpec,
   AttestationFieldSchema,
   QrPayload,
   RevocationList,
