@@ -3,6 +3,7 @@ import { buildRecordAad, buildRecordEnvelope, encrypt, type EnclaveKey } from '.
 import { AttestationError } from '../../kernel/errors.js'
 import { generateULID } from '../../with-pod/ulid.js'
 import { loadOrCreateSigner, ATTESTATIONS_COLLECTION } from './signer.js'
+import { ENCLAVE_SCHEME } from './scheme.js'
 import {
   computeFieldHashes, signPayloadCore, encodeQr, bytesToB64url,
   type AttestationFieldSchema, type QrPayload,
@@ -52,7 +53,7 @@ export async function issueAttestationCore(ctx: IssueContext, args: IssueArgs): 
   }
   const docId = generateULID()
 
-  const sig = await signPayloadCore({ v: 1, docId, salt: saltB64, keyId: signer.keyId, fieldHashes }, signer.privateKeyPkcs8B64)
+  const sig = await signPayloadCore({ v: 1, docId, salt: saltB64, keyId: signer.keyId, fieldHashes }, signer.privateKeyPkcs8B64, ENCLAVE_SCHEME)
   const payload: QrPayload = { v: 1, docId, salt: saltB64, alg: 'ed25519', keyId: signer.keyId, fieldHashes, sig }
 
   const index = {

@@ -1,7 +1,9 @@
 import type { NoydbStore } from '../../kernel/types.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import {
+  buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson,
+  generateSigningKeyPair, sha256Hex, type EnclaveKey,
+} from '../../kernel/enclave/index.js'
 import { ConflictError } from '../../kernel/errors.js'
-import { generateDocSigningKeyPair } from '@noy-db/attestation'
 
 export const ATTESTATIONS_COLLECTION = '_attestations'
 export const SIGNER_RECORD_ID = '_signer'
@@ -55,7 +57,11 @@ export async function loadOrCreateSigner(
   if (existing) return existing
 
   const dek = await getDEK(ATTESTATIONS_COLLECTION)
-  const signer = await generateDocSigningKeyPair()
+  const { publicKeyB64, privateKeyPkcs8B64 } = await generateSigningKeyPair()
+  // keyId: first 16 hex chars of sha256(publicKeyB64) — attestation's
+  // `keyIdFor`, computed here so hub does not import it at runtime.
+  const keyId = (await sha256Hex(new TextEncoder().encode(publicKeyB64))).slice(0, 16)
+  const signer: DocSigner = { keyId, publicKeyB64, privateKeyPkcs8B64 }
   const identity = { collection: ATTESTATIONS_COLLECTION, id: SIGNER_RECORD_ID, version: 1 }
   const { iv, data } = await encrypt(JSON.stringify(signer), dek, buildRecordAad(identity))
   const env = buildRecordEnvelope(
