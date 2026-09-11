@@ -28,6 +28,8 @@ import {
   generateSalt,
   sha256Bytes,
   hkdfAesGcmKey,
+  derivePresenceTagKey,
+  hmacSignHex,
 } from '../src/kernel/enclave/index.js'
 import {
   deriveMagicLinkContentKey,
@@ -324,5 +326,31 @@ describe('magic-link content key — HKDF(secret, salt = SHA-256(token), info = 
     const ct = await subtle.encrypt({ name: 'AES-GCM', iv }, o, new TextEncoder().encode('grant'))
     const pt = await subtle.decrypt({ name: 'AES-GCM', iv }, k, ct)
     expect(new TextDecoder().decode(pt)).toBe('grant')
+  })
+})
+
+// ─── Task 7: presence.ts ──────────────────────────────────────────────────────
+
+describe('derivePresenceTagKey / hmacSignHex', () => {
+  it('equals raw HKDF(salt noydb.presence.tag.v1, info collection) → HMAC-SHA256 hex', async () => {
+    const dek = await rawDek()
+    const tagKey = await derivePresenceTagKey(dek, 'invoices')
+    expect(tagKey.extractable).toBe(false)
+    const got = await hmacSignHex(tagKey, new TextEncoder().encode('alice'))
+
+    const raw = await subtle.exportKey('raw', dek)
+    const hk = await subtle.importKey('raw', raw, 'HKDF', false, ['deriveBits'])
+    const bits = await subtle.deriveBits(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: new TextEncoder().encode('noydb.presence.tag.v1'),
+        info: new TextEncoder().encode('invoices'),
+      },
+      hk, 256,
+    )
+    const hm = await subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+    const mac = new Uint8Array(await subtle.sign('HMAC', hm, new TextEncoder().encode('alice')))
+    expect(got).toBe(Array.from(mac).map((b) => b.toString(16).padStart(2, '0')).join(''))
   })
 })

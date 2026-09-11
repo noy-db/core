@@ -798,6 +798,37 @@ export async function derivePresenceKey(dek: CryptoKey, collectionName: string):
   )
 }
 
+/** Domain of the presence-tag key — moved here from `with-sync/presence.ts`. */
+const PRESENCE_TAG_KEY_DOMAIN = 'noydb.presence.tag.v1'
+
+/**
+ * Derive the presence-TAG key from a collection DEK: a non-extractable,
+ * sign-only HMAC-SHA256 key, HKDF-separated from the presence PAYLOAD key
+ * ({@link derivePresenceKey}) by its own salt. The tag is the adapter-opaque
+ * record id for storage-polled presence; the adapter never sees the userId.
+ */
+export async function derivePresenceTagKey(dek: CryptoKey, collectionName: string): Promise<CryptoKey> {
+  const rawDek = await subtle.exportKey('raw', dek)
+  const hkdfKey = await subtle.importKey('raw', rawDek, 'HKDF', false, ['deriveBits'])
+  const salt = new TextEncoder().encode(PRESENCE_TAG_KEY_DOMAIN)
+  const info = new TextEncoder().encode(collectionName)
+  const bits = await subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, hkdfKey, KEY_BITS)
+  return subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+}
+
+/**
+ * HMAC-SHA256 hex with a key that IS an HMAC key (e.g. from
+ * {@link derivePresenceTagKey}). {@link hmacSha256Hex} takes an AES-GCM
+ * carrier and re-imports its raw bytes, which needs an extractable key;
+ * this one signs directly and works with non-extractable keys.
+ */
+export async function hmacSignHex(key: CryptoKey, data: Uint8Array): Promise<string> {
+  const sig = await subtle.sign('HMAC', key, data as unknown as BufferSource)
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 /**
  * HKDF-SHA256 → non-extractable AES-256-GCM key from caller-supplied input
  * key material. The magic-link content key derives here from

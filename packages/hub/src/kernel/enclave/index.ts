@@ -94,6 +94,8 @@ export {
   bufferToBase64,
   base64ToBuffer,
   derivePresenceKey,
+  derivePresenceTagKey,
+  hmacSignHex,
   hkdfAesGcmKey,
   deriveDeterministicKey,
   deriveSealedFieldKey,
