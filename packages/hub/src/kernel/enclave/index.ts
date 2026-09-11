@@ -169,6 +169,9 @@ export {
 } from './broker/proof.js'
 export type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from './broker/proof.js'
 
+// ─── sign ─────────────────────────────────────────────────────────────
+export { generateSigningKeyPair, signBytes, verifyBytes } from './sign.js'
+
 // ─── recipient sealing ────────────────────────────────────────────────
 export type { EnclaveKeyPair } from './crypto.js'
 export {
