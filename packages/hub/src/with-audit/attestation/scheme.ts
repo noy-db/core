@@ -1,5 +1,5 @@
 import { signBytes, verifyBytes } from '../../kernel/enclave/index.js'
-import type { SignatureScheme } from '@noy-db/attestation'
+import type { SignatureScheme } from './types.js'
 
 /**
  * Attestation signs and verifies with the ENCLAVE's sign group, not with the

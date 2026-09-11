@@ -115,11 +115,10 @@ importers:
         version: 22.19.17
 
   packages/hub:
-    dependencies:
+    devDependencies:
       '@noy-db/attestation':
         specifier: workspace:*
         version: link:../attestation
-    devDependencies:
       '@noy-db/shamir':
         specifier: workspace:*
         version: link:../shamir

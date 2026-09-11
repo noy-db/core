@@ -14,4 +14,5 @@ export { revokeDocCore, unrevokeDocCore, getRevokedDocIdsCore, publishRevocation
 export type { RevokeContext } from './revoke.js'
 export { AttestationError } from '../../kernel/errors.js'
 // Re-export the pure verifier surface so consumers can verify from one import:
-export { verifyAttestation, decodeQr, verifyRevocationList, isRevoked, signRevocationList, type QrPayload, type AttestationFieldSchema, type VerifyResult, type VerifyInput, type RevocationList } from '@noy-db/attestation'
+export { verifyAttestation, decodeQr, verifyRevocationList, isRevoked, signRevocationList } from './verifier.js'
+export type { QrPayload, AttestationFieldSchema, VerifyResult, VerifyInput, RevocationList } from './types.js'

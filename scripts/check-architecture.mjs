@@ -1987,7 +1987,7 @@ function checkFamilyPortHasBinder() {
  */
 const HUB_SATELLITE_DEPS = new Map([
   ['@noy-db/attestation', {
-    why: 'runtime dependency — the pure, zero-dep attestation primitive hub embeds.',
+    why: 'devDependency, BUNDLED into dist by tsup noExternal (capsule seam spec, Stage A Task 13) — hub ships with zero runtime deps; the package stays published for hub-less verifiers. Hub signs through its own enclave sign group and passes it in as attestation\'s SignatureScheme.',
     // Genuinely nothing to hold in step: attestation imports hub ZERO times and
     // implements no hub contract, so no mirror is forced and none exists.
     mirrorCheck: null,

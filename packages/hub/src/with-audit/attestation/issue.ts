@@ -4,10 +4,8 @@ import { AttestationError } from '../../kernel/errors.js'
 import { generateULID } from '../../with-pod/ulid.js'
 import { loadOrCreateSigner, ATTESTATIONS_COLLECTION } from './signer.js'
 import { ENCLAVE_SCHEME } from './scheme.js'
-import {
-  computeFieldHashes, signPayloadCore, encodeQr, bytesToB64url,
-  type AttestationFieldSchema, type QrPayload,
-} from '@noy-db/attestation'
+import { computeFieldHashes, signPayloadCore, encodeQr, bytesToB64url } from '@noy-db/attestation'
+import type { AttestationFieldSchema, QrPayload } from './types.js'
 
 /** Everything issueAttestationCore needs from the Vault, injected for testability. */
 export interface IssueContext {

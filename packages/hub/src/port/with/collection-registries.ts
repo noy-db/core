@@ -19,7 +19,7 @@
  * @internal
  */
 
-import type { AttestationFieldSchema } from '@noy-db/attestation'
+import type { AttestationFieldSchema } from '../../with-audit/attestation/types.js'
 
 import type { BlobFieldsConfig } from '../../with-shape/blobs/blob-compaction.js'
 import type { ArchivePolicy } from '../../with-fork/archive/index.js'

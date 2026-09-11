@@ -3,7 +3,8 @@ import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type En
 import { AttestationError, ConflictError } from '../../kernel/errors.js'
 import { loadOrCreateSigner, ATTESTATIONS_COLLECTION, REVOKED_RECORD_ID } from './signer.js'
 import { ENCLAVE_SCHEME } from './scheme.js'
-import { signRevocationList, type RevocationList } from '@noy-db/attestation'
+import { signRevocationList } from '@noy-db/attestation'
+import type { RevocationList } from './types.js'
 
 /** Everything the revoke core needs from the Vault, injected for testability. */
 export interface RevokeContext {

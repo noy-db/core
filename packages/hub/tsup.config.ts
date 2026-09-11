@@ -49,4 +49,7 @@ export default defineConfig({
   splitting: true,
   sourcemap: true,
   target: 'es2022',
+  // Bundled, not depended on: hub must install alone (capsule seam spec D2/D5).
+  // The package stays published for hub-less verifiers.
+  noExternal: ['@noy-db/attestation'],
 })
