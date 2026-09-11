@@ -30,6 +30,11 @@ import {
   hkdfAesGcmKey,
   derivePresenceTagKey,
   hmacSignHex,
+  generateRecipientKeyPair,
+  exportRecipientPublicKeySpki,
+  importRecipientPublicKeySpki,
+  recipientWrap,
+  recipientUnwrap,
 } from '../src/kernel/enclave/index.js'
 import {
   deriveMagicLinkContentKey,
@@ -353,4 +358,23 @@ describe('derivePresenceTagKey / hmacSignHex', () => {
     const mac = new Uint8Array(await subtle.sign('HMAC', hm, new TextEncoder().encode('alice')))
     expect(got).toBe(Array.from(mac).map((b) => b.toString(16).padStart(2, '0')).join(''))
   })
+})
+
+// ─── Task 8: managed-secret.ts ────────────────────────────────────────────────
+
+describe('recipient group — RSA-OAEP-SHA256', () => {
+  it('wraps 32 bytes to 256 bytes that the pair unwraps, and interoperates with raw WebCrypto', async () => {
+    const pair = await generateRecipientKeyPair()
+    const spki = await exportRecipientPublicKeySpki(pair)
+    const pub = await importRecipientPublicKeySpki(spki)
+    const cek = crypto.getRandomValues(new Uint8Array(32))
+    const wrapped = await recipientWrap(pub, cek)
+    expect(wrapped.byteLength).toBe(256)
+    expect(await recipientUnwrap(pair, wrapped)).toEqual(cek)
+
+    // oracle: raw WebCrypto with the same SPKI produces something the pair opens
+    const rawPub = await subtle.importKey('spki', spki as BufferSource, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+    const w2 = new Uint8Array(await subtle.encrypt({ name: 'RSA-OAEP' }, rawPub, cek))
+    expect(await recipientUnwrap(pair, w2)).toEqual(cek)
+  }, 30_000)
 })

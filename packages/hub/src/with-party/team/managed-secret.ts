@@ -48,7 +48,20 @@
  * @module
  */
 
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import {
+  buildRecordEnvelope,
+  importTransferKey,
+  encryptBytes,
+  decryptBytes,
+  bufferToBase64,
+  base64ToBuffer,
+  generateRecipientKeyPair,
+  exportRecipientPublicKeySpki,
+  importRecipientPublicKeySpki,
+  recipientWrap,
+  recipientUnwrap,
+  type EnclaveKeyPair,
+} from '../../kernel/enclave/index.js'
 import type { NoydbStore, RecipientSealer } from '../../kernel/types.js'
 
 /**
@@ -234,19 +247,15 @@ export type { RecipientSealer } from '../../kernel/types.js'
 export async function sealRsaOaepTlv(plaintext: Uint8Array, publicKeyPem: string): Promise<Uint8Array> {
   // Parse PEM → SPKI bytes.
   const b64 = publicKeyPem.replace(/-----BEGIN PUBLIC KEY-----/, '').replace(/-----END PUBLIC KEY-----/, '').replace(/\s+/g, '')
-  const spki = base64ToBytes(b64)
-  const recipientPub = await crypto.subtle.importKey(
-    'spki', spki as BufferSource,
-    { name: 'RSA-OAEP', hash: 'SHA-256' },
-    false, ['encrypt'],
-  )
-  // Mint fresh CEK + IV, AES-GCM encrypt plaintext.
+  const recipientPub = await importRecipientPublicKeySpki(base64ToBytes(b64))
+  // Mint fresh CEK, AES-GCM encrypt plaintext.
   const cekBytes = crypto.getRandomValues(new Uint8Array(32))
-  const cek = await crypto.subtle.importKey('raw', cekBytes as BufferSource, 'AES-GCM', false, ['encrypt'])
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, cek, plaintext as BufferSource))
+  const cek = await importTransferKey(cekBytes)
+  const { iv: ivB64, data } = await encryptBytes(plaintext, cek)
+  const iv = base64ToBuffer(ivB64)
+  const ct = base64ToBuffer(data)
   // RSA-OAEP-wrap the CEK bytes.
-  const wrapped = new Uint8Array(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, recipientPub, cekBytes as BufferSource))
+  const wrapped = await recipientWrap(recipientPub, cekBytes)
   cekBytes.fill(0)
   if (wrapped.length !== 256) {
     throw new Error(`sealRsaOaepTlv: expected 256-byte RSA-OAEP wrap, got ${wrapped.length}`)
@@ -292,8 +301,8 @@ export function parseRsaOaepTlv(bytes: Uint8Array): { wrapped: Uint8Array; iv: U
  * @public — re-exported from the hub barrel for external sealer packages.
  */
 export async function aesGcmOpen(cekBytes: Uint8Array, iv: Uint8Array, ct: Uint8Array): Promise<Uint8Array> {
-  const cek = await crypto.subtle.importKey('raw', cekBytes as BufferSource, 'AES-GCM', false, ['decrypt'])
-  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as BufferSource }, cek, ct as BufferSource))
+  const cek = await importTransferKey(cekBytes)
+  return decryptBytes(bufferToBase64(iv), bufferToBase64(ct), cek)
 }
 
 /**
@@ -321,22 +330,17 @@ export async function aesGcmOpen(cekBytes: Uint8Array, iv: Uint8Array, ct: Uint8
  */
 export class MemoryRecipientSealer implements NoydbSealer, RecipientSealer {
   readonly id: string
-  private readonly keypair: Promise<CryptoKeyPair>
+  private readonly keypair: Promise<EnclaveKeyPair>
 
   constructor(opts: { id: string }) {
     this.id = opts.id
-    this.keypair = crypto.subtle.generateKey(
-      { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
-      true,
-      ['encrypt', 'decrypt'],
-    )
+    this.keypair = generateRecipientKeyPair()
   }
 
   async publishRecipientHint(): Promise<RecipientHint> {
-    const { publicKey } = await this.keypair
-    const spki = await crypto.subtle.exportKey('spki', publicKey)
+    const spki = await exportRecipientPublicKeySpki(await this.keypair)
     const pem = '-----BEGIN PUBLIC KEY-----\n'
-      + bytesToBase64(new Uint8Array(spki)).match(/.{1,64}/g)!.join('\n')
+      + bytesToBase64(spki).match(/.{1,64}/g)!.join('\n')
       + '\n-----END PUBLIC KEY-----\n'
     return { v: 1, pid: this.id, alg: 'rsa-oaep-sha256', material: { publicKeyPem: pem } }
   }
@@ -362,10 +366,9 @@ export class MemoryRecipientSealer implements NoydbSealer, RecipientSealer {
 
   async unseal(bytes: Uint8Array): Promise<Uint8Array> {
     const { wrapped, iv, ct } = parseRsaOaepTlv(bytes)
-    const { privateKey } = await this.keypair
     // Local RSA-OAEP-SHA256 unwrap of the CEK — the pluggable step external
     // sealers replace with KMS Decrypt.
-    const cekBytes = new Uint8Array(await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, wrapped as BufferSource))
+    const cekBytes = await recipientUnwrap(await this.keypair, wrapped)
     const pt = await aesGcmOpen(cekBytes, iv, ct)
     cekBytes.fill(0)
     return pt

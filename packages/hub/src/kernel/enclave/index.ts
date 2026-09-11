@@ -168,3 +168,13 @@ export {
   verifyBrokerProof,
 } from './broker/proof.js'
 export type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from './broker/proof.js'
+
+// ─── recipient sealing ────────────────────────────────────────────────
+export type { EnclaveKeyPair } from './crypto.js'
+export {
+  generateRecipientKeyPair,
+  exportRecipientPublicKeySpki,
+  importRecipientPublicKeySpki,
+  recipientWrap,
+  recipientUnwrap,
+} from './crypto.js'

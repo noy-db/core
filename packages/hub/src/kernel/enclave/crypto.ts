@@ -50,6 +50,9 @@ import { DecryptionError, InvalidKeyError, TamperedError, ValidationError } from
  */
 export type EnclaveKey = CryptoKey
 
+/** Opaque asymmetric pair at the enclave seam — `CryptoKeyPair` in the reference enclave. */
+export type EnclaveKeyPair = CryptoKeyPair
+
 const PBKDF2_ITERATIONS = 600_000
 const SALT_BYTES = 32
 const IV_BYTES = 12
@@ -1092,6 +1095,42 @@ export function generateSalt(): Uint8Array {
  */
 export function generateRecoverySecret(): Uint8Array {
   return globalThis.crypto.getRandomValues(new Uint8Array(RECOVERY_SECRET_BYTES))
+}
+
+// ─── Recipient sealing (RSA-OAEP-SHA256) ───────────────────────────────
+//
+// The managed-secret TLV wraps a per-blob CEK for a recipient who holds an
+// RSA private key — locally (`MemoryRecipientSealer`) or in a KMS
+// (`@noy-db/at-aws-kms`, wire-compatible with RSAES_OAEP_SHA_256). Only the
+// asymmetric steps live here; the TLV layout stays in `managed-secret.ts`.
+
+export async function generateRecipientKeyPair(): Promise<CryptoKeyPair> {
+  return subtle.generateKey(
+    { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+export async function exportRecipientPublicKeySpki(pair: CryptoKeyPair): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.exportKey('spki', pair.publicKey))
+}
+
+export async function importRecipientPublicKeySpki(spki: Uint8Array): Promise<CryptoKey> {
+  return subtle.importKey('spki', spki as BufferSource, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+}
+
+/** RSA-OAEP-encrypt `bytes` (a 32-byte CEK) to the recipient's public key. */
+export async function recipientWrap(pub: CryptoKey, bytes: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.encrypt({ name: 'RSA-OAEP' }, pub, bytes as BufferSource))
+}
+
+/**
+ * RSA-OAEP-decrypt with the pair's private key. Propagates WebCrypto's own
+ * error on failure — callers that need a typed error map it themselves.
+ */
+export async function recipientUnwrap(pair: CryptoKeyPair, wrapped: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.decrypt({ name: 'RSA-OAEP' }, pair.privateKey, wrapped as BufferSource))
 }
 
 // ─── Base64 Helpers ────────────────────────────────────────────────────
