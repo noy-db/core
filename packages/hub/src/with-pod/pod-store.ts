@@ -124,17 +124,25 @@ export function wrapPodStore(
   }
 
   async function flush(vault: string): Promise<void> {
-    const snapshot = snapshots.get(vault) ?? {}
-    const format: BundleStoreData = {
-      _noydb_bundle_store: BUNDLE_STORE_VERSION,
-      vault,
-      ts: new Date().toISOString(),
-      data: snapshot,
-    }
-    const bytes = new TextEncoder().encode(JSON.stringify(format))
-    const expectedVersion = versions.get(vault) ?? null
-
+    // ⛔ BOTH of these MUST be read inside the loop, from the maps. #10: they
+    // used to be captured once above it, so a retry re-sent the stale
+    // `expectedVersion` and the PRE-merge bytes — against any OCC backend that
+    // is a guaranteed repeat conflict, so the loop burned its retries and threw
+    // while the merge it had just computed was discarded. The conflict branch
+    // below writes the merged snapshot and the observed remote version into the
+    // maps; reading them here is what makes that work mean anything.
+    // Pinned by `__tests__/pod-flush-conflict-retry.test.ts`.
     for (let attempt = 0; attempt < MAX_CONFLICT_RETRIES; attempt++) {
+      const snapshot = snapshots.get(vault) ?? {}
+      const format: BundleStoreData = {
+        _noydb_bundle_store: BUNDLE_STORE_VERSION,
+        vault,
+        ts: new Date().toISOString(),
+        data: snapshot,
+      }
+      const bytes = new TextEncoder().encode(JSON.stringify(format))
+      const expectedVersion = versions.get(vault) ?? null
+
       try {
         const { version: newVersion } = await bundle.writeBundle(vault, bytes, expectedVersion)
         versions.set(vault, newVersion)
@@ -151,7 +159,8 @@ export function wrapPodStore(
             snapshots.set(vault, mergedSnap)
             versions.set(vault, remote.version)
           }
-          // Re-encode with merged data for the retry
+          // The next iteration re-reads both maps above, so it re-encodes the
+          // merged snapshot and sends the version we just observed.
           continue
         }
         throw err
