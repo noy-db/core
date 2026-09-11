@@ -50,7 +50,7 @@
 
 import type { NoydbStore } from '../../kernel/types.js'
 import type { UnlockedKeyring } from './keyring.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, wrapKey, unwrapKey, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, wrapKey, unwrapKey, sha256Bytes, hkdfAesGcmKey, type EnclaveKey } from '../../kernel/enclave/index.js'
 import { dekKey } from './tiers.js'
 import { DelegationTargetMissingError } from '../../kernel/errors.js'
 
@@ -119,22 +119,13 @@ export async function deriveMagicLinkContentKey(
   token: string,
   vault: string,
 ): Promise<EnclaveKey> {
-  const subtle = globalThis.crypto.subtle
   const ikmBytes =
     serverSecret instanceof Uint8Array
       ? serverSecret
       : new TextEncoder().encode(serverSecret)
-  const tokenBytes = new TextEncoder().encode(token)
-  const saltBuffer = await subtle.digest('SHA-256', tokenBytes)
+  const salt = await sha256Bytes(new TextEncoder().encode(token))
   const info = new TextEncoder().encode(MAGIC_LINK_CONTENT_INFO_PREFIX + vault)
-  const ikm = await subtle.importKey('raw', ikmBytes, 'HKDF', false, ['deriveKey'])
-  return subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt: saltBuffer, info },
-    ikm,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  )
+  return hkdfAesGcmKey(ikmBytes, salt, info)
 }
 
 // ─── Issue ──────────────────────────────────────────────────────────────

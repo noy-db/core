@@ -70,6 +70,7 @@ export {
   encryptDeterministic,
   decryptDeterministic,
   sha256Hex,
+  sha256Bytes,
   hmacSha256Hex,
   deriveBlobAddressKey, // #1126
 } from './crypto.js'
@@ -79,6 +80,8 @@ export {
   deriveKey,
   deriveSecretKey,
   generateDEK,
+  generateEphemeralKey,
+  importTransferKey,
   exportDekSet,
   importDekSet,
   generateSalt,
@@ -86,9 +89,14 @@ export {
   generateIV,
   wrapKey,
   unwrapKey,
+  mintCanary,
+  checkCanary,
   bufferToBase64,
   base64ToBuffer,
   derivePresenceKey,
+  derivePresenceTagKey,
+  hmacSignHex,
+  hkdfAesGcmKey,
   deriveDeterministicKey,
   deriveSealedFieldKey,
   deriveSealedFieldKeyFromCek,
@@ -160,3 +168,16 @@ export {
   verifyBrokerProof,
 } from './broker/proof.js'
 export type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from './broker/proof.js'
+
+// ─── sign ─────────────────────────────────────────────────────────────
+export { generateSigningKeyPair, signBytes, verifyBytes } from './sign.js'
+
+// ─── recipient sealing ────────────────────────────────────────────────
+export type { EnclaveKeyPair } from './crypto.js'
+export {
+  generateRecipientKeyPair,
+  exportRecipientPublicKeySpki,
+  importRecipientPublicKeySpki,
+  recipientWrap,
+  recipientUnwrap,
+} from './crypto.js'

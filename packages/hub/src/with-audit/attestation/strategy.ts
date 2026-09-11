@@ -1,6 +1,6 @@
 import type { NoydbStore } from '../../kernel/types.js'
 import type { EnclaveKey } from '../../kernel/enclave/index.js'
-import type { RevocationList } from '@noy-db/attestation'
+import type { RevocationList } from './types.js'
 import type { IssueContext, IssueArgs, IssueResult } from './issue.js'
 import type { RevokeContext } from './revoke.js'
 import { AttestationNotEnabledError } from '../../kernel/errors.js'

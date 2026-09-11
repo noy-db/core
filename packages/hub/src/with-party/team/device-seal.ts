@@ -1,4 +1,7 @@
 import { NoydbError } from '../../kernel/errors.js'
+import {
+  generateEphemeralKey, encryptBytes, decryptBytes, bufferToBase64, base64ToBuffer, type EnclaveKey,
+} from '../../kernel/enclave/index.js'
 import type { NoydbDeviceSeal } from '../../port/with/device-seal-strategy.js'
 
 /**
@@ -19,32 +22,26 @@ export type { NoydbDeviceSeal }
 /** In-memory test provider — AES-GCM under a per-instance random key. */
 export class MemoryDeviceSeal implements NoydbDeviceSeal {
   readonly id: string
-  private readonly keyPromise: Promise<CryptoKey>
+  private readonly keyPromise: Promise<EnclaveKey>
   constructor(opts: { id: string }) {
     this.id = opts.id
-    this.keyPromise = globalThis.crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
-      'encrypt',
-      'decrypt',
-    ])
+    this.keyPromise = generateEphemeralKey()
   }
   async seal(plain: Uint8Array): Promise<Uint8Array> {
-    const iv = globalThis.crypto.getRandomValues(new Uint8Array(12))
-    const ct = new Uint8Array(
-      await globalThis.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await this.keyPromise, plain as BufferSource),
-    )
-    const out = new Uint8Array(12 + ct.length)
-    out.set(iv, 0)
-    out.set(ct, 12)
+    const { iv, data } = await encryptBytes(plain, await this.keyPromise)
+    const ivB = base64ToBuffer(iv)
+    const ct = base64ToBuffer(data)
+    const out = new Uint8Array(ivB.byteLength + ct.byteLength)
+    out.set(ivB, 0)
+    out.set(ct, ivB.byteLength)
     return out
   }
   async unseal(sealed: Uint8Array): Promise<Uint8Array> {
     try {
-      return new Uint8Array(
-        await globalThis.crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv: sealed.slice(0, 12) },
-          await this.keyPromise,
-          sealed.slice(12) as BufferSource,
-        ),
+      return await decryptBytes(
+        bufferToBase64(sealed.slice(0, 12)),
+        bufferToBase64(sealed.slice(12)),
+        await this.keyPromise,
       )
     } catch {
       throw new NoydbError('DEVICE_SEAL_UNSEAL_FAILED', 'Device seal: unseal failed (tamper or wrong device).')

@@ -270,10 +270,8 @@
     "check:types": "node scripts/check-type-reachability.mjs",
     "check:codemods": "node scripts/check-codemod-coverage.mjs"
   },
-  "dependencies": {
-    "@noy-db/attestation": "workspace:*"
-  },
   "devDependencies": {
+    "@noy-db/attestation": "workspace:*",
     "@noy-db/shamir": "workspace:*",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",

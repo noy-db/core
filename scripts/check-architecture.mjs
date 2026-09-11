@@ -1987,7 +1987,7 @@ function checkFamilyPortHasBinder() {
  */
 const HUB_SATELLITE_DEPS = new Map([
   ['@noy-db/attestation', {
-    why: 'runtime dependency — the pure, zero-dep attestation primitive hub embeds.',
+    why: 'devDependency, BUNDLED into dist by tsup noExternal (capsule seam spec, Stage A Task 13) — hub ships with zero runtime deps; the package stays published for hub-less verifiers. Hub signs through its own enclave sign group and passes it in as attestation\'s SignatureScheme.',
     // Genuinely nothing to hold in step: attestation imports hub ZERO times and
     // implements no hub contract, so no mirror is forced and none exists.
     mirrorCheck: null,
@@ -2684,87 +2684,46 @@ function checkEnclaveBarrelOnly() {
   })
 }
 
-// ─── Check 10b: subtle-outside-enclave (direct WebCrypto ratchet) ────────
+// ─── Check 10b: subtle-outside-enclave (direct WebCrypto ban) ────────────
 //
 // Check 10 bans a file outside `kernel/enclave/**` from IMPORTING past the
-// barrel. It says nothing about a file calling `globalThis.crypto.subtle`
-// directly, which reaches around the fork-swap contract just as completely
-// — `subtle.exportKey('raw', dek)` in `with-party/team/wrapped-deks.ts`
+// barrel. This one bans it from calling `globalThis.crypto.subtle` directly,
+// which reaches around the fork-swap contract just as completely —
+// `subtle.exportKey('raw', dek)` in `with-party/team/wrapped-deks.ts`
 // (fixed by #1317) assumed `EnclaveKey === CryptoKey` and raw-extractable AES
 // keys, both of which the barrel's `EnclaveKey` doc tells a fork it may
 // discard. A null-encryption or post-quantum enclave broke there, not in the
 // enclave, and no check could see it.
 //
-// Measured 2026-09-02 (milestone 59): the files below still call `subtle.*`
-// directly. This is a RATCHET, not a ban — same equality semantics as
-// PRE_EXISTING_BODY_ACCESS (Check 11): stored count must equal actual.
-//   - actual > stored, or file absent from the map → FAIL: a new direct call.
-//   - actual < stored → FAIL: bank the reduction by lowering the entry
-//     (remove it at 0), so a scanner blind spot cannot pass as a win.
-//
-// ⚠️ Do not harden this to zero in one commit. Every entry is known debt
-// with a landing place on the barrel — `encryptBytes`/`decryptBytes`,
-// `exportDekSet`/`importDekSet` (#1317), `deriveSecretKey`, `wrapKey`/
-// `unwrapKey`. `wrapped-deks.ts` reached zero on 2026-09-03 (#1318): it goes
-// through `decryptBytes` and translates the barrel's TamperedError into
-// InvalidKeyError, because a credential-derived key failing to open is a
-// wrong KEY, not tampering (lanna-db #4). Migrate one file at a time and
-// shrink the map in the same commit.
+// History: introduced 2026-09-02 as a RATCHET over ten grandfathered files
+// (38 calls); driven to zero one file per commit and turned into a ban on
+// 2026-09-11 (capsule seam spec, Stage A). Do not reintroduce a map — every
+// primitive a service needs has a landing place on the barrel
+// (`encryptBytes`/`decryptBytes`, `exportDekSet`/`importDekSet`,
+// `importTransferKey`, `generateEphemeralKey`, `mintCanary`/`checkCanary`,
+// `hkdfAesGcmKey`, `derivePresenceTagKey`/`hmacSignHex`, the recipient
+// group); add the primitive there instead.
 //
 // Detection: `subtle.<method>(` after `stripComments`, so a call quoted in
 // JSDoc does not count, but one inside a string literal would (accepted
 // overcount, identical to Check 11's helper choice). `*.test.ts` files are
 // skipped — tests may drive WebCrypto directly to build oracles.
-const SUBTLE_OUTSIDE_ENCLAVE = new Map([
-  ['packages/hub/src/with-cargo/adopt-partition.ts', 3],
-  ['packages/hub/src/with-cargo/extract-partition.ts', 3],
-  ['packages/hub/src/with-party/session/dev-unlock.ts', 2],
-  ['packages/hub/src/with-party/session/session.ts', 5],
-  ['packages/hub/src/with-party/team/device-seal.ts', 3],
-  ['packages/hub/src/with-party/team/echo-secret.ts', 4],
-  ['packages/hub/src/with-party/team/keyring.ts', 1],
-  ['packages/hub/src/with-party/team/magic-link-grant.ts', 3],
-  ['packages/hub/src/with-party/team/managed-secret.ts', 9],
-  ['packages/hub/src/with-sync/presence.ts', 5],
-])
-
 function checkSubtleOutsideEnclave() {
   const hubSrc = join(PACKAGES_DIR, 'hub', 'src')
   const enclaveDir = join(hubSrc, 'kernel', 'enclave')
-  const actualCounts = new Map()
 
   walkTsFiles(hubSrc, (file, content) => {
     if (file.endsWith('.test.ts')) return
     if (!relative(enclaveDir, file).startsWith('..')) return
     const hits = stripComments(content).match(/\bsubtle\.[A-Za-z]+\(/g)
-    if (hits) actualCounts.set(relative(ROOT, file), hits.length)
+    if (!hits) return
+    const rel = relative(ROOT, file)
+    fail(
+      'subtle-outside-enclave',
+      `${rel} calls crypto.subtle directly ${hits.length} time(s) — only kernel/enclave/** may call WebCrypto. Go through the enclave barrel (kernel/enclave/index.js: encryptBytes/decryptBytes, exportDekSet/importDekSet, importTransferKey, generateEphemeralKey, mintCanary/checkCanary, hkdfAesGcmKey, derivePresenceTagKey/hmacSignHex, the recipient group, …) or add the missing primitive to kernel/enclave/crypto.ts.`,
+      join(ROOT, rel),
+    )
   })
-
-  const allFiles = new Set([...actualCounts.keys(), ...SUBTLE_OUTSIDE_ENCLAVE.keys()])
-  for (const rel of [...allFiles].sort()) {
-    const actual = actualCounts.get(rel) ?? 0
-    const stored = SUBTLE_OUTSIDE_ENCLAVE.get(rel)
-    const where = join(ROOT, rel)
-    if (stored === undefined) {
-      fail(
-        'subtle-outside-enclave',
-        `${rel} calls crypto.subtle directly ${actual} time(s) and is not in SUBTLE_OUTSIDE_ENCLAVE — only kernel/enclave/** may call WebCrypto. Go through the enclave barrel (kernel/enclave/index.js: encryptBytes/decryptBytes, exportDekSet/importDekSet, deriveSecretKey, wrapKey/unwrapKey, …), or if this is a deliberate grandfathered exception add an entry to SUBTLE_OUTSIDE_ENCLAVE in scripts/check-architecture.mjs with its count.`,
-        where,
-      )
-    } else if (actual > stored) {
-      fail(
-        'subtle-outside-enclave',
-        `${rel} calls crypto.subtle directly ${actual} time(s), up from the grandfathered ${stored} — a new direct WebCrypto call outside the enclave. Route it through kernel/enclave/index.js instead.`,
-        where,
-      )
-    } else if (actual < stored) {
-      fail(
-        'subtle-outside-enclave',
-        `${rel} calls crypto.subtle directly ${actual} time(s), down from the grandfathered ${stored} — bank the reduction: set SUBTLE_OUTSIDE_ENCLAVE's entry for this file to ${actual} (or remove it at 0).`,
-        'scripts/check-architecture.mjs',
-      )
-    }
-  }
 }
 
 // ─── Check 11: enclave-body-only (C1 — protected-body access ratchet) ──

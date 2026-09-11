@@ -32,8 +32,10 @@
 import {
   deriveSecretKey,
   generateSalt,
-  generateIV,
-  wrapKey,
+  mintCanary,
+  checkCanary,
+  encryptBytes,
+  decryptBytes,
   bufferToBase64,
   base64ToBuffer,
   encodeEchoParts,
@@ -47,15 +49,10 @@ import { WrongPromptError } from '../../kernel/errors.js'
 export const ECHO_KDF_ITERATIONS = 600_000
 
 const VERIFIER_PLAINTEXT = new Uint8Array(32).fill(0x5a)
-const subtle = globalThis.crypto.subtle
-
-async function getVerifierKey(): Promise<CryptoKey> {
-  return subtle.importKey('raw', VERIFIER_PLAINTEXT as BufferSource, { name: 'AES-GCM' }, true, ['encrypt'])
-}
 
 async function mintVerifier(part: string, salt: Uint8Array): Promise<string> {
   const kek = await deriveSecretKey(part, salt, { iterations: ECHO_KDF_ITERATIONS, keyUsage: 'aes-kw' })
-  return wrapKey(await getVerifierKey(), kek)
+  return mintCanary(kek, VERIFIER_PLAINTEXT)
 }
 
 /**
@@ -66,8 +63,7 @@ async function mintVerifier(part: string, salt: Uint8Array): Promise<string> {
 async function checkVerifier(verifier: string, part: string, saltB64: string): Promise<boolean> {
   try {
     const kek = await deriveSecretKey(part, base64ToBuffer(saltB64), { iterations: ECHO_KDF_ITERATIONS, keyUsage: 'aes-kw' })
-    await subtle.unwrapKey('raw', base64ToBuffer(verifier) as BufferSource, kek, 'AES-KW', { name: 'AES-GCM' }, false, ['encrypt'])
-    return true
+    return await checkCanary(verifier, kek)
   } catch {
     return false
   }
@@ -94,12 +90,9 @@ export async function buildEchoBlock(
   let revealField: KeyringEchoBlock['reveal']
   if (reveal.kind === 'portable') {
     const blobSalt = generateSalt()
-    const iv = generateIV()
     const gcmKey = await deriveSecretKey(parts.prompt, blobSalt, { iterations: ECHO_KDF_ITERATIONS, keyUsage: 'aes-gcm' })
-    const ct = new Uint8Array(
-      await subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, gcmKey, new TextEncoder().encode(parts.echo)),
-    )
-    revealField = { kind: 'portable', blob: bufferToBase64(ct), iv: bufferToBase64(iv), salt: bufferToBase64(blobSalt) }
+    const { iv, data } = await encryptBytes(new TextEncoder().encode(parts.echo), gcmKey)
+    revealField = { kind: 'portable', blob: data, iv, salt: bufferToBase64(blobSalt) }
   } else if (reveal.kind === 'sealed') {
     const sealed = await reveal.deviceSeal.seal(new TextEncoder().encode(parts.echo))
     revealField = { kind: 'sealed', blob: bufferToBase64(sealed), provider_hint: reveal.deviceSeal.id }
@@ -140,11 +133,7 @@ export async function resolveEchoReveal(
         iterations: ECHO_KDF_ITERATIONS,
         keyUsage: 'aes-gcm',
       })
-      const plain = await subtle.decrypt(
-        { name: 'AES-GCM', iv: base64ToBuffer(block.reveal.iv) as BufferSource },
-        gcmKey,
-        base64ToBuffer(block.reveal.blob) as BufferSource,
-      )
+      const plain = await decryptBytes(block.reveal.iv, block.reveal.blob, gcmKey)
       return new TextDecoder().decode(plain)
     } catch {
       // Wrong prompt (or corrupt salt/iv/blob) — a wrong prompt must NOT

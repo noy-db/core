@@ -11,6 +11,8 @@ export { canonicalJson, sha256Hex, sha256Bytes, bytesToHex, bytesToB64url, b64ur
 export { normalizeField, validateFieldSchema, getPath } from './normalize.js'
 export { computeFieldHashes } from './hashing.js'
 export { generateDocSigningKeyPair, ed25519Sign, ed25519Verify, keyIdFor } from './ed25519.js'
+export { ed25519Scheme } from './scheme.js'
+export type { SignatureScheme } from './scheme.js'
 export { encodeQr, decodeQr } from './qr.js'
 export { signPayloadCore, verifyAttestation } from './verify.js'
 export { isRevoked, verifyRevocationList, signRevocationList } from './revocation.js'

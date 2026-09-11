@@ -50,6 +50,9 @@ import { DecryptionError, InvalidKeyError, TamperedError, ValidationError } from
  */
 export type EnclaveKey = CryptoKey
 
+/** Opaque asymmetric pair at the enclave seam — `CryptoKeyPair` in the reference enclave. */
+export type EnclaveKeyPair = CryptoKeyPair
+
 const PBKDF2_ITERATIONS = 600_000
 const SALT_BYTES = 32
 const IV_BYTES = 12
@@ -211,6 +214,16 @@ export async function generateDEK(): Promise<CryptoKey> {
   )
 }
 
+/**
+ * Generate a NON-extractable AES-256-GCM key for in-memory-only use — a
+ * session key, a device seal. Unlike {@link generateDEK} it can never be
+ * wrapped or exported: WebCrypto enforces that, and it is the tab-scope
+ * invariant `with-party/session` and `device-seal` rely on.
+ */
+export async function generateEphemeralKey(): Promise<CryptoKey> {
+  return subtle.generateKey({ name: 'AES-GCM', length: KEY_BITS }, false, ['encrypt', 'decrypt'])
+}
+
 // ─── DEK-Set Codec ─────────────────────────────────────────────────────
 //
 // The portable form of a DEK set — `{ collection: base64(rawKey) }` — is the
@@ -274,6 +287,33 @@ export async function unwrapKey(
     )
   } catch {
     throw new InvalidKeyError()
+  }
+}
+
+// ─── Canary ────────────────────────────────────────────────────────────
+//
+// "Is this KEK the right one?" is answered by wrapping a CONSTANT key under
+// it and seeing whether the wrap opens later. AES-KW is deterministic
+// (RFC 3394 fixed IV), so the same constant under the same KEK always yields
+// the same bytes — every write site can re-mint on persist. The keyring
+// canary (32 zero bytes) and the echo prompt/echo verifiers (32 × 0x5a) are
+// both this primitive with a different constant.
+
+/** Wrap the constant AES-GCM key built from `plaintext` under `kek`. */
+export async function mintCanary(kek: CryptoKey, plaintext: Uint8Array): Promise<string> {
+  const constant = await subtle.importKey(
+    'raw', plaintext as BufferSource, { name: 'AES-GCM', length: KEY_BITS }, true, ['encrypt', 'decrypt'],
+  )
+  return wrapKey(constant, kek)
+}
+
+/** True iff `wrapped` unwraps under `kek` — the KEK is right AND the bytes are intact. */
+export async function checkCanary(wrapped: string, kek: CryptoKey): Promise<boolean> {
+  try {
+    await unwrapKey(wrapped, kek)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -348,6 +388,19 @@ export async function unwrapCek(wrappedBase64: string, dek: CryptoKey): Promise<
  */
 export async function importCek(rawKey: Uint8Array): Promise<CryptoKey> {
   return subtle.importKey('raw', rawKey as BufferSource, { name: 'AES-GCM', length: KEY_BITS }, false, ['decrypt'])
+}
+
+/**
+ * Import a raw 32-byte pre-shared key as a NON-extractable AES-256-GCM key
+ * (encrypt + decrypt). The transfer seal (`with-cargo`) and the RSA-OAEP
+ * TLV's per-blob CEK (`managed-secret`) both hand raw bytes to the enclave
+ * here; the bytes never become a key anywhere else.
+ */
+export async function importTransferKey(raw: Uint8Array): Promise<CryptoKey> {
+  if (raw.byteLength !== 32) {
+    throw new ValidationError(`transfer key must be 32 bytes, got ${raw.byteLength}.`)
+  }
+  return subtle.importKey('raw', raw as BufferSource, { name: 'AES-GCM', length: KEY_BITS }, false, ['encrypt', 'decrypt'])
 }
 
 // ─── Encrypt / Decrypt ─────────────────────────────────────────────────
@@ -556,6 +609,11 @@ export async function sha256Hex(data: Uint8Array): Promise<string> {
     .join('')
 }
 
+/** SHA-256 of raw bytes, as bytes. */
+export async function sha256Bytes(data: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.digest('SHA-256', data as unknown as BufferSource))
+}
+
 // ─── HMAC-SHA-256 ─────────────────────────────
 
 /**
@@ -737,6 +795,54 @@ export async function derivePresenceKey(dek: CryptoKey, collectionName: string):
   return subtle.importKey(
     'raw',
     bits,
+    { name: 'AES-GCM', length: KEY_BITS },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+/** Domain of the presence-tag key — moved here from `with-sync/presence.ts`. */
+const PRESENCE_TAG_KEY_DOMAIN = 'noydb.presence.tag.v1'
+
+/**
+ * Derive the presence-TAG key from a collection DEK: a non-extractable,
+ * sign-only HMAC-SHA256 key, HKDF-separated from the presence PAYLOAD key
+ * ({@link derivePresenceKey}) by its own salt. The tag is the adapter-opaque
+ * record id for storage-polled presence; the adapter never sees the userId.
+ */
+export async function derivePresenceTagKey(dek: CryptoKey, collectionName: string): Promise<CryptoKey> {
+  const rawDek = await subtle.exportKey('raw', dek)
+  const hkdfKey = await subtle.importKey('raw', rawDek, 'HKDF', false, ['deriveBits'])
+  const salt = new TextEncoder().encode(PRESENCE_TAG_KEY_DOMAIN)
+  const info = new TextEncoder().encode(collectionName)
+  const bits = await subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, hkdfKey, KEY_BITS)
+  return subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+}
+
+/**
+ * HMAC-SHA256 hex with a key that IS an HMAC key (e.g. from
+ * {@link derivePresenceTagKey}). {@link hmacSha256Hex} takes an AES-GCM
+ * carrier and re-imports its raw bytes, which needs an extractable key;
+ * this one signs directly and works with non-extractable keys.
+ */
+export async function hmacSignHex(key: CryptoKey, data: Uint8Array): Promise<string> {
+  const sig = await subtle.sign('HMAC', key, data as unknown as BufferSource)
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
+/**
+ * HKDF-SHA256 → non-extractable AES-256-GCM key from caller-supplied input
+ * key material. The magic-link content key derives here from
+ * `(serverSecret, SHA-256(token), info)`; `salt`/`info` are the caller's
+ * domain separation, this function adds none.
+ */
+export async function hkdfAesGcmKey(ikm: Uint8Array, salt: Uint8Array, info: Uint8Array): Promise<CryptoKey> {
+  const key = await subtle.importKey('raw', ikm as BufferSource, 'HKDF', false, ['deriveKey'])
+  return subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt: salt as BufferSource, info: info as BufferSource },
+    key,
     { name: 'AES-GCM', length: KEY_BITS },
     false,
     ['encrypt', 'decrypt'],
@@ -989,6 +1095,42 @@ export function generateSalt(): Uint8Array {
  */
 export function generateRecoverySecret(): Uint8Array {
   return globalThis.crypto.getRandomValues(new Uint8Array(RECOVERY_SECRET_BYTES))
+}
+
+// ─── Recipient sealing (RSA-OAEP-SHA256) ───────────────────────────────
+//
+// The managed-secret TLV wraps a per-blob CEK for a recipient who holds an
+// RSA private key — locally (`MemoryRecipientSealer`) or in a KMS
+// (`@noy-db/at-aws-kms`, wire-compatible with RSAES_OAEP_SHA_256). Only the
+// asymmetric steps live here; the TLV layout stays in `managed-secret.ts`.
+
+export async function generateRecipientKeyPair(): Promise<CryptoKeyPair> {
+  return subtle.generateKey(
+    { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+export async function exportRecipientPublicKeySpki(pair: CryptoKeyPair): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.exportKey('spki', pair.publicKey))
+}
+
+export async function importRecipientPublicKeySpki(spki: Uint8Array): Promise<CryptoKey> {
+  return subtle.importKey('spki', spki as BufferSource, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+}
+
+/** RSA-OAEP-encrypt `bytes` (a 32-byte CEK) to the recipient's public key. */
+export async function recipientWrap(pub: CryptoKey, bytes: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.encrypt({ name: 'RSA-OAEP' }, pub, bytes as BufferSource))
+}
+
+/**
+ * RSA-OAEP-decrypt with the pair's private key. Propagates WebCrypto's own
+ * error on failure — callers that need a typed error map it themselves.
+ */
+export async function recipientUnwrap(pair: CryptoKeyPair, wrapped: Uint8Array): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.decrypt({ name: 'RSA-OAEP' }, pair.privateKey, wrapped as BufferSource))
 }
 
 // ─── Base64 Helpers ────────────────────────────────────────────────────

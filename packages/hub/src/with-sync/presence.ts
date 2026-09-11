@@ -17,18 +17,9 @@
 
 import { buildRecordEnvelope } from '../kernel/enclave/index.js'
 import type { NoydbStore, PresencePeer } from '../kernel/types.js'
-import { encrypt, decrypt, derivePresenceKey, type EnclaveKey } from '../kernel/enclave/index.js'
-
-const subtle = globalThis.crypto.subtle
-
-/**
- * HKDF salt domain for the presence-tag key — the adapter-opaque record-id
- * tag used by the storage-poll fallback. Domain-separated from the presence
- * PAYLOAD key (`'noydb-presence'`, in `derivePresenceKey`) so the tag key
- * and the payload encryption key are cryptographically independent even
- * though both derive from the same collection DEK.
- */
-const PRESENCE_TAG_KEY_DOMAIN = 'noydb.presence.tag.v1'
+import {
+  encrypt, decrypt, derivePresenceKey, derivePresenceTagKey, hmacSignHex, type EnclaveKey,
+} from '../kernel/enclave/index.js'
 
 /** Options for constructing a PresenceHandle. @internal */
 export interface PresenceHandleOpts {
@@ -189,10 +180,10 @@ export class PresenceHandle<P> {
   /**
    * Derive (and cache) the presence-tag key — a non-extractable, sign-only
    * HMAC-SHA256 key HKDF-derived from the collection DEK, domain-separated
-   * from the presence payload key by {@link PRESENCE_TAG_KEY_DOMAIN}.
-   * Mirrors `deriveClassifyIndexKey` (kernel/enclave/classify/bidx.ts). No
-   * PBKDF2 stretch — the adapter never holds this key, so a plain keyed HMAC
-   * tag is sufficient and deterministic. Returns `null` when unencrypted
+   * from the presence payload key by the enclave's `derivePresenceTagKey`
+   * domain. Mirrors `deriveClassifyIndexKey` (kernel/enclave/classify/bidx.ts).
+   * No PBKDF2 stretch — the adapter never holds this key, so a plain keyed
+   * HMAC tag is sufficient and deterministic. Returns `null` when unencrypted
    * (no DEK to derive from).
    */
   private async getPresenceTagKey(): Promise<EnclaveKey | null> {
@@ -200,12 +191,7 @@ export class PresenceHandle<P> {
     if (!this.presenceTagKey) {
       try {
         const dek = await this.getDEK(this.collectionName)
-        const rawDek = await subtle.exportKey('raw', dek)
-        const hkdfKey = await subtle.importKey('raw', rawDek, 'HKDF', false, ['deriveBits'])
-        const salt = new TextEncoder().encode(PRESENCE_TAG_KEY_DOMAIN)
-        const info = new TextEncoder().encode(this.collectionName)
-        const bits = await subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, hkdfKey, 256)
-        this.presenceTagKey = await subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+        this.presenceTagKey = await derivePresenceTagKey(dek, this.collectionName)
       } catch {
         // no-op — presence degrades gracefully if crypto fails
       }
@@ -218,17 +204,11 @@ export class PresenceHandle<P> {
    * storage-poll record id in encrypted mode so the adapter never sees the
    * userId. Falls back to the raw `userId` when unencrypted (no key exists
    * to tag with — see {@link PresenceHandleOpts.userId}).
-   *
-   * Signs directly via `subtle.sign` (like `bidx.ts`'s `mintAt`) rather than
-   * the barrel's `hmacSha256Hex` helper: that helper re-exports its key
-   * argument's raw bytes internally, which only works for extractable keys
-   * (e.g. an AES-GCM DEK) — `presenceTagKey` is deliberately non-extractable.
    */
   private async presenceTag(userId: string): Promise<string> {
     const tagKey = await this.getPresenceTagKey()
     if (!tagKey) return userId
-    const mac = await subtle.sign('HMAC', tagKey, new TextEncoder().encode(userId) as BufferSource)
-    return Array.from(new Uint8Array(mac)).map((b) => b.toString(16).padStart(2, '0')).join('')
+    return hmacSignHex(tagKey, new TextEncoder().encode(userId))
   }
 
   private getPubSubAdapter(): NoydbStore | undefined {

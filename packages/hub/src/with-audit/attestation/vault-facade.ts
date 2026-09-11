@@ -13,7 +13,7 @@
 import { AttestationError } from '../../kernel/errors.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import type { EnclaveKey } from '../../kernel/enclave/index.js'
-import type { AttestationFieldSchema, RevocationList } from '@noy-db/attestation'
+import type { AttestationFieldSchema, RevocationList } from './types.js'
 import type { IssueContext } from './issue.js'
 import type { RevokeContext } from './revoke.js'
 import type { AttestationStrategy } from './strategy.js'

@@ -16,6 +16,10 @@ import { buildRecordAad, recordAadFor,
   writeEnvelopeBody,
   generateDEK,
   bufferToBase64,
+  base64ToBuffer,
+  exportDekSet,
+  importTransferKey,
+  encryptBytes,
   encryptBytesWithAAD,
   decryptBytesWithAAD,
   unwrapCek,
@@ -496,21 +500,17 @@ export interface SealResult {
  * only the sealed bytes travel in the bundle. Layout: iv(12) ‖ ct ‖ tag.
  */
 export async function sealDeks(deks: Map<string, EnclaveKey>): Promise<SealResult> {
-  const dekMap: Record<string, string> = {}
-  for (const [collection, dek] of deks) {
-    const raw = await crypto.subtle.exportKey('raw', dek)
-    dekMap[collection] = bufferToBase64(raw)
-  }
+  const dekMap = await exportDekSet(deks)
 
   const transferKey = crypto.getRandomValues(new Uint8Array(32))
-  const key = await crypto.subtle.importKey('raw', transferKey, 'AES-GCM', false, ['encrypt'])
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const plaintext = new TextEncoder().encode(JSON.stringify(dekMap))
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext)
+  const key = await importTransferKey(transferKey)
+  const { iv, data } = await encryptBytes(new TextEncoder().encode(JSON.stringify(dekMap)), key)
 
-  const combined = new Uint8Array(iv.byteLength + ct.byteLength)
-  combined.set(iv, 0)
-  combined.set(new Uint8Array(ct), iv.byteLength)
+  const ivBytes = base64ToBuffer(iv)
+  const ct = base64ToBuffer(data)
+  const combined = new Uint8Array(ivBytes.byteLength + ct.byteLength)
+  combined.set(ivBytes, 0)
+  combined.set(ct, ivBytes.byteLength)
 
   const sealId = bufferToBase64(crypto.getRandomValues(new Uint8Array(12)))
   return {

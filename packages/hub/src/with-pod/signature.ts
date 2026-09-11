@@ -4,7 +4,8 @@
  * this module rather than inventing their own scheme.
  *
  * Convention: `canonicalJson(payload minus sig)` → `utf8` → Ed25519, over
- * the published `@noy-db/attestation` primitives. The caller is
+ * the enclave's sign group; canonicalisation from `@noy-db/attestation`.
+ * The caller is
  * responsible for excluding the `sig` field from `payload` before
  * signing/verifying — this module never strips it for you, so a payload
  * that still carries a stray field (or `undefined`) fails loudly via
@@ -12,7 +13,8 @@
  *
  * No pod/vault imports here — this is a family-wide primitive.
  */
-import { canonicalJson, ed25519Sign, ed25519Verify, utf8 } from '@noy-db/attestation'
+import { canonicalJson, utf8 } from '@noy-db/attestation'
+import { signBytes, verifyBytes } from '../kernel/enclave/index.js'
 
 export const POD_SIG_ALG = 'ed25519' as const
 
@@ -26,7 +28,7 @@ export function signedBytes(payload: Record<string, unknown>): Uint8Array {
  * `sig` field.
  */
 export async function signRecord(privateKeyPkcs8B64: string, payload: Record<string, unknown>): Promise<string> {
-  return ed25519Sign(privateKeyPkcs8B64, signedBytes(payload))
+  return signBytes(privateKeyPkcs8B64, signedBytes(payload))
 }
 
 /**
@@ -34,5 +36,5 @@ export async function signRecord(privateKeyPkcs8B64: string, payload: Record<str
  * any malformed input.
  */
 export async function verifyRecord(publicKeyB64: string, sig: string, payload: Record<string, unknown>): Promise<boolean> {
-  return ed25519Verify(publicKeyB64, sig, signedBytes(payload))
+  return verifyBytes(publicKeyB64, sig, signedBytes(payload))
 }

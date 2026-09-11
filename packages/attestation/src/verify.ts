@@ -2,7 +2,7 @@ import type { AttestationFieldSchema } from './types.js'
 import type { QrPayload } from './qr.js'
 import type { RevocationList } from './revocation.js'
 import { canonicalJson, utf8 } from './encoding.js'
-import { ed25519Sign, ed25519Verify } from './ed25519.js'
+import { ed25519Scheme, type SignatureScheme } from './scheme.js'
 import { computeFieldHashes } from './hashing.js'
 import { decodeQr } from './qr.js'
 import { isRevoked } from './revocation.js'
@@ -35,15 +35,19 @@ function signedCore(core: { v: 1; docId: string; salt: string; keyId: string; fi
 export async function signPayloadCore(
   core: { v: 1; docId: string; salt: string; keyId: string; fieldHashes: readonly string[] },
   privateKeyPkcs8B64: string,
+  scheme: SignatureScheme = ed25519Scheme,
 ): Promise<string> {
-  return ed25519Sign(privateKeyPkcs8B64, signedCore(core))
+  return scheme.sign(privateKeyPkcs8B64, signedCore(core))
 }
 
-export async function verifyAttestation(input: VerifyInput): Promise<VerifyResult> {
+export async function verifyAttestation(
+  input: VerifyInput,
+  scheme: SignatureScheme = ed25519Scheme,
+): Promise<VerifyResult> {
   const p: QrPayload = decodeQr(input.qr)
   const pub = input.publicKeys[p.keyId]
   const signatureValid = pub
-    ? await ed25519Verify(pub, p.sig, signedCore({ v: p.v, docId: p.docId, salt: p.salt, keyId: p.keyId, fieldHashes: p.fieldHashes }))
+    ? await scheme.verify(pub, p.sig, signedCore({ v: p.v, docId: p.docId, salt: p.salt, keyId: p.keyId, fieldHashes: p.fieldHashes }))
     : false
 
   const schema = input.fieldSchema

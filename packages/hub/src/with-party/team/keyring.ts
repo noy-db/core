@@ -11,6 +11,7 @@ import {
   generateSalt,
   wrapKey,
   unwrapKey,
+  mintCanary,
   rekeyEnvelopeIfNeeded,
   envelopeOpensUnderAny,
   rekeyBlobSet,
@@ -207,25 +208,10 @@ export interface UnlockedKeyring {
 // pre-canary heuristic left open.
 
 const CANARY_PLAINTEXT_BYTES = new Uint8Array(32)
-let canaryKeyPromise: Promise<EnclaveKey> | null = null
-
-function getCanaryKey(): Promise<EnclaveKey> {
-  if (canaryKeyPromise === null) {
-    canaryKeyPromise = globalThis.crypto.subtle.importKey(
-      'raw',
-      CANARY_PLAINTEXT_BYTES as BufferSource,
-      { name: 'AES-GCM', length: 256 },
-      true, // extractable so AES-KW can wrap it
-      ['encrypt', 'decrypt'],
-    )
-  }
-  return canaryKeyPromise
-}
 
 /** Mint a fresh wrapped-canary string. Deterministic for a given KEK. */
 export async function mintKeyringCanary(kek: EnclaveKey): Promise<string> {
-  const canaryKey = await getCanaryKey()
-  return wrapKey(canaryKey, kek)
+  return mintCanary(kek, CANARY_PLAINTEXT_BYTES)
 }
 
 /** Try to unwrap the canary. Returns true iff KEK + canary bytes are intact. */

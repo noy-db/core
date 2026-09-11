@@ -30,7 +30,7 @@ import type { DictKeyDescriptor, I18nTextDescriptor, StaticDictDescriptor } from
 import type { LookupDescriptor } from '../../via/lookup/descriptor.js'
 import type { ArchivePolicy } from '../../with-fork/archive/index.js'
 import type { SchemaUpdateStrategy } from '../../with-shape/schema-update/types.js'
-import type { AttestationFieldSchema } from '@noy-db/attestation'
+import type { AttestationFieldSchema } from '../../with-audit/attestation/types.js'
 
 /**
  * Options for {@link Vault.collection} — opening or declaring a collection.

@@ -1,5 +1,5 @@
 import { canonicalJson, utf8 } from './encoding.js'
-import { ed25519Sign, ed25519Verify } from './ed25519.js'
+import { ed25519Scheme, type SignatureScheme } from './scheme.js'
 
 export interface RevocationList {
   readonly v: 1
@@ -22,17 +22,22 @@ export function isRevoked(docId: string, list: RevocationList): boolean {
 
 export async function signRevocationList(
   revokedDocIds: readonly string[], asOf: string, keyId: string, privateKeyPkcs8B64: string,
+  scheme: SignatureScheme = ed25519Scheme,
 ): Promise<RevocationList> {
   const sorted = [...revokedDocIds].sort()
-  const sig = await ed25519Sign(privateKeyPkcs8B64, listCore(sorted, asOf, keyId))
+  const sig = await scheme.sign(privateKeyPkcs8B64, listCore(sorted, asOf, keyId))
   return { v: 1, revokedDocIds: sorted, asOf, keyId, sig }
 }
 
-export async function verifyRevocationList(list: RevocationList, publicKeyB64: string): Promise<boolean> {
+export async function verifyRevocationList(
+  list: RevocationList,
+  publicKeyB64: string,
+  scheme: SignatureScheme = ed25519Scheme,
+): Promise<boolean> {
   // Untrusted input — validate the shape before touching it (no raw TypeError).
   if (list?.v !== 1 || !Array.isArray(list.revokedDocIds)
       || typeof list.asOf !== 'string' || typeof list.keyId !== 'string' || typeof list.sig !== 'string') {
     return false
   }
-  return ed25519Verify(publicKeyB64, list.sig, listCore(list.revokedDocIds, list.asOf, list.keyId))
+  return scheme.verify(publicKeyB64, list.sig, listCore(list.revokedDocIds, list.asOf, list.keyId))
 }

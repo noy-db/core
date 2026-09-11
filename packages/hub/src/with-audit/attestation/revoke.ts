@@ -2,7 +2,9 @@ import type { NoydbStore } from '../../kernel/types.js'
 import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
 import { AttestationError, ConflictError } from '../../kernel/errors.js'
 import { loadOrCreateSigner, ATTESTATIONS_COLLECTION, REVOKED_RECORD_ID } from './signer.js'
-import { signRevocationList, type RevocationList } from '@noy-db/attestation'
+import { ENCLAVE_SCHEME } from './scheme.js'
+import { signRevocationList } from '@noy-db/attestation'
+import type { RevocationList } from './types.js'
 
 /** Everything the revoke core needs from the Vault, injected for testability. */
 export interface RevokeContext {
@@ -77,5 +79,5 @@ export async function publishRevocationListCore(ctx: RevokeContext): Promise<Rev
   requireOwner(ctx, 'publishRevocationList')
   const docIds = await getRevokedDocIdsCore(ctx)
   const signer = await loadOrCreateSigner(ctx.store, ctx.vault, () => ctx.getDEK())
-  return signRevocationList(docIds, new Date().toISOString(), signer.keyId, signer.privateKeyPkcs8B64)
+  return signRevocationList(docIds, new Date().toISOString(), signer.keyId, signer.privateKeyPkcs8B64, ENCLAVE_SCHEME)
 }

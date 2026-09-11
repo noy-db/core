@@ -65,7 +65,7 @@
  * ```
  */
 
-import { bufferToBase64, base64ToBuffer, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { bufferToBase64, base64ToBuffer, exportDekSet, importDekSet } from '../../kernel/enclave/index.js'
 import { ValidationError } from '../../kernel/errors.js'
 import type { UnlockedKeyring } from '../team/keyring.js'
 import type { Role } from '../../kernel/types.js'
@@ -174,11 +174,7 @@ export async function enableDevUnlock(
 
   const storage = resolveStorage(options.persistAcrossTabs)
 
-  const dekMap: Record<string, string> = {}
-  for (const [collName, dek] of keyring.deks) {
-    const raw = await globalThis.crypto.subtle.exportKey('raw', dek)
-    dekMap[collName] = bufferToBase64(raw)
-  }
+  const dekMap = await exportDekSet(keyring.deks)
 
   const payload = JSON.stringify({
     _noydb_dev_unlock: 1,
@@ -245,17 +241,7 @@ export async function loadDevUnlock(
 
   if (parsed._noydb_dev_unlock !== 1) return null
 
-  const deks = new Map<string, EnclaveKey>()
-  for (const [collName, rawBase64] of Object.entries(parsed.deks)) {
-    const dek = await globalThis.crypto.subtle.importKey(
-      'raw',
-      base64ToBuffer(rawBase64),
-      { name: 'AES-GCM', length: 256 },
-      true,
-      ['encrypt', 'decrypt'],
-    )
-    deks.set(collName, dek)
-  }
+  const deks = await importDekSet(parsed.deks)
 
   return {
     userId: parsed.userId,
