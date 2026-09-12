@@ -16,7 +16,7 @@ import { describe, it, expect } from 'vitest'
 import { buildRecordAad, generateDEK, wrapCek, encrypt, type EnclaveKey } from '../../src/capsule/enclave-aes/index.js'
 import {
   rotateRecordCek, revokeSealedRecord, type SealingContext,
-} from '../../src/capsule/enclave-aes/record-keys/sealing.js'
+} from '../../src/capsule/enclave-aes/index.js'
 import { inlineMemory, type InlineMemoryStore } from './harness.js'
 import type { EncryptedEnvelope } from '../../src/kernel/types.js'
 

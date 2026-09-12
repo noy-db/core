@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { generateDEK } from '../../src/capsule/enclave-aes/index.js'
-import { normalizeForVerify } from '../../src/capsule/enclave-aes/classify/normalize.js'
+import { normalizeForVerify } from '../../src/capsule/plumbing/normalize.js'
 import {
   CLASSIFY_INDEX_KEY_DOMAIN, CLASSIFY_INDEX_SALT_DOMAIN, COST_BYTE_V1, CURRENT_COST_BYTE,
   iterationsForCostByte, deriveClassifyIndexKey, deriveClassifyIndexSalt, mintBidxTag,

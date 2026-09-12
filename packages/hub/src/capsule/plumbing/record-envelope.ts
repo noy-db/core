@@ -32,7 +32,7 @@
 import { NOYDB_FORMAT_VERSION } from '../../kernel/types.js'
 import type { EncryptedEnvelope } from '../../kernel/types.js'
 import type { RecordIdentity } from './record-aad.js'
-import { requireSealedBody } from './record-keys/envelope-body.js'
+import { requireSealedBody } from './envelope-body.js'
 
 /** The body an envelope carries, independent of who is writing it. */
 export interface RecordEnvelopeBody {

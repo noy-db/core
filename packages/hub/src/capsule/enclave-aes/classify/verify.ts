@@ -16,11 +16,11 @@
  */
 import { generateSalt, base64ToBuffer, type EnclaveKey } from '../crypto.js'
 import { pbkdf2VerifyDigest, VDIG_ITERATIONS } from './digest.js'
-import { normalizeForVerify, type VerifyNormalizeMode } from './normalize.js'
+import { normalizeForVerify, type VerifyNormalizeMode } from '../../plumbing/normalize.js'
 import { blindedEqual } from './compare.js'
 import { evaluateKofN } from './kofn.js'
 import { openVdigPayload, type VdigPayload } from './vdig.js'
-import { dualReadSealedSlot } from '../record-keys/sealed-slot.js'
+import { dualReadSealedSlot } from '../bound.js'
 import { ClassifiedConfigError, ClassifiedVerifyError } from '../../../kernel/errors.js'
 import type { EncryptedEnvelope, VdigFieldPolicy, ClassifiedVerdict } from '../../../kernel/types.js'
 

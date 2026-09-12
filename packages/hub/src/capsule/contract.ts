@@ -15,6 +15,7 @@
  * post-quantum, or null for a capsule that does no encryption.
  */
 import { NoydbError } from '../kernel/errors.js'
+import type { VdigFieldPolicy } from '../kernel/types.js'
 
 /** Opaque key at the capsule seam. `CryptoKey` in the reference capsule. */
 export type CapsuleKey = CryptoKey
@@ -108,6 +109,14 @@ export class CapsuleNotSupportedError extends NoydbError {
  * second miss surfaces as an envelope that one capsule writes and the other
  * cannot read.
  *
+ * ⚠️ Declared with PROPERTY syntax (`encrypt: (…) => …`), never method
+ * shorthand. Two reasons, both measured. TypeScript checks method shorthand
+ * BIVARIANTLY, so a capsule whose `encrypt` took the wrong number of arguments
+ * would satisfy a shorthand declaration and fail only at a call site — the
+ * exact hole #16 fell through. And `@typescript-eslint/unbound-method` refuses
+ * to let a shorthand method be destructured off the object, which is precisely
+ * how the plumbing consumes these.
+ *
  * ⚠️ Every primitive here is `async` except `bufferToBase64`, including ones a
  * plaintext capsule answers instantly. That is deliberate: a capsule that
  * needs real asynchrony (hardware-backed keys, a remote KMS) must be
@@ -115,22 +124,60 @@ export class CapsuleNotSupportedError extends NoydbError {
  * loses nothing by returning a resolved promise.
  */
 export interface CapsulePrimitives<K = CapsuleKey> {
-  encrypt(plaintext: string, key: K, aad?: Uint8Array): Promise<{ iv: string; data: string }>
-  decrypt(iv: string, data: string, key: K, aad?: Uint8Array): Promise<string>
-  encryptBytesWithAAD(bytes: Uint8Array, key: K, aad: Uint8Array): Promise<{ iv: string; data: string }>
-  decryptBytesWithAAD(iv: string, data: string, key: K, aad: Uint8Array): Promise<Uint8Array>
+  encrypt: (plaintext: string, key: K, aad?: Uint8Array) => Promise<{ iv: string; data: string }>
+  decrypt: (iv: string, data: string, key: K, aad?: Uint8Array) => Promise<string>
+  encryptBytesWithAAD: (bytes: Uint8Array, key: K, aad: Uint8Array) => Promise<{ iv: string; data: string }>
+  decryptBytesWithAAD: (iv: string, data: string, key: K, aad: Uint8Array) => Promise<Uint8Array>
   /** Same plaintext + key + context ⇒ same ciphertext. Refused by a capsule without the group. */
-  encryptDeterministic(plaintext: string, key: K, context: string): Promise<{ iv: string; data: string }>
+  encryptDeterministic: (plaintext: string, key: K, context: string) => Promise<{ iv: string; data: string }>
   /** ⚠️ ONE argument. The AES capsule derives the CONTEXT into the IV, not the key
    *  (`encryptDeterministic` calls `deriveDeterministicIV(dek, context, plaintext)`),
    *  so a `(dek, context)` signature here would have been a plausible-looking lie
    *  that only the call sites caught. */
-  deriveDeterministicKey(dek: K): Promise<K>
-  deriveSealedFieldKey(dek: K, collectionName: string, field: string): Promise<K>
-  deriveSealedFieldKeyFromCek(cek: K, collectionName: string, field: string): Promise<K>
-  generateDEK(): Promise<K>
-  wrapCek(cek: K, dek: K): Promise<string>
-  unwrapCek(wrapped: string, dek: K): Promise<K>
+  deriveDeterministicKey: (dek: K) => Promise<K>
+  deriveSealedFieldKey: (dek: K, collectionName: string, field: string) => Promise<K>
+  deriveSealedFieldKeyFromCek: (cek: K, collectionName: string, field: string) => Promise<K>
+  generateDEK: () => Promise<K>
+  wrapCek: (cek: K, dek: K) => Promise<string>
+  unwrapCek: (wrapped: string, dek: K) => Promise<K>
   /** Accepts `ArrayBuffer` too — the AES capsule's callers pass raw `subtle` output. */
-  bufferToBase64(buffer: ArrayBuffer | Uint8Array): string
+  bufferToBase64: (buffer: ArrayBuffer | Uint8Array) => string
+
+  // ─── optional group: classify ──────────────────────────────────────
+  //
+  // The record codec reaches into exactly two cipher-bound classify functions
+  // (plus `normalizeForVerify`, which is pure and lives in the plumbing). They
+  // sit here rather than in a separate object because the codec calls them the
+  // same way it calls `encrypt` — and a capsule that refuses the `classify`
+  // group implements them as a throw, which is the refusal the group means.
+  mintVdigSlot: (
+    value: string,
+    policy: VdigFieldPolicy,
+    prevBlob: string | undefined,
+    cek: K,
+    collection: string,
+    id: string,
+    field: string,
+  ) => Promise<string>
+  mintBidxTag: (normalized: string, dek: K, collection: string, field: string) => Promise<string>
+  /** The vdig payload is sealed under a capsule-derived slot key, so open/seal
+   *  are the capsule's, not the plumbing's. `rotateRecordCek` needs both to
+   *  carry a classified slot across a key rotation. */
+  openVdigPayload: (blob: string, cek: K, collection: string, id: string, field: string) => Promise<VdigPayload>
+  sealVdigPayload: (payload: VdigPayload, cek: K, collection: string, id: string, field: string) => Promise<string>
+}
+
+/** The classified verify-digest payload, at the seam because both the capsule
+ *  and the plumbing name it. Structural, not the capsule's own type. */
+export interface VdigDigestEntry {
+  readonly salt: string
+  readonly hash: string
+}
+
+export interface VdigPayload {
+  readonly v: 1
+  readonly alg: 'PBKDF2-SHA256'
+  readonly iter: number
+  readonly cur: VdigDigestEntry & { readonly at: string }
+  readonly ring?: readonly VdigDigestEntry[]
 }

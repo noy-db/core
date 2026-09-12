@@ -40,6 +40,9 @@ import {
   unwrapCek,
   bufferToBase64,
 } from './crypto.js'
+import { mintVdigSlot } from './classify/write.js'
+import { mintBidxTag } from './classify/bidx.js'
+import { openVdigPayload, sealVdigPayload } from './classify/vdig.js'
 
 export const aesPrimitives: CapsulePrimitives = {
   encrypt,
@@ -54,4 +57,8 @@ export const aesPrimitives: CapsulePrimitives = {
   wrapCek,
   unwrapCek,
   bufferToBase64,
+  mintVdigSlot,
+  mintBidxTag,
+  openVdigPayload,
+  sealVdigPayload,
 }

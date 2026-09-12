@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildRecordEnvelope } from '../src/capsule/enclave-aes/record-envelope.js'
-import type { RecordIdentity } from '../src/capsule/enclave-aes/record-aad.js'
+import { buildRecordEnvelope } from '../src/capsule/plumbing/record-envelope.js'
+import type { RecordIdentity } from '../src/capsule/plumbing/record-aad.js'
 import { NOYDB_FORMAT_VERSION } from '../src/kernel/types.js'
 
 const id: RecordIdentity = { collection: 'invoices', id: 'inv-1', version: 1 }

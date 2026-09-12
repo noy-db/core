@@ -34,9 +34,19 @@ function read(url: string): string {
 
 /** Strip comments, then collect names from `export [type] { … } from` blocks. */
 function parseExports(src: string): { values: string[]; types: string[] } {
+  // ⛔ LINE COMMENTS FIRST. Stripping block comments first lets a `//` comment
+  // containing a glob like `classify/**` read as a block-comment OPENER: the
+  // regex then runs to the next `*/` and deletes everything between, which in
+  // this file silently swallowed a 15-name export block. The parse still
+  // "succeeded" and reported the shortfall as a surface change.
+  //
+  // `scripts/check-architecture.mjs` carries this exact lesson already — its
+  // `stripComments` notes that line-comments-first "cannot have the inverse
+  // problem", because a `//` inside a block comment is removed harmlessly. The
+  // fix never reached this copy of the logic.
   const clean = src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
   const collect = (re: RegExp): string[] => {
     const out = new Set<string>()
     for (const m of clean.matchAll(re)) {
@@ -47,9 +57,22 @@ function parseExports(src: string): { values: string[]; types: string[] } {
     }
     return [...out].sort()
   }
+  // ⚠️ THREE export forms, not one. Stage C's plumbing extraction made the
+  // barrel bind its cipher-dependent half by destructuring the assembled
+  // capsule (`export const { … } = aesCapsule`) and declare `RecordCodec` as a
+  // type ALIAS rather than a re-export. A parser that knew only
+  // `export { … } from` still PASSED on the old names while silently seeing 63
+  // of 97 — a golden that reads two thirds of the surface and reports success
+  // is the same failure as a golden nobody runs.
   return {
-    types: collect(/export\s+type\s*\{([^}]*)\}\s*from/g),
-    values: collect(/export\s*\{([^}]*)\}\s*from/g),
+    types: [...new Set([
+      ...collect(/export\s+type\s*\{([^}]*)\}\s*from/g),
+      ...collect(/export\s+type\s+(\w+)\s*[<=]/g),
+    ])].sort(),
+    values: [...new Set([
+      ...collect(/export\s*\{([^}]*)\}\s*from/g),
+      ...collect(/export\s+const\s*\{([^}]*)\}\s*=/g),
+    ])].sort(),
   }
 }
 

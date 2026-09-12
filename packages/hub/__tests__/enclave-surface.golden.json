@@ -108,6 +108,7 @@
     "EnclaveKeyPair",
     "EncryptResult",
     "IssuedChallenge",
+    "RecordCodec",
     "RecordEnvelopeBody",
     "RecordIdentity",
     "RecordRef",

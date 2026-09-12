@@ -4,7 +4,7 @@
  *
  * Task 6 threaded `id` into every `RecordCodec.decryptRecord` call site
  * inside `collection.ts`, but five other in-repo consumers were missed:
- * `findByDet`/`queryByDet` (capsule/enclave-aes/record-keys/deterministic.ts),
+ * `findByDet`/`queryByDet` (capsule/plumbing/deterministic.ts),
  * the `getAtTier` tier-0 branch (with-audit/tiers/index.ts), and
  * `rebuildIndexes`/`reconcileIndex` (with-lookup/indexing/collection-facade.ts).
  * Each hits `RecordCodec.decryptRecord`'s "caller bug" guard

@@ -11,7 +11,10 @@
  */
 import { describe, it, expect } from 'vitest'
 import { generateDEK } from '../../src/capsule/enclave-aes/index.js'
-import { makeSealedSlotCapability, makeReservedEnvelopes } from '../../src/capsule/enclave-aes/record-keys/sealed-slots.js'
+// #4 Stage C: these are capsule-INTERNAL (only `makeReservedEnvelopes` is on the
+// frozen surface), so they come off the assembled capsule rather than the barrel.
+import { aesCapsule } from '../../src/capsule/enclave-aes/bound.js'
+const { makeSealedSlotCapability, makeReservedEnvelopes } = aesCapsule
 import { ValidationError } from '../../src/kernel/errors.js'
 
 describe('makeSealedSlotCapability', () => {

@@ -10,13 +10,17 @@
  * object — so `sealing.ts` (which holds only the DEK) can import them without
  * pulling in the whole codec, avoiding a codec↔sealing dependency cycle.
  */
-import { decrypt, deriveSealedFieldKey, deriveSealedFieldKeyFromCek } from '../crypto.js'
+import type { CapsulePrimitives } from '../contract.js'
 
-/** Parse an `iv:data` sealed slot (split on the FIRST `:`). */
+/** Parse an `iv:data` sealed slot (split on the FIRST `:`). Cipher-free, so it
+ *  needs no primitives and stays a plain module-level export. */
 export function parseSealedSlot(blob: string): { iv: string; data: string } {
   const sep = blob.indexOf(':')
   return { iv: blob.slice(0, sep), data: blob.slice(sep + 1) }
 }
+
+export function makeSealedSlot(p: CapsulePrimitives) {
+  const { decrypt, deriveSealedFieldKey, deriveSealedFieldKeyFromCek } = p
 
 /**
  * Dual-read: decrypt a sealed slot trying the CEK-derived field key first,
@@ -26,7 +30,7 @@ export function parseSealedSlot(blob: string): { iv: string; data: string } {
  * its AES-GCM auth failure, fall back to the DEK key. Throws only if BOTH fail.
  * Returns the plaintext string (callers `JSON.parse` as needed).
  */
-export async function dualReadSealedSlot(
+  async function dualReadSealedSlot(
   blob: string,
   field: string,
   collection: string,
@@ -44,4 +48,7 @@ export async function dualReadSealedSlot(
   }
   const fieldKey = await deriveSealedFieldKey(dek, collection, field)
   return decrypt(iv, data, fieldKey)
+}
+
+  return { dualReadSealedSlot }
 }

@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { isTombstone, buildTombstone } from '../../src/capsule/enclave-aes/index.js'
-import { isDeleteMarker, buildDeleteMarker, isTombstoneShape } from '../../src/capsule/enclave-aes/record-keys/tombstone.js'
+import { isDeleteMarker, buildDeleteMarker, isTombstoneShape } from '../../src/capsule/enclave-aes/index.js'
 import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope } from '../../src/kernel/types.js'
 
 const live: EncryptedEnvelope = {

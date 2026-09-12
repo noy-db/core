@@ -16,35 +16,43 @@
  *
  * Internal service — not exported as a `@noy-db/hub/*` subpath.
  */
-import { encrypt, decrypt, encryptDeterministic, deriveDeterministicKey, wrapCek, unwrapCek, deriveSealedFieldKeyFromCek, type EnclaveKey } from '../crypto.js'
-import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope, type CrdtMode, type CrdtState, type CrdtStrategy, type VdigFieldPolicy, type SealedHandle } from '../../../kernel/types.js'
+import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope, type CrdtMode, type CrdtState, type CrdtStrategy, type VdigFieldPolicy, type SealedHandle } from '../../kernel/types.js'
 import { isTombstone, isDeleteMarker } from './tombstone.js'
 import { parseSealedSlot } from './sealed-slot.js'
-import { buildRecordEnvelope } from '../record-envelope.js'
-import { buildRecordAad, recordAadFor, type RecordIdentity, type RecordRef } from '../record-aad.js'
-import { sealFields, unsealOneField, unsealFields, makeHandleProducer, makeSealedSlotCapability, makeReservedEnvelopes, type SealKeyMaterial } from './sealed-slots.js'
-import { DebugReservedFieldError, ClassifiedConfigError, ValidationError } from '../../../kernel/errors.js'
-import { mintVdigSlot } from '../classify/write.js'
-import { mintBidxTag } from '../classify/bidx.js'
-import { normalizeForVerify } from '../classify/normalize.js'
-import { validateSchemaOutput, type StandardSchemaV1 } from '../../../kernel/schema.js'
-import type { Lru } from '../../../kernel/cache/index.js'
-import type { ViaCryptoCtx, SealedSlotRef } from '../../../kernel/via/index.js'
-import type { ViaPipeline } from '../../../kernel/via/pipeline.js'
+import { buildRecordEnvelope } from './record-envelope.js'
+import { buildRecordAad, recordAadFor, type RecordIdentity, type RecordRef } from './record-aad.js'
+import type { SealKeyMaterial } from './sealed-slots.js'
+import { DebugReservedFieldError, ClassifiedConfigError, ValidationError } from '../../kernel/errors.js'
+import { normalizeForVerify } from './normalize.js'
+import { validateSchemaOutput, type StandardSchemaV1 } from '../../kernel/schema.js'
+import type { Lru } from '../../kernel/cache/index.js'
+import type { ViaCryptoCtx, SealedSlotRef } from '../../kernel/via/index.js'
+import type { ViaPipeline } from '../../kernel/via/pipeline.js'
 import { sealedBodyArgs } from './envelope-body.js'
 
 /**
- * One classified per-slot verdict from {@link RecordCodec.classifySealedShred}.
+ * One classified per-slot verdict from {@link RecordCodecBase.classifySealedShred}.
  * `shreddable` — CEK-only, tombstone makes it undecryptable. `dekResidue` —
  * collection-DEK-keyed, survives in synced/backup copies. The third class is
  * BOTH: a `_bidx` blind-index tag is live-dropped by the tombstone yet retained
  * under the surviving DEK in any pre-forget backup (honest dual accounting).
  */
+import type { CapsuleKey, CapsulePrimitives } from '../contract.js'
+import type { makeSealedSlots } from './sealed-slots.js'
+
 export type SealedShredSlot = {
   readonly field: string
   readonly class: 'shreddable' | 'dekResidue' | 'live-shreddable+dekResidue-in-backups'
 }
 
+/**
+ * The record codec, bound to a capsule.
+ *
+ * ⚠️ `RecordCodec` is a CLASS declared inside this factory, so the NAME is no
+ * longer a module-level type. Hub names it in ~40 places as a type, which is
+ * why `plumbing/index.ts` re-exports an `InstanceType<…>` alias under the same
+ * name — the type keeps working unchanged for every existing consumer.
+ */
 /** Everything the moving crypto methods touched on `this.*`, as a flat context. */
 export interface RecordCodecContext<T> {
   /** Collection name — the crypto AAD scope and schema-error context. */
@@ -86,13 +94,13 @@ export interface RecordCodecContext<T> {
    * `_dict_status` collection) so a binding's at-rest hook can address a
    * different collection's DEK without ever holding the resolver itself.
    */
-  getDEK(collection?: string): Promise<EnclaveKey>
+  getDEK(collection?: string): Promise<CapsuleKey>
   /**
    * The collection's per-record CEK cache (SHARED reference, not a copy).
    * Ownership/lifetime stays on Collection; codec reads+writes it in
    * resolveEnvelopeCek exactly as the inline code did. `null` → no caching.
    */
-  readonly cekCache: Lru<string, EnclaveKey> | null
+  readonly cekCache: Lru<string, CapsuleKey> | null
   /**
    * Compiled Via pipeline (money, i18n, …), or undefined for a collection
    * with none declared. `encryptRecord`/`decryptRecord` consult
@@ -103,7 +111,7 @@ export interface RecordCodecContext<T> {
    *
    * Mutable (not `readonly`, #638 Task 3): `Collection.via` can be
    * reassigned post-construction (the taint overlay, `via/graph-wiring.ts#
-   * applyTaintOverlay`) — `RecordCodec.setVia` below keeps this in sync so
+   * applyTaintOverlay`) — `RecordCodecBase.setVia` below keeps this in sync so
    * at-rest hooks read the LIVE pipeline, not a stale construction-time
    * snapshot.
    */
@@ -122,8 +130,29 @@ export interface RecordCodecContext<T> {
   readonly onDecrypt?: ((id: string) => void) | undefined
 }
 
-export class RecordCodec<T> {
-  constructor(private readonly ctx: RecordCodecContext<T>) {}
+/**
+ * The codec's capsule-provided surface: the 15 primitives + sealed-slot helpers
+ * its methods call.
+ */
+export type CapsuleBinding = CapsulePrimitives & ReturnType<typeof makeSealedSlots>
+
+/**
+ * ⚠️ MODULE-LEVEL AND GENERIC ON PURPOSE. The obvious shape — declaring the
+ * class inside `makeRecordCodec` and exporting `InstanceType<…>` — compiles and
+ * silently DROPS `T`: `RecordCodec<Invoice>` degrades to `RecordCodec<unknown>`
+ * at the six places hub parameterises it, turning typed records into `unknown`
+ * with no error anywhere.
+ *
+ * The other way to keep `T` would be a hand-written `interface RecordCodec<T>`
+ * that the class implements — i.e. a second declaration of 15 signatures that
+ * nothing checks against the first. That is exactly the drift #16 was, so it
+ * was not done twice. A base class has one declaration and cannot drift.
+ */
+export class RecordCodecBase<T> {
+  constructor(
+    protected readonly caps: CapsuleBinding,
+    private readonly ctx: RecordCodecContext<T>,
+  ) {}
 
   /**
    * @internal Update the live Via pipeline this codec's at-rest hooks read
@@ -137,7 +166,7 @@ export class RecordCodec<T> {
   }
 
   /** Sealed-slot key material for this codec's collection, for a given per-record CEK (or none). */
-  private sealKeyMaterial(cek: EnclaveKey | undefined): SealKeyMaterial {
+  private sealKeyMaterial(cek: CapsuleKey | undefined): SealKeyMaterial {
     return {
       collection: this.ctx.name,
       ...(cek !== undefined ? { cek } : {}),
@@ -156,11 +185,11 @@ export class RecordCodec<T> {
    * `this.ctx.name`'s, matching `Vault.getDEK`'s per-collection-name
    * resolution (the same resolver `DictionaryHandle` used pre-cutover).
    */
-  private viaCryptoCtx(recordId: string, cek: EnclaveKey | undefined): ViaCryptoCtx {
+  private viaCryptoCtx(recordId: string, cek: CapsuleKey | undefined): ViaCryptoCtx {
     const declaredPrefixes = this.ctx.via?.bindings.flatMap((b) => b.reservedPrefixes ?? []) ?? []
     return {
-      sealedSlots: makeSealedSlotCapability(this.ctx, recordId, cek),
-      reservedEnvelopes: makeReservedEnvelopes((collection) => this.ctx.getDEK(collection), declaredPrefixes),
+      sealedSlots: this.caps.makeSealedSlotCapability(this.ctx, recordId, cek),
+      reservedEnvelopes: this.caps.makeReservedEnvelopes((collection) => this.ctx.getDEK(collection), declaredPrefixes),
     }
   }
 
@@ -216,7 +245,7 @@ export class RecordCodec<T> {
       {
         iv: '',
         data: '',
-        
+      
         ...(this.ctx.provenance && source !== undefined
           ? { provenance: { source, sourceTs: sourceTs ?? new Date().toISOString() } }
           : {}),
@@ -259,7 +288,7 @@ export class RecordCodec<T> {
     ref: RecordRef,
     json: string,
     version: number,
-    cek?: EnclaveKey,
+    cek?: CapsuleKey,
     source?: string,
     sourceTs?: string,
   ): Promise<EncryptedEnvelope> {
@@ -290,7 +319,7 @@ export class RecordCodec<T> {
       : undefined
 
     if (!this.ctx.storeCiphertext) {
-      return RecordCodec.buildPlaintextEnvelope(identity, { data: json, provenance })
+      return RecordCodecBase.buildPlaintextEnvelope(identity, { data: json, provenance })
     }
 
     const dek = await this.ctx.getDEK()
@@ -298,13 +327,13 @@ export class RecordCodec<T> {
     const aad = buildRecordAad(identity)
 
     if (cek !== undefined) {
-      const { iv, data } = await encrypt(json, cek, aad)
-      const wrapped = await wrapCek(cek, dek)
-      return RecordCodec.buildEnvelope(identity, { iv, data, cek: wrapped, provenance })
+      const { iv, data } = await this.caps.encrypt(json, cek, aad)
+      const wrapped = await this.caps.wrapCek(cek, dek)
+      return RecordCodecBase.buildEnvelope(identity, { iv, data, cek: wrapped, provenance })
     }
 
-    const { iv, data } = await encrypt(json, dek, aad)
-    return RecordCodec.buildEnvelope(identity, { iv, data, provenance })
+    const { iv, data } = await this.caps.encrypt(json, dek, aad)
+    return RecordCodecBase.buildEnvelope(identity, { iv, data, provenance })
   }
 
   /**
@@ -322,7 +351,7 @@ export class RecordCodec<T> {
     ref: RecordRef,
     record: T,
     version: number,
-    cek?: EnclaveKey,
+    cek?: CapsuleKey,
     source?: string,
     sourceTs?: string,
     vdig?: { readonly id: string; readonly prev: EncryptedEnvelope | null },
@@ -405,7 +434,7 @@ export class RecordCodec<T> {
       // and unrecoverable later.
       if (id === '') {
         throw new Error(
-          `RecordCodec.encryptRecord: collection "${this.ctx.name}" has via at-rest hooks but this write ` +
+          `RecordCodecBase.encryptRecord: collection "${this.ctx.name}" has via at-rest hooks but this write ` +
           'path supplied an empty record id (needed to scope the sealed-slot capability) — caller bug.',
         )
       }
@@ -418,7 +447,7 @@ export class RecordCodec<T> {
       }
     } else if (this.ctx.storeCiphertext && this.ctx.sensitiveFields.size > 0) {
       const src = record as unknown as Record<string, unknown>
-      const result = await sealFields(src, this.ctx.sensitiveFields, this.sealKeyMaterial(cek))
+      const result = await this.caps.sealFields(src, this.ctx.sensitiveFields, this.sealKeyMaterial(cek))
       if (result.sealed !== undefined) {
         sealed = result.sealed
         openRecord = result.openRecord as unknown as T
@@ -434,13 +463,13 @@ export class RecordCodec<T> {
     if (this.ctx.vdigFields !== null && this.ctx.vdigFields.size > 0 && this.ctx.storeCiphertext) {
       if (vdig === undefined) {
         throw new Error(
-          `RecordCodec.encryptRecord: collection "${this.ctx.name}" declares digest-only classified ` +
+          `RecordCodecBase.encryptRecord: collection "${this.ctx.name}" declares digest-only classified ` +
           `fields but this write path supplied no { id, prev } context — it would silently destroy _vdig (C6). Caller bug.`,
         )
       }
       if (cek === undefined) {
         throw new Error(
-          `RecordCodec.encryptRecord: digest-only fields require a per-record CEK (R1 invariant) — ` +
+          `RecordCodecBase.encryptRecord: digest-only fields require a per-record CEK (R1 invariant) — ` +
           `collection "${this.ctx.name}" wrote without one. Caller bug.`,
         )
       }
@@ -451,7 +480,7 @@ export class RecordCodec<T> {
       // construction: a tag is only ever written where the _vdig slot is
       // written/carried. DEK is fetched lazily — only an equatable rotate needs it.
       const bidxOut: Record<string, string> = {}
-      let bidxDek: EnclaveKey | undefined
+      let bidxDek: CapsuleKey | undefined
       for (const [field, policy] of this.ctx.vdigFields) {
         const value = open[field]
         const prevBlob = vdig.prev?._vdig?.[field]
@@ -494,7 +523,7 @@ export class RecordCodec<T> {
           )
         }
         // 2. rotate: validate ran in the stage-1 write seam; digest + ring here.
-        out[field] = await mintVdigSlot(value, policy, prevBlob, cek, this.ctx.name, vdig.id, field)
+        out[field] = await this.caps.mintVdigSlot(value, policy, prevBlob, cek, this.ctx.name, vdig.id, field)
         // _bidx branch 2: if this handle is equatable, mint a fresh tag through
         // the SAME normalization pipeline mintVdigSlot uses (normalizeForVerify)
         // — the tag provably equals computeBidxTarget for this value. If the
@@ -504,7 +533,7 @@ export class RecordCodec<T> {
         if (policy.equatable === true) {
           if (bidxDek === undefined) bidxDek = await this.ctx.getDEK()
           const normalized = normalizeForVerify(policy.normalize, value)
-          bidxOut[field] = await mintBidxTag(normalized, bidxDek, this.ctx.name, field)
+          bidxOut[field] = await this.caps.mintBidxTag(normalized, bidxDek, this.ctx.name, field)
         }
         delete open[field] // strip from _data — digest-only never persists plaintext
       }
@@ -527,7 +556,7 @@ export class RecordCodec<T> {
     // `noydb-det`), never the raw DEK — the DEK's randomized-IV `_data`
     // regime and `_det`'s deterministic-IV regime must not share a key.
     const dek = await this.ctx.getDEK()
-    const detKey = await deriveDeterministicKey(dek)
+    const detKey = await this.caps.deriveDeterministicKey(dek)
     const rec = record as unknown as Record<string, unknown>
     const det: Record<string, string> = {}
     for (const field of this.ctx.deterministicFields) {
@@ -536,7 +565,7 @@ export class RecordCodec<T> {
       const value = rec[field]
       if (value === undefined || value === null) continue
       const plaintext = typeof value === 'string' ? value : JSON.stringify(value)
-      const { iv, data } = await encryptDeterministic(plaintext, detKey, `${this.ctx.name}/${field}`)
+      const { iv, data } = await this.caps.encryptDeterministic(plaintext, detKey, `${this.ctx.name}/${field}`)
       det[field] = `${iv}:${data}`
     }
     if (Object.keys(det).length === 0) return withBidx
@@ -555,12 +584,12 @@ export class RecordCodec<T> {
    * ({@link decryptJsonString}) and the sealed-field path ({@link decryptRecord}
    * / {@link toCacheRecord}) so both agree on the record's key.
    */
-  async resolveEnvelopeCek(envelope: EncryptedEnvelope, id?: string): Promise<EnclaveKey | undefined> {
+  async resolveEnvelopeCek(envelope: EncryptedEnvelope, id?: string): Promise<CapsuleKey | undefined> {
     if (envelope._cek === undefined) return undefined
     const cached = id !== undefined ? this.ctx.cekCache?.get(id) : undefined
     if (cached !== undefined) return cached
     const dek = await this.ctx.getDEK()
-    const cek = await unwrapCek(envelope._cek, dek)
+    const cek = await this.caps.unwrapCek(envelope._cek, dek)
     if (id !== undefined) this.ctx.cekCache?.set(id, cek, 1)
     return cek
   }
@@ -589,7 +618,7 @@ export class RecordCodec<T> {
   async decryptJsonString(ref: RecordRef, envelope: EncryptedEnvelope): Promise<string | null> {
     const id = ref.id
     // RISK #1 (forget cascade): a shred tombstone carries `_data: ''` and no
-    // `_cek`. Decrypting it would call `decrypt('', '', dek)` → AES-GCM
+    // `_cek`. Decrypting it would call `this.caps.decrypt('', '', dek)` → AES-GCM
     // OperationError → TamperedError. Return null so every read callsite
     // treats it as "absent / skip", matching how get()/list already drop
     // tombstones. Legacy plaintext collections (`!this.storeCiphertext`) legitimately
@@ -622,8 +651,8 @@ export class RecordCodec<T> {
     const aad = recordAadFor(ref, envelope)
     const cek = await this.resolveEnvelopeCek(envelope, id)
     const json = cek !== undefined
-      ? await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), cek, aad)
-      : await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), await this.ctx.getDEK(), aad)
+      ? await this.caps.decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), cek, aad)
+      : await this.caps.decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), await this.ctx.getDEK(), aad)
     this.observeDecrypt(ref)
     return json
   }
@@ -653,13 +682,13 @@ export class RecordCodec<T> {
    * {@link Sealed} handle's `reveal()` — so the on-demand reveal and the eager
    * materialisation always agree byte-for-byte.
    */
-  async unsealField(field: string, blob: string, cek?: EnclaveKey): Promise<unknown> {
+  async unsealField(field: string, blob: string, cek?: CapsuleKey): Promise<unknown> {
     // Dual-read. Current writes seal under a key derived from the record's
     // per-record CEK; legacy records (even ones whose body is
     // CEK-encrypted) are sealed under the collection-DEK key. Try the CEK key
     // first; on its AES-GCM auth failure, fall back to the DEK key. Without this
     // fallback every legacy `_sealed` record would throw TamperedError (data loss).
-    return unsealOneField(field, blob, this.sealKeyMaterial(cek))
+    return this.caps.unsealOneField(field, blob, this.sealKeyMaterial(cek))
   }
 
   /**
@@ -713,7 +742,7 @@ export class RecordCodec<T> {
       if (cek === undefined) { slots.push({ field, class: 'dekResidue' }); continue }
       const { iv, data } = parseSealedSlot(blob)
       try {
-        await decrypt(iv, data, await deriveSealedFieldKeyFromCek(cek, this.ctx.name, field))
+        await this.caps.decrypt(iv, data, await this.caps.deriveSealedFieldKeyFromCek(cek, this.ctx.name, field))
         slots.push({ field, class: 'shreddable' })
       } catch {
         slots.push({ field, class: 'dekResidue' })
@@ -729,8 +758,8 @@ export class RecordCodec<T> {
    * may sit in the working-set cache (or be logged/serialised) without
    * exposing the value, which decrypts only on `reveal()`.
    */
-  makeSealedHandle(field: string, blob: string, cek?: EnclaveKey): SealedHandle<unknown> {
-    return makeHandleProducer(this.sealKeyMaterial(cek))(field, blob)
+  makeSealedHandle(field: string, blob: string, cek?: CapsuleKey): SealedHandle<unknown> {
+    return this.caps.makeHandleProducer(this.sealKeyMaterial(cek))(field, blob)
   }
 
   /**
@@ -789,7 +818,7 @@ export class RecordCodec<T> {
   async applySealedSlots(
     record: T,
     sealed: Record<string, string>,
-    cek: EnclaveKey | undefined,
+    cek: CapsuleKey | undefined,
     opts: { id?: string; sealedAsHandles?: boolean } = {},
   ): Promise<T> {
     if (this.ctx.via?.hasAtRestHooks) {
@@ -799,7 +828,7 @@ export class RecordCodec<T> {
       // would scope every record's sealed slots to the same capability.
       if (opts.id === undefined || opts.id === '') {
         throw new Error(
-          `RecordCodec.decryptRecord: collection "${this.ctx.name}" has via at-rest hooks but this read ` +
+          `RecordCodecBase.decryptRecord: collection "${this.ctx.name}" has via at-rest hooks but this read ` +
           'path supplied no record id (needed to scope the sealed-slot capability) — caller bug.',
         )
       }
@@ -815,7 +844,7 @@ export class RecordCodec<T> {
         { asHandles: opts.sealedAsHandles === true },
       ) as unknown as T
     }
-    return await unsealFields(
+    return await this.caps.unsealFields(
       record as unknown as Record<string, unknown>,
       sealed,
       this.sealKeyMaterial(cek),
@@ -849,17 +878,17 @@ export class RecordCodec<T> {
    * output-recompute path, not the public per-record read surface schema
    * validation guards.
    */
-  async decryptRecordAtDek(ref: RecordRef, envelope: EncryptedEnvelope, dek: EnclaveKey): Promise<T | null> {
+  async decryptRecordAtDek(ref: RecordRef, envelope: EncryptedEnvelope, dek: CapsuleKey): Promise<T | null> {
     const id = ref.id
     if (isTombstone(envelope, this.ctx.storeCiphertext) || isDeleteMarker(envelope)) return null
     let plaintext: string
-    let cek: EnclaveKey | undefined
+    let cek: CapsuleKey | undefined
     const aad = recordAadFor(ref, envelope)
     if (envelope._cek !== undefined) {
-      cek = await unwrapCek(envelope._cek, dek)
-      plaintext = await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), cek, aad)
+      cek = await this.caps.unwrapCek(envelope._cek, dek)
+      plaintext = await this.caps.decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), cek, aad)
     } else {
-      plaintext = await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), dek, aad)
+      plaintext = await this.caps.decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), dek, aad)
     }
     let record = JSON.parse(plaintext) as T
     if (envelope._sealed !== undefined && this.ctx.storeCiphertext) {
@@ -944,4 +973,38 @@ export class RecordCodec<T> {
 
     return record
   }
+}
+
+
+/**
+ * The capsule-bound codec constructor: same shape callers have always used
+ * (`new RecordCodec(ctx)`), with the capsule already closed over.
+ */
+export type BoundRecordCodec =
+  (new <T>(ctx: RecordCodecContext<T>) => RecordCodecBase<T>) &
+  // The STATICS come along too. `buildPlaintextEnvelope` is called as
+  // `RecordCodec.buildPlaintextEnvelope(...)` from outside the capsule, so a
+  // bare construct signature silently drops it — `Omit<…, never>` keeps the
+  // static side while discarding the base's own construct signature.
+  Omit<typeof RecordCodecBase, never>
+
+export function makeRecordCodec(p: CapsulePrimitives, slots: ReturnType<typeof makeSealedSlots>) {
+  // One object, reached as `this.caps.*` from the base class. Destructuring the
+  // names here would shadow nothing and be dead — the class closes over `caps`,
+  // not over individual primitives.
+  const caps: CapsuleBinding = { ...p, ...slots }
+
+
+
+  // ⚠️ ANNOTATED, not inferred. Returning the class expression directly makes
+  // it an ANONYMOUS class type in the emitted `.d.ts`, and TypeScript refuses
+  // that for a class with protected members (TS4094). Naming the constructor
+  // type keeps the declaration emittable and keeps `T` flowing to callers.
+  const RecordCodec: BoundRecordCodec = class<T> extends RecordCodecBase<T> {
+    constructor(ctx: RecordCodecContext<T>) {
+      super(caps, ctx)
+    }
+  }
+
+  return { RecordCodec }
 }

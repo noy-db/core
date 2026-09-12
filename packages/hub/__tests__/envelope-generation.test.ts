@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { NOYDB_ENVELOPE_GENERATION } from '../src/kernel/types.js'
-import { buildRecordAad } from '../src/capsule/enclave-aes/record-aad.js'
+import { buildRecordAad } from '../src/capsule/plumbing/record-aad.js'
 
 /**
  * The generation ↔ AAD-scheme history (#1207). APPEND-ONLY.

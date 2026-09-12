@@ -5,8 +5,8 @@
  * (a) (storage:'never') fires in collection.reveal before any strategy call.
  * @module
  */
-import { dualReadSealedSlot } from '../record-keys/sealed-slot.js'
-import { isTombstone } from '../record-keys/tombstone.js'
+import { dualReadSealedSlot } from '../bound.js'
+import { isTombstone } from '../../plumbing/tombstone.js'
 import { ClassifiedRevealError } from '../../../kernel/errors.js'
 import type { EncryptedEnvelope } from '../../../kernel/types.js'
 import type { EnclaveKey } from '../crypto.js'

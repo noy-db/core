@@ -13,8 +13,11 @@
  * inline in this task — its binding doesn't exist yet (#629 Task 5/6).
  */
 import { describe, it, expect } from 'vitest'
-import { RecordCodec, type RecordCodecContext } from '../../src/capsule/enclave-aes/record-keys/record-codec.js'
-import { recordAadFor } from '../../src/capsule/enclave-aes/record-aad.js'
+// #4 Stage C: the codec class is capsule-BOUND now, so the value comes from the
+// assembled capsule and only the context type comes from the plumbing module.
+import { RecordCodec } from '../../src/capsule/enclave-aes/index.js'
+import type { RecordCodecContext } from '../../src/capsule/plumbing/record-codec.js'
+import { recordAadFor } from '../../src/capsule/plumbing/record-aad.js'
 import { ViaPipeline } from '../../src/kernel/via/pipeline.js'
 import type { NoydbVia, ViaPosture } from '../../src/kernel/via/index.js'
 import { generateDEK, decrypt, type EnclaveKey } from '../../src/capsule/enclave-aes/index.js'

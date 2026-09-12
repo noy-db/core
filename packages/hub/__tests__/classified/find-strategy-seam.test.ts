@@ -5,7 +5,7 @@ import { withClassified } from '../../src/via/classified/active.js'
 import { classified } from '../../src/via/classified/presets.js'
 import { ClassifiedNotEnabledError } from '../../src/kernel/errors.js'
 import { generateDEK } from '../../src/capsule/enclave-aes/index.js'
-import { normalizeForVerify } from '../../src/capsule/enclave-aes/classify/normalize.js'
+import { normalizeForVerify } from '../../src/capsule/plumbing/normalize.js'
 import { mintBidxTag } from '../../src/capsule/enclave-aes/classify/bidx.js'
 
 describe('NO_CLASSIFIED.computeTarget', () => {
