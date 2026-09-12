@@ -13,7 +13,7 @@
  * so that when ~223 files change path, the door is the one thing already known
  * to work.
  */
-export * from '../kernel/enclave/index.js'
+export * from '#capsule'
 
 export type { CapsuleKey, CapsuleKeyPair, CapsuleGroup } from './contract.js'
 export { CapsuleNotSupportedError } from './contract.js'

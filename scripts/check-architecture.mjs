@@ -598,6 +598,12 @@ function checkEveryServiceGated() {
 //   entry. Read the comment on a line before concluding an entry is stale.
 const NOT_SERVICE_SUBPATHS = new Set([
   'cargo', 'to', 'pod', 'satellites', 'util', 'share-link', 'query',
+  // `capsule` is a CONTRACT SEAM, the first category above: it is what an
+  // alternative crypto implementation implements, not something a consumer
+  // opts into. There is deliberately no `withCapsule()` — the capsule binds at
+  // BUILD TIME through hub's `imports` map, and a runtime factory would be the
+  // hot-swap surface the capsule seam spec (D3) rejected.
+  'capsule',
   // #1458 — QUERY TIERS, a fourth category: a subpath imported for its SIDE
   // EFFECT, not for a factory. `import '@noy-db/hub/query/relate'` patches the
   // Relate methods onto `Query.prototype` and merges their types; there is

@@ -52,4 +52,13 @@ export default defineConfig({
   // Bundled, not depended on: hub must install alone (capsule seam spec D2/D5).
   // The package stays published for hub-less verifiers.
   noExternal: ['@noy-db/attestation'],
+  // ⛔ `#capsule` MUST stay unresolved in the published dist. It is the whole
+  // seam: if tsup resolved it at HUB's build time, the choice of capsule would
+  // be baked into what we ship and a consumer's build condition could never
+  // apply. Leaving it external emits a bare `#capsule` import that the
+  // consumer's bundler resolves against hub's own `imports` map, honouring
+  // their `--conditions` / `resolve.conditions`.
+  // Verified: Node 22, esbuild and Vite 7 all resolve a DEPENDENCY's imports
+  // map using the CONSUMER's conditions. Pinned by `capsule-binding.test.ts`.
+  external: ['#capsule'],
 })

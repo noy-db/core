@@ -19,10 +19,21 @@
     "./dist/query/reduce/index.js",
     "./dist/query/relate/index.js"
   ],
+  "imports": {
+    "#capsule": {
+      "noy-db:exclave-plain": "@noy-db/exclave-plain",
+      "noy-db:enclave-pqc": "@noy-db/enclave-pqc",
+      "default": "./dist/kernel/enclave/index.js"
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./capsule": {
+      "types": "./dist/capsule/contract.d.ts",
+      "default": "./dist/capsule/contract.js"
     },
     "./package.json": "./package.json",
     "./codemods/0.4.0-pre.json": "./codemods/0.4.0-pre.json",

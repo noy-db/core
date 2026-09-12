@@ -15,6 +15,19 @@ export const ENTRIES = {
   'forget/index': 'src/with-audit/forget/index.ts',
   'sealed-record/index': 'src/with-audit/sealed-record/index.ts',
   'query/index': 'src/kernel/query/index.ts',
+  // The capsule CONTRACT is published (`@noy-db/hub/capsule`) so an
+  // alternative capsule can implement it. The DOOR (`capsule/index.ts`) is
+  // not an entry — it is hub-internal, and publishing it would let a consumer
+  // reach the bound implementation around the contract.
+  'capsule/contract': 'src/capsule/contract.ts',
+  // ⛔ The bound capsule MUST be emitted at a stable path, because
+  // package.json's `imports` map names it as `#capsule`'s default target.
+  // Without this entry tsup inlines the enclave into whichever entries use it,
+  // `#capsule` resolves to a file that does not exist, and NOTHING CATCHES IT:
+  // source typechecks, hub's own suite runs from src, and only a consumer
+  // installing the tarball sees ERR_MODULE_NOT_FOUND. Measured 2026-09-12.
+  // This adds no PUBLISHED subpath — it is absent from `exports` on purpose.
+  'kernel/enclave/index': 'src/kernel/enclave/index.ts',
   // #1458 — the three query-tier extensions. Each is a SIDE-EFFECT entry
   // (it patches Query.prototype on load) and each is named in package.json's
   // `sideEffects` array; see `src/kernel/query/relate/index.ts`.
