@@ -89,3 +89,48 @@ export class CapsuleNotSupportedError extends NoydbError {
     this.name = 'CapsuleNotSupportedError'
   }
 }
+
+/**
+ * The 13 cipher primitives the shared plumbing needs — the ENTIRE surface a
+ * capsule must actually implement.
+ *
+ * ⭐ This is the measurement that shaped Stage C. `enclave-aes` is ~4,200
+ * lines, but only ~1,200 of them touch `crypto.subtle`; the other ~3,000 are
+ * envelope assembly, record-identity AAD, tombstones and the record codec —
+ * plumbing that is IDENTICAL for every capsule because it encodes hub's
+ * envelope format, not anyone's cipher. `makeCapsule()` binds that plumbing to
+ * these primitives, so a second capsule writes ~400 lines instead of ~3,400
+ * and the format lives in exactly one place.
+ *
+ * The alternative — copying the plumbing into each capsule — was rejected for
+ * a specific reason: nothing would fail when the two copies drifted. A change
+ * to the tombstone shape or the AAD would have to be made twice, and the
+ * second miss surfaces as an envelope that one capsule writes and the other
+ * cannot read.
+ *
+ * ⚠️ Every primitive here is `async` except `bufferToBase64`, including ones a
+ * plaintext capsule answers instantly. That is deliberate: a capsule that
+ * needs real asynchrony (hardware-backed keys, a remote KMS) must be
+ * expressible without changing this type, and a synchronous implementation
+ * loses nothing by returning a resolved promise.
+ */
+export interface CapsulePrimitives<K = CapsuleKey> {
+  encrypt(plaintext: string, key: K, aad?: Uint8Array): Promise<{ iv: string; data: string }>
+  decrypt(iv: string, data: string, key: K, aad?: Uint8Array): Promise<string>
+  encryptBytesWithAAD(bytes: Uint8Array, key: K, aad: Uint8Array): Promise<{ iv: string; data: string }>
+  decryptBytesWithAAD(iv: string, data: string, key: K, aad: Uint8Array): Promise<Uint8Array>
+  /** Same plaintext + key + context ⇒ same ciphertext. Refused by a capsule without the group. */
+  encryptDeterministic(plaintext: string, key: K, context: string): Promise<{ iv: string; data: string }>
+  /** ⚠️ ONE argument. The AES capsule derives the CONTEXT into the IV, not the key
+   *  (`encryptDeterministic` calls `deriveDeterministicIV(dek, context, plaintext)`),
+   *  so a `(dek, context)` signature here would have been a plausible-looking lie
+   *  that only the call sites caught. */
+  deriveDeterministicKey(dek: K): Promise<K>
+  deriveSealedFieldKey(dek: K, collectionName: string, field: string): Promise<K>
+  deriveSealedFieldKeyFromCek(cek: K, collectionName: string, field: string): Promise<K>
+  generateDEK(): Promise<K>
+  wrapCek(cek: K, dek: K): Promise<string>
+  unwrapCek(wrapped: string, dek: K): Promise<K>
+  /** Accepts `ArrayBuffer` too — the AES capsule's callers pass raw `subtle` output. */
+  bufferToBase64(buffer: ArrayBuffer | Uint8Array): string
+}
