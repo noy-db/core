@@ -181,3 +181,9 @@ export {
   recipientWrap,
   recipientUnwrap,
 } from './crypto.js'
+
+// ─── capabilities ─────────────────────────────────────────────────────
+// What THIS capsule supports. Part of the contract every capsule implements,
+// not an enclave-aes detail — an alternative declares its own, and a service
+// asserts against it at createNoydb() rather than failing on first write.
+export { capabilities } from './capabilities.js'

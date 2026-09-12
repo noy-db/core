@@ -50,6 +50,34 @@ export type CapsuleGroup =
  * consumer learns at startup or not at all. A capability discovered mid-write
  * is a half-built vault.
  */
+/**
+ * Refuse at CONSTRUCTION when a service needs a capsule group the bound
+ * capsule lacks.
+ *
+ * ⛔ At startup or not at all. A capability discovered on first write is a
+ * half-built vault: some records sealed, a service silently inert, and a
+ * consumer who cannot tell a missing capability from a bug. `capabilities()`
+ * is a set, so this is a membership test — never a try/catch probe against the
+ * primitive itself, which would make "unsupported" and "broken" the same
+ * observation.
+ *
+ * Lives on the CONTRACT, not in the kernel: it depends on nothing but the
+ * declared set, and every capsule's consumers need the same assertion.
+ *
+ * ⚠️ Per-service wiring is deliberately NOT done yet. `enclave-aes` supports
+ * every group, so every call site would be unreachable code behind an
+ * untestable branch. It lands in Stage C with `exclave-plain`, which is the
+ * first capsule that refuses anything. Until then this is exercised against a
+ * stub set — see `__tests__/capsule-capabilities.test.ts`.
+ */
+export function assertCapsuleSupports(
+  caps: ReadonlySet<CapsuleGroup>,
+  group: CapsuleGroup,
+  requirer: string,
+): void {
+  if (!caps.has(group)) throw new CapsuleNotSupportedError(group, requirer)
+}
+
 export class CapsuleNotSupportedError extends NoydbError {
   constructor(readonly group: CapsuleGroup, readonly requirer: string) {
     super(

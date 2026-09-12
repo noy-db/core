@@ -32,6 +32,7 @@ export {
   buildRecordEnvelope,
   buildSealedRecordEnvelope,
   buildTombstone,
+  capabilities,
   checkCanary,
   computeBidxTarget,
   computeBrokerProof,
