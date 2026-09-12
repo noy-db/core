@@ -45,7 +45,7 @@ export async function readUserVisibility(
   const envelope = await store.get(vault, META_COLLECTION, visibilityRecordId(keyringId))
   if (!envelope) return undefined
   try {
-    const parsed = JSON.parse(envelope._data) as unknown
+    const parsed = JSON.parse(envelope._data ?? '') as unknown
     if (!isUserVisibility(parsed)) return undefined
     return parsed
   } catch {

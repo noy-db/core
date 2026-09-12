@@ -287,7 +287,7 @@ export class LedgerStore {
     let deltaHash: string | undefined
     if (input.delta !== undefined) {
       deltaEnvelope = await this.encryptDelta(input.delta, nextIndex)
-      deltaHash = await sha256Hex(deltaEnvelope._data)
+      deltaHash = await sha256Hex(deltaEnvelope._data ?? '')
     }
 
     // Build the entry. Conditionally include `deltaHash` so
@@ -357,7 +357,7 @@ export class LedgerStore {
     )
     if (!envelope) return null
     if (!this.encrypted) {
-      return JSON.parse(envelope._data) as JsonPatch
+      return JSON.parse(envelope._data ?? '') as JsonPatch
     }
     const dek = await this.getDEK(LEDGER_COLLECTION)
     const json = await openEnvelopeJson({ collection: LEDGER_DELTAS_COLLECTION, id: paddedIndex(index) }, envelope, dek)
@@ -693,7 +693,7 @@ export class LedgerStore {
   /** Decrypt an envelope into a LedgerEntry. Throws on bad key / tamper. */
   private async decryptEntry(key: string, envelope: EncryptedEnvelope): Promise<LedgerEntry> {
     if (!this.encrypted) {
-      return JSON.parse(envelope._data) as LedgerEntry
+      return JSON.parse(envelope._data ?? '') as LedgerEntry
     }
     const dek = await this.getDEK(LEDGER_COLLECTION)
     const json = await openEnvelopeJson({ collection: LEDGER_COLLECTION, id: key }, envelope, dek)

@@ -4,6 +4,7 @@
  * See the plaintext/debug-store-mode design.
  */
 import type { EncryptedEnvelope } from './types.js'
+import { hasSealedBody } from '../capsule/index.js'
 
 /**
  * The option's two failure modes, re-exported here so a consumer can `catch`
@@ -39,7 +40,8 @@ export type { EncryptedEnvelope } from './types.js'
 export function readPlaintextRecord<T = Record<string, unknown>>(
   envelope: EncryptedEnvelope,
 ): T | null {
-  if (envelope._iv !== '') {
+  // #15: `hasSealedBody` rather than `_iv !== ''` — see that helper's note.
+  if (hasSealedBody(envelope)) {
     throw new Error(
       'readPlaintextRecord: envelope is encrypted (non-empty _iv) — decrypt via the vault, not this helper',
     )

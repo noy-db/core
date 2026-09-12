@@ -22,6 +22,7 @@
  */
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
 import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
+import { hasSealedBody } from '../../capsule/index.js'
 
 type GetDEK = (collectionName: string) => Promise<EnclaveKey>
 
@@ -91,9 +92,12 @@ export async function loadFanoutSidecar(
 ): Promise<FanoutSidecar | undefined> {
   const envelope = await store.get(vault, '_meta', recordId(source, sourceId, outputKey))
   if (!envelope) return undefined
-  // Legacy plaintext (`_iv === ''`) reads directly; encrypted bodies decrypt.
-  const json = (!encrypted || envelope._iv === '')
-    ? envelope._data
+  // Legacy plaintext reads directly; encrypted bodies decrypt.
+  // #15: ask `hasSealedBody`, not `_iv === ''` — an omitted `_iv` is the
+  // same statement as an empty one, and the raw comparison answers `false`
+  // for it, routing a bodyless row into the decrypt branch.
+  const json = (!encrypted || !hasSealedBody(envelope))
+    ? (envelope._data ?? '')
     : await openEnvelopeJson({ collection: '_meta', id: recordId(source, sourceId, outputKey) }, envelope, await getDEK(FANOUT_DEK_COLLECTION))
   const parsed = JSON.parse(json) as FanoutSidecar
   if (parsed._noydb_fanout !== 1) return undefined

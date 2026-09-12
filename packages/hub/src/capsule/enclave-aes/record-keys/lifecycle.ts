@@ -23,6 +23,7 @@ import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek, type EnclaveKey } fr
 import type { EncryptedEnvelope } from '../../../kernel/types.js'
 import { buildRecordAad, type RecordIdentity } from '../record-aad.js'
 import type { Lru } from '../../../kernel/cache/index.js'
+import { sealedBodyArgs } from './envelope-body.js'
 
 /** Dependencies {@link resolveStableCek} needs from its collection. */
 export interface StableCekDeps {
@@ -100,11 +101,11 @@ export async function rewrapBodyToDek(
   const sealAad = buildRecordAad(to)
   if (envelope._cek !== undefined) {
     const cek = await unwrapCek(envelope._cek, fromDek)
-    const plaintext = await decrypt(envelope._iv, envelope._data, cek, openAad)
+    const plaintext = await decrypt(...sealedBodyArgs(envelope, 'rewrapBodyToDek'), cek, openAad)
     const { iv, data } = await encrypt(plaintext, cek, sealAad)
     return { _iv: iv, _data: data, _cek: await wrapCek(cek, toDek), cek }
   }
-  const plaintext = await decrypt(envelope._iv, envelope._data, fromDek, openAad)
+  const plaintext = await decrypt(...sealedBodyArgs(envelope, 'rewrapBodyToDek'), fromDek, openAad)
   const { iv, data } = await encrypt(plaintext, toDek, sealAad)
   return { _iv: iv, _data: data, cek: null }
 }
@@ -193,7 +194,7 @@ export async function isRewrappedUnder(
       // MUST pass AAD: without it this trial decrypt fails for every bound
       // record, the answer is always `false`, and the crash-idempotency skip
       // it exists to provide silently stops working (#1041).
-      await decrypt(envelope._iv, envelope._data, dek, buildRecordAad(identity))
+      await decrypt(...sealedBodyArgs(envelope, 'rewrapBodyToDek'), dek, buildRecordAad(identity))
     }
     return true
   } catch {

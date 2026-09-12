@@ -182,13 +182,34 @@ export type Permissions = Record<string, Permission>
 
 // ─── Encrypted Envelope ────────────────────────────────────────────────
 
-/** The encrypted wrapper stored by stores. Stores only ever see this. */
-export interface EncryptedEnvelope {
+/**
+ * The wrapper stored by stores. Stores only ever see this.
+ *
+ * ⚠️ **`_iv`/`_data` are OPTIONAL, and that is a capsule contract, not a
+ * convenience** (#15). An *enclave* capsule (the default, `enclave-aes`)
+ * always writes both; an *exclave* capsule stores a plaintext row and has no
+ * ciphertext body at all, so it writes neither.
+ *
+ * **Absence and `''` mean the same thing: no sealed body.** That equivalence
+ * is not new — a tombstone, a delete marker (`_del`) and a plaintext
+ * collection have carried `_iv: ''` since the format's first version, and
+ * {@link hasSealedBody} has always been the question callers ask. Widening
+ * only lets a capsule omit the keys instead of emptying them; every existing
+ * envelope on disk keeps its exact bytes and reads back identically.
+ *
+ * Consequently NOTHING here is a wire-format change, and `NOYDB_FORMAT_VERSION`
+ * does not move. What changed is that every READER must now cope with absence
+ * — which is the whole point, since the store contract at `@noy-db/hub/to` is
+ * what an exclave's rows travel through.
+ */
+export interface Envelope {
   readonly _noydb: typeof NOYDB_FORMAT_VERSION
   readonly _v: number
   readonly _ts: string
-  readonly _iv: string
-  readonly _data: string
+  /** Body IV. Absent (≡ `''`) when there is no sealed body — see the interface doc. */
+  readonly _iv?: string
+  /** Body ciphertext, or plaintext JSON on an unencrypted collection. Absent ≡ `''`. */
+  readonly _data?: string
   /** User who created this version (unencrypted metadata). */
   readonly _by?: string
   /**
@@ -297,6 +318,23 @@ export interface EncryptedEnvelope {
    */
   readonly _del?: true
 }
+
+/**
+ * The former name of {@link Envelope}, kept as an exact alias.
+ *
+ * ⚠️ **It is an ALIAS, not a narrower type** — `EncryptedEnvelope._data` is
+ * `string | undefined` here too. Declaring it as a body-required subtype was
+ * considered and rejected: it would have let every existing hub reader keep
+ * compiling untouched, which is precisely the bug — a store handing back an
+ * exclave row would then fail at runtime in 43 files that the compiler had
+ * declared safe.
+ *
+ * Retiring the name is a 0.9 seam decision, not a 0.8 one: it is published
+ * from the root barrel and from `@noy-db/hub/to`, so removing it is breaking
+ * for every satellite that binds the store contract. It stays for the whole
+ * 0.8 line.
+ */
+export type EncryptedEnvelope = Envelope
 
 /** Spine policy for one digest-only classified field — the enclave-consumable
  *  projection of a ClassifiedFieldSpec (the enclave never imports with-*). */

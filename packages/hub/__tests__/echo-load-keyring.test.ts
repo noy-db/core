@@ -42,7 +42,7 @@ describe('loadKeyring echo guards', () => {
 
     // graft an echo block marker onto the stored file (guard fires on presence alone)
     const env = await store.get('v', '_keyring', 'o')
-    const file = JSON.parse(env!._data)
+    const file = JSON.parse(env!._data!)
     file.echo = await buildEchoBlock(PARTS, { kind: 'none' })
     await store.put('v', '_keyring', 'o', { ...env!, _data: JSON.stringify(file) })
 

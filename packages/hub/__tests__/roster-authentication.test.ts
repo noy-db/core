@@ -38,7 +38,7 @@ async function ownerWith(store: NoydbStore) {
 
 async function fileOf(store: NoydbStore, userId: string): Promise<KeyringFile> {
   const env = (await store.get(VAULT, '_keyring', userId))!
-  return JSON.parse(env._data) as KeyringFile
+  return JSON.parse(env._data!) as KeyringFile
 }
 
 async function rewrite(store: NoydbStore, userId: string, file: KeyringFile): Promise<void> {

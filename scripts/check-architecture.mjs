@@ -2806,8 +2806,20 @@ function checkSubtleOutsideEnclave() {
 // aren't architecture-bound) as is everything under `capsule/enclave-aes/**`
 // (that's the barrel's own home turf).
 
+// ⛔ BRACKET ACCESS WAS INVISIBLE UNTIL #15. The dotted alternatives below
+// (`\._data\b`) cannot match `env['_data']`, so a single bracketed read in
+// `with-shape/blobs/legacy-sweep.ts` sat outside the ratchet entirely — the
+// file was not in PRE_EXISTING_BODY_ACCESS at all, which reads as "this file
+// is clean" rather than "this file was never counted". It surfaced only
+// because #15 rewrote that line into dotted form for an unrelated reason and
+// the ratchet then reported a file it had never seen.
+//
+// A scanner blind spot and a passing check are the same observation, so the
+// bracket forms are matched here too. Re-scanned at the same time: zero other
+// bracketed sites existed in `packages/hub/src/**`, so this widening banks a
+// gap rather than a backlog.
 const BODY_FIELD_ACCESS_RE =
-  /\._iv\b|\._data\b|\._cek\b|\._det\b|\._sealed\b|\._debug\b|\b_iv\s*:|\b_data\s*:|\b_cek\s*:|\b_det\s*:|\b_sealed\s*:|\b_debug\s*:/g
+  /\._iv\b|\._data\b|\._cek\b|\._det\b|\._sealed\b|\._debug\b|\[['"]_(?:iv|data|cek|det|sealed|debug)['"]\]|\b_iv\s*:|\b_data\s*:|\b_cek\s*:|\b_det\s*:|\b_sealed\s*:|\b_debug\s*:/g
 
 // Snapshotted 2026-07-03 by running the scanner below in report mode over
 // `packages/hub/src/**` (excluding `capsule/enclave-aes/**` and `*.test.ts`).
@@ -2815,8 +2827,8 @@ const BODY_FIELD_ACCESS_RE =
 // 6-7 migrate call-sites onto the barrel helpers — never raise one without
 // a reviewed, justified new direct access.
 const PRE_EXISTING_BODY_ACCESS = new Map([
-  ['packages/hub/src/kernel/debug.ts', 4],
-  ['packages/hub/src/kernel/types.ts', 2],
+  ['packages/hub/src/kernel/debug.ts', 3],
+  ['packages/hub/src/kernel/types.ts', 0],
   // #1051: 12 → 4. buildRecordEnvelope() now constructs these bodies, so vault.ts
   // no longer touches _iv/_data directly for the audit envelopes.
   ['packages/hub/src/kernel/vault.ts', 4],
@@ -2835,20 +2847,24 @@ const PRE_EXISTING_BODY_ACCESS = new Map([
   ['packages/hub/src/with-audit/periods/vault-facade.ts', 2],
   ['packages/hub/src/with-audit/portability/request-withdrawal.ts', 2],
   ['packages/hub/src/with-audit/portability/withdraw-accessible.ts', 0],
-  ['packages/hub/src/with-audit/sealed-record/index.ts', 4],
+  // #15: reached 0. `openSealedRecord` was the file's only body reader; it now
+  // takes the widened `Envelope` and narrows through `sealedBodyArgs`, which
+  // refuses a bodyless one by name instead of letting `undefined` reach
+  // `decrypt()`.
+  ['packages/hub/src/with-audit/sealed-record/index.ts', 0],
   // #635: `getAtTier`'s tier>0 leg now processes `_sealed` slots (reads
   // `envelope._sealed` to detect + forward the blob map to
   // `RecordCodec.applySealedSlots`) — 2 new accesses, reviewed & justified
   // (parity with the tier-0 leg, which already goes through `decryptRecord`'s
   // own `_sealed` handling).
-  ['packages/hub/src/with-audit/tiers/index.ts', 22],
+  ['packages/hub/src/with-audit/tiers/index.ts', 18],
   ['packages/hub/src/with-cargo/adopt-partition.ts', 6],  // #1051: buildRecordEnvelope() now builds these bodies
-  ['packages/hub/src/with-cargo/extract-partition.ts', 24],  // #1051: buildRecordEnvelope() now builds these bodies
+  ['packages/hub/src/with-cargo/extract-partition.ts', 20],  // #1051: buildRecordEnvelope() now builds these bodies
   ['packages/hub/src/with-commit/history/ledger/store.ts', 3],
   ['packages/hub/src/with-commit/history/time-machine.ts', 1],
   ['packages/hub/src/with-commit/numbering/index.ts', 1],  // #1051
   ['packages/hub/src/with-commit/sequence/index.ts', 1],  // #1051
-  ['packages/hub/src/with-formula/derivations/fanout-sidecar.ts', 2],
+  ['packages/hub/src/with-formula/derivations/fanout-sidecar.ts', 1],
   ['packages/hub/src/with-party/auth-introspection/index.ts', 1],
   ['packages/hub/src/with-party/custody/liberate.ts', 2],
   ['packages/hub/src/with-party/directory/cover/storage.ts', 1],
@@ -2927,7 +2943,13 @@ const PRE_EXISTING_BODY_ACCESS = new Map([
   // identical existing plaintext-mode fallback directly above; every
   // encrypted-branch decrypt goes through the `openEnvelopeJson` barrel.
   // Up 2. 37→39.
-  ['packages/hub/src/with-shape/blobs/blob-set.ts', 23],
+  ['packages/hub/src/with-shape/blobs/blob-set.ts', 19],
+  // #15: NOT a new access — this file's single plaintext-fallback read was
+  // spelled `env['_data']` and the scanner's dotted-only pattern never saw it.
+  // Widening BODY_FIELD_ACCESS_RE to match bracket form is what surfaced it;
+  // the read itself predates this entry. Grandfathered at its true count,
+  // where the old ratchet had it at an implied and wrong zero.
+  ['packages/hub/src/with-shape/blobs/legacy-sweep.ts', 1],
   // #629 Task 4: DictionaryHandle's encrypt/decrypt now goes through the
   // reservedEnvelopes('_dict_') capability instead of building `_iv`/`_data`
   // literals inline — down from 5 (the plaintext branch's `_iv: ''`/`_data:`
@@ -2947,7 +2969,7 @@ const PRE_EXISTING_BODY_ACCESS = new Map([
   // No `encrypted` flag is threaded to existence.ts's call sites, so
   // isTombstone()'s two-arg contract doesn't drop in cleanly; reviewed as a
   // deliberate, narrow exception rather than growing the barrel's contract.
-  ['packages/hub/src/with-shape/satellites/existence.ts', 2],
+  ['packages/hub/src/with-shape/satellites/existence.ts', 1],
   ['packages/hub/src/with-shape/schema-update/client-registry.ts', 1],
   ['packages/hub/src/with-shape/schema-update/fence.ts', 1],
   ['packages/hub/src/with-store/route-store.ts', 1],

@@ -154,7 +154,7 @@ describe('saveSealedSecret — always produces v1 shape going forward', () => {
     })
     const onDisk = await store.get('acme', '_meta', SEALED_SECRET_RECORD_ID)
     expect(onDisk).toBeDefined()
-    const parsed = JSON.parse(onDisk!._data) as Record<string, unknown>
+    const parsed = JSON.parse(onDisk!._data!) as Record<string, unknown>
     expect(parsed.v).toBe(1)
     expect(parsed._noydb_sealed).toBe(1)
     expect(parsed.pid).toBe('env:NOYDB_SEALING_KEY')
@@ -175,7 +175,7 @@ describe('saveSealedSecret — always produces v1 shape going forward', () => {
       sealed: new Uint8Array([42]),
     })
     const onDisk = await store.get('acme', '_meta', SEALED_SECRET_RECORD_ID)
-    const parsed = JSON.parse(onDisk!._data) as Record<string, unknown>
+    const parsed = JSON.parse(onDisk!._data!) as Record<string, unknown>
     expect(parsed.v).toBe(1)
     expect(parsed.pid).toBe('env:NEW')
   })

@@ -1110,7 +1110,7 @@ export class SyncEngine {
 
     const envelope = await this.local.get(this.vault, '_sync', 'meta')
     if (envelope) {
-      const meta = JSON.parse(envelope._data) as SyncMetadata
+      const meta = JSON.parse(envelope._data ?? '') as SyncMetadata
       this.dirty = [...meta.dirty]
       this.lastPush = meta.last_push
       this.lastPull = meta.last_pull

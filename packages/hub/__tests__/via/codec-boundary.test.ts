@@ -117,7 +117,7 @@ describe('RecordCodec codec boundary — via at-rest hooks (#629 Task 3)', () =>
 
     expect(envelope._sealed).toBeUndefined()
     expect(envelope._iv).toBe('')
-    expect(JSON.parse(envelope._data)).toEqual({ secret: 'shh', open: 'visible' })
+    expect(JSON.parse(envelope._data!)).toEqual({ secret: 'shh', open: 'visible' })
   })
 
   // #1051 retargeted this: the old `id === undefined` case is now a COMPILE
@@ -229,9 +229,9 @@ describe('viaCryptoCtx.reservedEnvelopes — per-collection DEK resolution (#629
     // AAD is the reserved envelope's own address, not the record's (#1041).
     const aad = recordAadFor({ collection: '_dict_other', id: 'r1' }, captured!)
     // The record's OWN collection DEK must NOT open the reserved envelope.
-    await expect(decrypt(captured!._iv, captured!._data, ownDek, aad)).rejects.toThrow()
+    await expect(decrypt(captured!._iv!, captured!._data!, ownDek, aad)).rejects.toThrow()
     // Only the reserved collection's DEK does.
-    const json = await decrypt(captured!._iv, captured!._data, dictDek, aad)
+    const json = await decrypt(captured!._iv!, captured!._data!, dictDek, aad)
     expect(JSON.parse(json)).toEqual({ hello: 'world' })
   })
 })

@@ -68,7 +68,7 @@ describe('issueAttestationCore', () => {
     const env = await store.get('v1', '_attestations', out.docId)
     expect(env).toBeTruthy()
     expect(env!._iv).not.toBe('')
-    const idx = JSON.parse(await decrypt(env!._iv, env!._data, dek, recordAadFor({ collection: '_attestations', id: out.docId }, env!))) as { sourceRefs: { collection: string; id: string; version: number }[] }
+    const idx = JSON.parse(await decrypt(env!._iv!, env!._data!, dek, recordAadFor({ collection: '_attestations', id: out.docId }, env!))) as { sourceRefs: { collection: string; id: string; version: number }[] }
     expect(idx.sourceRefs[0]).toEqual({ collection: 'invoices', id: 'inv-1001', version: 3 })
   })
 

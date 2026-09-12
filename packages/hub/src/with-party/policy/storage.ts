@@ -33,7 +33,7 @@ export async function loadVaultPolicy(
   const envelope = await store.get(vault, META_COLLECTION, POLICY_RECORD_ID)
   if (!envelope) return undefined
   try {
-    const parsed = JSON.parse(envelope._data) as unknown
+    const parsed = JSON.parse(envelope._data ?? '') as unknown
     if (!isVaultPolicy(parsed)) return undefined
     return parsed
   } catch {

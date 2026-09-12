@@ -12,6 +12,7 @@
 import { encrypt, decrypt, wrapCek, unwrapCek, type EnclaveKey } from '../crypto.js'
 import { recordAadFor } from '../record-aad.js'
 import type { EncryptedEnvelope } from '../../../kernel/types.js'
+import { sealedBodyArgs } from './envelope-body.js'
 
 /**
  * Produce the envelope `envelope` becomes once its collection's DEK rotates
@@ -58,7 +59,7 @@ export async function rekeyEnvelopeToDek(
     return { ...carried, _cek: await wrapCek(cek, newDek) }
   }
 
-  const plaintext = await decrypt(envelope._iv, envelope._data, oldDek, aad)
+  const plaintext = await decrypt(...sealedBodyArgs(envelope, 'rekeyRecord'), oldDek, aad)
   const { iv, data } = await encrypt(plaintext, newDek, aad)
   return { ...carried, _ts: new Date().toISOString(), _iv: iv, _data: data }
 }
@@ -95,7 +96,7 @@ export async function rekeyEnvelopeIfNeeded(
     // to do. Verified rather than assumed.
     try {
       if (envelope._cek !== undefined) await unwrapCek(envelope._cek, newDek)
-      else await decrypt(envelope._iv, envelope._data, newDek, recordAadFor(ref, envelope))
+      else await decrypt(...sealedBodyArgs(envelope, 'rekeyRecord'), newDek, recordAadFor(ref, envelope))
       return null
     } catch {
       throw errUnderOld
@@ -130,7 +131,7 @@ export async function envelopeOpensUnderAny(
   for (const key of keys) {
     try {
       if (envelope._cek !== undefined) await unwrapCek(envelope._cek, key)
-      else await decrypt(envelope._iv, envelope._data, key, recordAadFor(ref, envelope))
+      else await decrypt(...sealedBodyArgs(envelope, 'rekeyRecord'), key, recordAadFor(ref, envelope))
       return true
     } catch { /* not this key */ }
   }

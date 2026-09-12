@@ -75,8 +75,8 @@ describe('persisted schemas survive bundle write → read round-trip', () => {
     // After load, _schemas/invoices envelope is queryable in the target store
     const env = await dstStore.get('acme', SCHEMAS_COLLECTION, 'invoices')
     expect(env).not.toBeNull()
-    expect(env!._iv.length).toBeGreaterThan(0)
-    expect(env!._data.length).toBeGreaterThan(0)
+    expect(env!._iv!.length).toBeGreaterThan(0)
+    expect(env!._data!.length).toBeGreaterThan(0)
 
     // Critical: dumpSchema() must surface it via the 'persisted' source path.
     dstVault.collection('invoices') // touch

@@ -239,7 +239,7 @@ describe('presence (v0.9)', () => {
       const envelope = await syncAdapter.get(COMP, '_presence_invoices', 'u')
       expect(envelope).not.toBeNull()
       // In non-encrypted mode, _data is a JSON string
-      expect(() => JSON.parse(envelope!._data)).not.toThrow()
+      expect(() => JSON.parse(envelope!._data!)).not.toThrow()
 
       handle.stop()
     })
@@ -293,7 +293,7 @@ describe('presence (v0.9)', () => {
       // Neither the outer envelope nor the parsed inner record carries the
       // plaintext userId anywhere.
       expect(JSON.stringify(envelope)).not.toContain('user-a')
-      const record = JSON.parse(envelope!._data) as Record<string, unknown>
+      const record = JSON.parse(envelope!._data!) as Record<string, unknown>
       expect(record).not.toHaveProperty('userId')
       expect(JSON.stringify(record)).not.toContain('user-a')
 

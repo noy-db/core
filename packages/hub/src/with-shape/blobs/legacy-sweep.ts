@@ -45,7 +45,7 @@ export async function sweepUnreferencedLegacyBlobs(
     try {
       // `encrypt: false` stores the body as plaintext JSON; read it as the
       // opaque string it is (no enclave field is interpreted here).
-      const json = dek ? await openEnvelopeJson({ collection: BLOB_INDEX_COLLECTION, id: eTag }, env, dek) : env['_data']
+      const json = dek ? await openEnvelopeJson({ collection: BLOB_INDEX_COLLECTION, id: eTag }, env, dek) : (env._data ?? '')
       blob = JSON.parse(json) as BlobObject
     } catch (err) {
       if (err instanceof TamperedError) continue // elevated-tier row: not this pass's

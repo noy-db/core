@@ -119,7 +119,7 @@ describe('adoptPartition', () => {
 
     const adoptionEnv = await dest.get('acme-hotel', '_meta', 'adoption')
     expect(adoptionEnv).toBeTruthy()
-    const adoption = JSON.parse(adoptionEnv!._data) as { sealId: string; needsOwner: boolean; transferSeal: unknown }
+    const adoption = JSON.parse(adoptionEnv!._data!) as { sealId: string; needsOwner: boolean; transferSeal: unknown }
     expect(adoption.sealId).toBe(sealId)
     expect(adoption.needsOwner).toBe(true)
     expect(adoption.transferSeal).toBeTruthy()
@@ -187,7 +187,7 @@ describe('adoptPartition rejections', () => {
 
     // The original adoption marker must survive the rejected second bundle.
     const adoptionEnv = await dest.get('acme', '_meta', 'adoption')
-    const adoption = JSON.parse(adoptionEnv!._data) as { sealId: string }
+    const adoption = JSON.parse(adoptionEnv!._data!) as { sealId: string }
     expect(adoption.sealId).toBe(a.sealId)
   })
 
@@ -209,7 +209,7 @@ describe('adoptPartition end-to-end', () => {
     const deks = await unsealDeks(seal, transferKey)
 
     const env = await dest.get('acme', 'clients', 'c-1')
-    const plaintext = await decrypt(env!._iv, env!._data, deks.get('clients')!, recordAadFor({ collection: 'clients', id: 'c-1' }, env!))
+    const plaintext = await decrypt(env!._iv!, env!._data!, deks.get('clients')!, recordAadFor({ collection: 'clients', id: 'c-1' }, env!))
     expect(JSON.parse(plaintext)).toMatchObject({ id: 'c-1', name: 'Hotel' })
   })
 })

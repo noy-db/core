@@ -289,7 +289,7 @@ describe('sync-applied writes refresh the Collection cache (#598)', () => {
     expect((await notes.get('n1'))!.body).toBe('v1')          // cache warm
 
     const env = (await remote.get(V, 'notes', 'n1'))!
-    const newer = { ...env, _v: 2, _data: JSON.stringify({ ...JSON.parse(env._data), body: 'v2-from-remote' }) }
+    const newer = { ...env, _v: 2, _data: JSON.stringify({ ...JSON.parse(env._data!), body: 'v2-from-remote' }) }
     await remote.put(V, 'notes', 'n1', newer)
     await db.pull(V)
 

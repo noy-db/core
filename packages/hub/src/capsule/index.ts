@@ -76,6 +76,8 @@ export {
   generateSigningKeyPair,
   hasPerRecordKey,
   hasSealedBody,
+  requireSealedBody,
+  sealedBodyArgs,
   hkdfAesGcmKey,
   hmacSha256Hex,
   hmacSignHex,

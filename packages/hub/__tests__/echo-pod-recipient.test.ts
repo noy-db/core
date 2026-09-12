@@ -159,7 +159,7 @@ describe('writePod — echo-mode recipients', () => {
 
     const { targetStore, compartment } = await restoreBytes(bytes)
     const env = await targetStore.get(compartment, '_keyring', 'auditor')
-    const file = JSON.parse(env!._data) as KeyringFile
+    const file = JSON.parse(env!._data!) as KeyringFile
     expect(file.echo?.reveal.kind).toBe('none')
   })
 

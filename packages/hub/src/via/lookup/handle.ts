@@ -220,7 +220,7 @@ export class LookupHandle<Keys extends string = string> {
 
   private async decryptEntry(key: string, envelope: EncryptedEnvelope): Promise<DictEntry> {
     if (!this.encrypted) {
-      return JSON.parse(envelope._data) as DictEntry
+      return JSON.parse(envelope._data ?? '') as DictEntry
     }
     // `key` IS the record id this envelope is stored under, and the identity the
     // writer sealed it against (#1041).

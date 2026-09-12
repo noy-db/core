@@ -174,7 +174,7 @@ export function withLogging(opts: LoggingOptions = {}): StoreMiddleware {
     get: (v, c, id) => timed('get', { vault: v, collection: c, id }, () => next.get(v, c, id)),
     put: (v, c, id, env, ev) => timed('put', {
       vault: v, collection: c, id, version: env._v,
-      ...(logData ? { data: env._data.slice(0, 40) + '...' } : {}),
+      ...(logData ? { data: (env._data ?? '').slice(0, 40) + '...' } : {}),
     }, () => next.put(v, c, id, env, ev)),
     delete: (v, c, id) => timed('delete', { vault: v, collection: c, id }, () => next.delete(v, c, id)),
     list: (v, c) => timed('list', { vault: v, collection: c }, () => next.list(v, c)),

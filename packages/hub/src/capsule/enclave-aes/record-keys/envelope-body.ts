@@ -16,6 +16,49 @@
 import { buildRecordAad, recordAadFor, type RecordIdentity, type RecordRef } from '../record-aad.js'
 import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek, type EnclaveKey } from '../crypto.js'
 import type { EncryptedEnvelope } from '../../../kernel/types.js'
+import { MissingEnvelopeBodyError } from '../../../kernel/errors.js'
+
+/**
+ * The sealed body, or a typed refusal (#15).
+ *
+ * Since `_iv`/`_data` became optional, every AES path that is about to call
+ * `decrypt()` needs this one narrowing. It is deliberately the ONLY place in
+ * the enclave that turns absence into an error: the alternative — a `!` or a
+ * `?? ''` at each of the two dozen decrypt sites — would have spelled the
+ * same decision twenty-four times and produced an AEAD failure (i.e. hub's
+ * tamper alert) instead of an honest one.
+ *
+ * Ask {@link hasSealedBody} FIRST when absence is a legitimate outcome; this
+ * helper is for the paths where it is not.
+ */
+export function requireSealedBody(
+  env: Pick<EncryptedEnvelope, '_iv' | '_data'>,
+  where: string,
+): { iv: string; data: string } {
+  if (env._iv === undefined || env._data === undefined) throw new MissingEnvelopeBodyError(where)
+  return { iv: env._iv, data: env._data }
+}
+
+/**
+ * {@link requireSealedBody} shaped for the `decrypt(iv, data, …)` argument
+ * list, so a narrowing can be spliced into an existing call without
+ * restructuring the statement around it:
+ *
+ * ```ts
+ * await decrypt(...sealedBodyArgs(env, 'rekeyRecord'), dek, aad)
+ * ```
+ *
+ * The tuple return type is load-bearing — it is what lets the spread satisfy
+ * two fixed positional parameters. Widening it to `string[]` would compile
+ * here and fail at every call site.
+ */
+export function sealedBodyArgs(
+  env: Pick<EncryptedEnvelope, '_iv' | '_data'>,
+  where: string,
+): [string, string] {
+  const { iv, data } = requireSealedBody(env, where)
+  return [iv, data]
+}
 
 /**
  * Open an envelope's protected body to its JSON text.
@@ -37,16 +80,19 @@ export async function openEnvelopeJson(
 ): Promise<string> {
   // A plaintext collection has no AEAD, so there is nothing to authenticate —
   // `_data` is returned as-is and identity binding does not apply to it.
-  if (opts?.encrypted === false) return env._data
+  // Absent `_data` reads as `''` here, exactly as an emptied one always has:
+  // a plaintext collection with nothing in it is not an error.
+  if (opts?.encrypted === false) return env._data ?? ''
   // Recomputed from the ADDRESS this was fetched from plus `_tier`/`_by` read
   // off the envelope. A store that edited either one changes this value, and
   // AES-GCM then refuses the body (#1041).
   const aad = recordAadFor(ref, env)
+  const { iv, data } = requireSealedBody(env, 'openEnvelopeJson')
   if (env._cek !== undefined) {
     const cek = await unwrapCek(env._cek, key)
-    return decrypt(env._iv, env._data, cek, aad)
+    return decrypt(iv, data, cek, aad)
   }
-  return decrypt(env._iv, env._data, key, aad)
+  return decrypt(iv, data, key, aad)
 }
 
 /**
@@ -91,7 +137,10 @@ export async function writeEnvelopeBody(
  * without touching the protected fields directly.
  */
 export function envelopeBodySize(env: EncryptedEnvelope): number {
-  return env._data.length + env._iv.length
+  // An absent field meters as 0, the same as the emptied spelling it replaces
+  // (#15) — a bodyless row has no payload to bill for, and throwing a
+  // TypeError out of a telemetry counter would take down the write path.
+  return (env._data?.length ?? 0) + (env._iv?.length ?? 0)
 }
 
 /**
@@ -137,14 +186,18 @@ export function envelopeBodyForHash(env: EncryptedEnvelope): string {
   // Conditional widen (slice 2b, SM #5): bind `_bidx` the same way, appended
   // LAST (after `_vdig`) so a `_bidx`-absent envelope keeps its stage-2
   // byte-identical hash.
-  if (env._sealed === undefined && env._vdig === undefined && env._bidx === undefined) return env._data
+  // `?? ''` (#15): an omitted `_data` must hash identically to an emptied
+  // one, or a capsule changing spelling would invalidate every ledger entry
+  // written before it.
+  const data = env._data ?? ''
+  if (env._sealed === undefined && env._vdig === undefined && env._bidx === undefined) return data
   const mapPart = (key: '_sealed' | '_vdig' | '_bidx', map: Record<string, string>): string => {
     const parts = Object.keys(map).sort().map(
       (k) => `${JSON.stringify(k)}:${JSON.stringify(map[k])}`,
     )
     return `${JSON.stringify(key)}:{${parts.join(',')}}`
   }
-  const segments = [`"_data":${JSON.stringify(env._data)}`]
+  const segments = [`"_data":${JSON.stringify(data)}`]
   if (env._sealed !== undefined) segments.push(mapPart('_sealed', env._sealed))
   if (env._vdig !== undefined) segments.push(mapPart('_vdig', env._vdig))
   if (env._bidx !== undefined) segments.push(mapPart('_bidx', env._bidx))
@@ -163,7 +216,10 @@ export function envelopeBodyForHash(env: EncryptedEnvelope): string {
  * which `enclave-body-only` refused, correctly, when `advance` tested it inline.
  */
 export function hasSealedBody(env: Pick<EncryptedEnvelope, '_iv'>): boolean {
-  return env._iv !== ''
+  // ⛔ `env._iv !== ''` alone answered TRUE for an omitted `_iv` (#15) — the
+  // exact inversion of what the caller is asking. Absence and `''` are the
+  // same statement: there is nothing here to authenticate.
+  return env._iv !== undefined && env._iv !== ''
 }
 
 /**

@@ -74,7 +74,7 @@ export async function loadPaperRecoveryEntries(
   const env = await store.get(vault, '_meta', PAPER_DOC_ID)
   if (!env) return []
   try {
-    const doc = JSON.parse(env._data) as PaperRecoveryDoc
+    const doc = JSON.parse(env._data ?? '') as PaperRecoveryDoc
     if (doc.profile !== 'paper' || !Array.isArray(doc.entries)) return []
     return doc.entries
   } catch {
@@ -197,7 +197,7 @@ export async function loadShamirRecoveryEntries(
   const env = await store.get(vault, '_meta', SHAMIR_DOC_ID)
   if (!env) return []
   try {
-    const doc = JSON.parse(env._data) as ShamirRecoveryDoc
+    const doc = JSON.parse(env._data ?? '') as ShamirRecoveryDoc
     if (doc.profile !== 'shamir' || !Array.isArray(doc.entries)) return []
     return doc.entries
   } catch {

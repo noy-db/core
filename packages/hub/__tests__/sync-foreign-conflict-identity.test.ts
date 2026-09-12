@@ -89,6 +89,6 @@ describe('#935 — foreign-identity ConflictError at the store boundary', () => 
     const result = await db.push(COMP)
     expect(result.errors).toEqual([])
     expect(result.conflicts).toHaveLength(1)
-    expect(JSON.parse((await remote.get(COMP, 'notes', 'note-1'))!._data).title).toBe('local v2')
+    expect(JSON.parse((await remote.get(COMP, 'notes', 'note-1'))!._data!).title).toBe('local v2')
   })
 })

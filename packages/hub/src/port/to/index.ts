@@ -20,6 +20,7 @@ import type { NoydbStore as NoydbStoreType } from '../../kernel/types.js'
 export type {
   NoydbStore,
   NoydbPodStore,
+  Envelope,
   EncryptedEnvelope,
   VaultSnapshot,
   TxOp,

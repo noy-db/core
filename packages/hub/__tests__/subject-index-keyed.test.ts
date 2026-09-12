@@ -113,7 +113,7 @@ describe('M-2 — subject index keyed id + bucketed ref list', () => {
 
     const keys = store.rawList('v', '_subject_index')
     expect(keys.length).toBe(2)
-    const lens = keys.map(k => store.raw('v', '_subject_index', k)!._data.length)
+    const lens = keys.map(k => store.raw('v', '_subject_index', k)!._data!.length)
     expect(lens[0]).toBe(lens[1])
   })
 

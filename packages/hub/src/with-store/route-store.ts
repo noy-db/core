@@ -540,7 +540,7 @@ export function routeStore(opts: RouteStoreOptions): RoutedNoydbStore {
 
       // Size-tiered blob routing
       if (isBlobChunks(collection) && tieredBlobs) {
-        const dataSize = envelope._data.length
+        const dataSize = (envelope._data ?? '').length
         const s = blobStoreForSize(dataSize)
         return s.put(vault, collection, id, envelope, expectedVersion)
       }

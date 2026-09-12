@@ -90,7 +90,7 @@ describe('reKeyClosure', () => {
 
     const env = collections['clients']!['c-1']!
     const destDek = deks.get('clients')!
-    const plaintext = await decrypt(env._iv, env._data, destDek, recordAadFor({ collection: 'clients', id: 'c-1' }, env))
+    const plaintext = await decrypt(env._iv!, env._data!, destDek, recordAadFor({ collection: 'clients', id: 'c-1' }, env))
     expect(JSON.parse(plaintext)).toMatchObject({ id: 'c-1', name: 'Acme', operatorUserId: 'belle' })
   })
 })
@@ -186,7 +186,7 @@ describe('extractPartition end-to-end', () => {
     // Import the clients DEK + decrypt the re-keyed record.
     const clientsDek = await crypto.subtle.importKey('raw', base64ToBuffer(dekMap['clients']!), 'AES-GCM', false, ['decrypt'])
     const env = backup.collections['clients']!['c-1']!
-    const recordJson = await decrypt(env._iv, env._data, clientsDek, recordAadFor({ collection: 'clients', id: 'c-1' }, env))
+    const recordJson = await decrypt(env._iv!, env._data!, clientsDek, recordAadFor({ collection: 'clients', id: 'c-1' }, env))
     expect(JSON.parse(recordJson)).toMatchObject({ id: 'c-1', name: 'Hotel' })
   })
 })

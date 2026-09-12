@@ -129,7 +129,7 @@ export async function loadDeedMarker(
   if (!envelope) return null
   let payload: unknown
   try {
-    payload = JSON.parse(envelope._data)
+    payload = JSON.parse(envelope._data ?? '')
   } catch {
     return null
   }

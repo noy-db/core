@@ -92,7 +92,7 @@ describe('createOwnerOnAdoptedPartition', () => {
     expect(await dest.list('acme', '_keyring')).toEqual(['belle'])
 
     const adoptionEnv = await dest.get('acme', '_meta', 'adoption')
-    const adoption = JSON.parse(adoptionEnv!._data) as { sealId: string; consumedAt?: string; transferSeal?: unknown }
+    const adoption = JSON.parse(adoptionEnv!._data!) as { sealId: string; consumedAt?: string; transferSeal?: unknown }
     expect(adoption.transferSeal).toBeUndefined()
     expect(adoption.consumedAt).toBeTruthy()
     expect(adoption.sealId).toBeTruthy()

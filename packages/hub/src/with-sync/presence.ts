@@ -340,7 +340,7 @@ export class PresenceHandle<P> {
         if (!envelope) continue
 
         try {
-          const record = JSON.parse(envelope._data) as StoragePresenceRecord
+          const record = JSON.parse(envelope._data ?? '') as StoragePresenceRecord
           if (record.lastSeen < cutoff) continue
 
           let peerUserId: string

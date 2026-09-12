@@ -157,7 +157,7 @@ describe('extractPartition blob carriage — HARDENED isolation property', () =>
     // (re-keyed under the transfer DEK into the bundle / destination)...
     const coverIdx = await dest.get('fresh', BLOB_INDEX_COLLECTION, coverETag)
     expect(coverIdx).not.toBeNull()
-    const coverBlob = JSON.parse(await decrypt(coverIdx!._iv, coverIdx!._data, transferBlobDek!, recordAadFor({ collection: BLOB_INDEX_COLLECTION, id: coverETag }, coverIdx!))) as { _cek?: string }
+    const coverBlob = JSON.parse(await decrypt(coverIdx!._iv!, coverIdx!._data!, transferBlobDek!, recordAadFor({ collection: BLOB_INDEX_COLLECTION, id: coverETag }, coverIdx!))) as { _cek?: string }
     expect(coverBlob._cek).toBeDefined()
     // ...and unwraps its content CEK (chunks become decryptable for the recipient).
     await expect(unwrapCek(coverBlob._cek!, transferBlobDek!)).resolves.toBeDefined()
@@ -171,10 +171,10 @@ describe('extractPartition blob carriage — HARDENED isolation property', () =>
     const lonelyIdx = await src.get('demo-co', BLOB_INDEX_COLLECTION, lonelyETag)
     expect(lonelyIdx).not.toBeNull()
     // Sanity — the source DEK CAN read it (so the ciphertext is real)...
-    const lonelyBlob = JSON.parse(await decrypt(lonelyIdx!._iv, lonelyIdx!._data, srcBlobDek, recordAadFor({ collection: BLOB_INDEX_COLLECTION, id: lonelyETag }, lonelyIdx!))) as { _cek?: string }
+    const lonelyBlob = JSON.parse(await decrypt(lonelyIdx!._iv!, lonelyIdx!._data!, srcBlobDek, recordAadFor({ collection: BLOB_INDEX_COLLECTION, id: lonelyETag }, lonelyIdx!))) as { _cek?: string }
     expect(lonelyBlob._cek).toBeDefined()
     // ...but the transfer DEK throws on the index envelope...
-    await expect(decrypt(lonelyIdx!._iv, lonelyIdx!._data, transferBlobDek!)).rejects.toThrow()
+    await expect(decrypt(lonelyIdx!._iv!, lonelyIdx!._data!, transferBlobDek!)).rejects.toThrow()
     // ...and cannot unwrap the source blob's content CEK (the key isolation property).
     await expect(unwrapCek(lonelyBlob._cek!, transferBlobDek!)).rejects.toThrow()
 
@@ -272,7 +272,7 @@ describe('extractPartition blob carriage — refCount + no-blob', () => {
     const dest = toMemory()
     await adoptPartition(bundleBytes, { transferKey, destinationStore: dest, vaultName: 'fresh' })
     const carriedIdx = await dest.get('fresh', BLOB_INDEX_COLLECTION, eTag)
-    const carried = JSON.parse(await decrypt(carriedIdx!._iv, carriedIdx!._data, deks.get('_blob')!, recordAadFor({ collection: BLOB_INDEX_COLLECTION, id: eTag }, carriedIdx!))) as { refCount: number }
+    const carried = JSON.parse(await decrypt(carriedIdx!._iv!, carriedIdx!._data!, deks.get('_blob')!, recordAadFor({ collection: BLOB_INDEX_COLLECTION, id: eTag }, carriedIdx!))) as { refCount: number }
     expect(carried.refCount).toBe(1) // recomputed from the single carried reference
     db.close()
   })
@@ -287,7 +287,7 @@ describe('extractPartition blob carriage — refCount + no-blob', () => {
     await lines.put('l1', { id: 'l1', docId: 'd1' })
 
     const keyringBefore = await src.get('demo-co', '_keyring', 'alice')
-    const deksBefore = Object.keys((JSON.parse(keyringBefore!._data) as KeyringFile).deks)
+    const deksBefore = Object.keys((JSON.parse(keyringBefore!._data!) as KeyringFile).deks)
 
     const { bundleBytes, transferKey } = await extractPartition(company, {
       seeds: { docs: () => true },
@@ -299,7 +299,7 @@ describe('extractPartition blob carriage — refCount + no-blob', () => {
 
     // Source keyring did NOT gain a phantom `_blob` DEK.
     const keyringAfter = await src.get('demo-co', '_keyring', 'alice')
-    const deksAfter = Object.keys((JSON.parse(keyringAfter!._data) as KeyringFile).deks)
+    const deksAfter = Object.keys((JSON.parse(keyringAfter!._data!) as KeyringFile).deks)
     expect(deksAfter).not.toContain('_blob')
     expect(deksAfter.sort()).toEqual(deksBefore.sort())
 

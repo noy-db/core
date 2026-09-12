@@ -113,7 +113,7 @@ describe('beginEchoUnlock', () => {
     await createOwnerKeyring(store, 'acme', { userId: 'owner', secret: PARTS })
     // Stamp an expiry in the past (same field loadKeyring gates on).
     const env = await store.get('acme', '_keyring', 'owner')
-    const file = JSON.parse(env!._data) as Record<string, unknown>
+    const file = JSON.parse(env!._data!) as Record<string, unknown>
     file.expires_at = new Date(Date.now() - 60_000).toISOString()
     await store.put('acme', '_keyring', 'owner', { ...env!, _data: JSON.stringify(file) })
 

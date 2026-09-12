@@ -34,7 +34,7 @@ import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope } from '../src/kernel/type
 
 /** Oracle: the exact expression `ledger/hash.ts`'s `envelopePayloadHash` hashes. */
 function oracleBodyForHash(envelope: EncryptedEnvelope): string {
-  if (envelope._sealed === undefined) return envelope._data
+  if (envelope._sealed === undefined) return envelope._data!
   return canonicalJson({ _data: envelope._data, _sealed: envelope._sealed })
 }
 

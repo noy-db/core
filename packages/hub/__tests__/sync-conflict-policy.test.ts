@@ -85,7 +85,7 @@ describe('conflictPolicy (v0.9)', () => {
 
       // remote has higher _ts — remote wins
       const localEnv = await local.get(COMP, 'notes', 'note-1')
-      expect(JSON.parse(localEnv!._data).title).toBe('remote')
+      expect(JSON.parse(localEnv!._data!).title).toBe('remote')
     })
 
     it('keeps local when local _ts is higher', async () => {
@@ -106,7 +106,7 @@ describe('conflictPolicy (v0.9)', () => {
       await db.pull(COMP)
       const localEnv = await local.get(COMP, 'notes', 'note-1')
       // local _ts >= remote pastTs — local wins (kept, push will sync)
-      expect(JSON.parse(localEnv!._data).title).toBe('local')
+      expect(JSON.parse(localEnv!._data!).title).toBe('local')
     })
   })
 
@@ -130,7 +130,7 @@ describe('conflictPolicy (v0.9)', () => {
       await db.pull(COMP)
       const localEnv = await local.get(COMP, 'notes', 'note-1')
       // local _v=1 <= remote _v=5 → local (earlier) wins
-      expect(JSON.parse(localEnv!._data).title).toBe('first')
+      expect(JSON.parse(localEnv!._data!).title).toBe('first')
     })
   })
 
@@ -153,7 +153,7 @@ describe('conflictPolicy (v0.9)', () => {
       expect(result.conflicts).toHaveLength(1)
       // Record unchanged (deferred, local still has v=1 data)
       const localEnv = await local.get(COMP, 'notes', 'note-1')
-      expect(JSON.parse(localEnv!._data).title).toBe('local')
+      expect(JSON.parse(localEnv!._data!).title).toBe('local')
     })
 
     it('resolves with remote when handler calls resolve(remote)', async () => {
@@ -178,7 +178,7 @@ describe('conflictPolicy (v0.9)', () => {
       const result = await db.pull(COMP)
       expect(result.conflicts).toHaveLength(1)
       const localEnv = await local.get(COMP, 'notes', 'note-1')
-      expect(JSON.parse(localEnv!._data).title).toBe('remote wins')
+      expect(JSON.parse(localEnv!._data!).title).toBe('remote wins')
     })
 
     it('defers when handler calls resolve(null)', async () => {
@@ -202,7 +202,7 @@ describe('conflictPolicy (v0.9)', () => {
       await db.pull(COMP)
       const localEnv = await local.get(COMP, 'notes', 'note-1')
       // Local unchanged (deferred)
-      expect(JSON.parse(localEnv!._data).title).toBe('original')
+      expect(JSON.parse(localEnv!._data!).title).toBe('original')
     })
 
     it('sync:conflict event carries resolve fn for manual collections', async () => {
@@ -251,7 +251,7 @@ describe('conflictPolicy (v0.9)', () => {
       expect(result.conflicts).toHaveLength(1)
 
       const localEnv = await local.get(COMP, 'notes', 'note-1')
-      const merged = JSON.parse(localEnv!._data) as Note
+      const merged = JSON.parse(localEnv!._data!) as Note
       expect(merged.body).toBe('local body | remote body')
     })
 
@@ -293,7 +293,7 @@ describe('conflictPolicy (v0.9)', () => {
       await db.pull(COMP)
       const localEnv = await local.get(COMP, 'notes', 'note-1')
       // remote-wins db strategy → remote overwrites local
-      expect(JSON.parse(localEnv!._data).title).toBe('remote')
+      expect(JSON.parse(localEnv!._data!).title).toBe('remote')
     })
   })
 })

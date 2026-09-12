@@ -82,7 +82,7 @@ describe('FR-6 Deed — sealed/latent owner provisioning', () => {
     // Read the raw envelope directly off the store and parse it as plain JSON.
     const env = await store.get('deed-vault', '_meta', DEED_RECORD_ID)
     expect(env).not.toBeNull()
-    const payload = JSON.parse(env!._data) as Record<string, unknown>
+    const payload = JSON.parse(env!._data!) as Record<string, unknown>
     expect(payload['ownerUserId']).toBe('client-01')
     expect(payload['sealedUnder']).toBe('client-kms')
     expect(payload['latent']).toBe(true)

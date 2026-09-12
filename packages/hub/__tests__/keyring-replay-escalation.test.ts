@@ -71,7 +71,7 @@ async function forgeRole(store: NoydbStore, userId: string, role: string): Promi
   const env = (await store.get(VAULT, '_keyring', userId))!
   await store.put(VAULT, '_keyring', userId, {
     ...env,
-    _data: env._data.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
+    _data: env._data!.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
   })
 }
 
@@ -82,7 +82,7 @@ async function editKeyringFile(
   mutate: (file: Record<string, unknown>) => void,
 ): Promise<void> {
   const env = (await store.get(VAULT, '_keyring', userId))!
-  const file = JSON.parse(env._data) as Record<string, unknown>
+  const file = JSON.parse(env._data!) as Record<string, unknown>
   mutate(file)
   await store.put(VAULT, '_keyring', userId, { ...env, _data: JSON.stringify(file) })
 }
@@ -210,7 +210,7 @@ describe('#1043/#1096 A — the plaintext ROLE was forgeable; roster_tag now ref
     await db.grant(VAULT, { userId: 'bob', displayName: 'Bob', role: 'viewer', secret: 'bob-pass-1' })
 
     const aliceEnv = (await store.get(VAULT, '_keyring', 'alice'))!
-    const aliceTag = (JSON.parse(aliceEnv._data) as { roster_tag: unknown }).roster_tag
+    const aliceTag = (JSON.parse(aliceEnv._data!) as { roster_tag: unknown }).roster_tag
 
     await editKeyringFile(store, 'bob', (file) => {
       file.roster_tag = aliceTag

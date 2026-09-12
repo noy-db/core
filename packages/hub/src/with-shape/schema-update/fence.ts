@@ -31,7 +31,7 @@ export async function loadFence(store: NoydbStore, vault: string): Promise<Fence
   const envelope = await store.get(vault, META_COLLECTION, FENCE_RECORD_ID)
   if (!envelope) return DEFAULT_FENCE
   try {
-    const parsed = JSON.parse(envelope._data) as unknown
+    const parsed = JSON.parse(envelope._data ?? '') as unknown
     if (!isFenceDoc(parsed)) return DEFAULT_FENCE
     return parsed
   } catch {

@@ -310,7 +310,7 @@ export async function deriveKekForKeyring(
 
 /** Parse a raw keyring envelope. Single sanctioned reader of `_data` for keyring files. */
 export function parseKeyringEnvelope(envelope: EncryptedEnvelope): KeyringFile {
-  return JSON.parse(envelope._data) as KeyringFile
+  return JSON.parse(envelope._data ?? '') as KeyringFile
 }
 
 /** Fetch + parse a user's keyring file; undefined when the row is missing. */

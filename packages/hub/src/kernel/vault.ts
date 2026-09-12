@@ -1866,7 +1866,7 @@ export class Vault {
     recordId: string,
   ): Promise<unknown> {
     if (!this.encrypted) {
-      return JSON.parse(env._data)
+      return JSON.parse(env._data ?? '')
     }
     const dek = await this.getDEK(collectionName)
     const json = await openEnvelopeJson({ collection: collectionName, id: recordId }, env, dek)

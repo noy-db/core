@@ -48,7 +48,7 @@ async function forgeRole(store: NoydbStore, userId: string, role: string): Promi
   const env = (await store.get(VAULT, '_keyring', userId))!
   await store.put(VAULT, '_keyring', userId, {
     ...env,
-    _data: env._data.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
+    _data: env._data!.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
   })
 }
 
@@ -87,7 +87,7 @@ describe('#1121 verifyRoster — which file is bad, without trial and error', ()
     await db.grant(VAULT, { userId: 'bob', displayName: 'Bob', role: 'viewer', secret: 'bob-pass-1' })
 
     const env = (await store.get(VAULT, '_keyring', 'bob'))!
-    const file = JSON.parse(env._data) as Record<string, unknown>
+    const file = JSON.parse(env._data!) as Record<string, unknown>
     delete file.roster_tag
     await store.put(VAULT, '_keyring', 'bob', { ...env, _data: JSON.stringify(file) })
 
@@ -188,7 +188,7 @@ describe('#1121 quarantineKeyring — removing what cannot be verified', () => {
     await forgeRole(store, 'carol', 'admin')
     // The store now also strips `salaries` from carol's DEK map.
     const env = (await store.get(VAULT, '_keyring', 'carol'))!
-    const file = JSON.parse(env._data) as { deks: Record<string, string> }
+    const file = JSON.parse(env._data!) as { deks: Record<string, string> }
     delete file.deks.salaries
     await store.put(VAULT, '_keyring', 'carol', { ...env, _data: JSON.stringify(file) })
 
@@ -218,7 +218,7 @@ describe('#1121 — what the review of the first draft found', () => {
     await db.grant(VAULT, { userId: 'bob', displayName: 'Bob', role: 'viewer', secret: 'bob-pass-1' })
 
     const env = (await store.get(VAULT, '_keyring', 'bob'))!
-    await store.put(VAULT, '_keyring', 'bob', { ...env, _data: env._data.slice(0, 40) })
+    await store.put(VAULT, '_keyring', 'bob', { ...env, _data: env._data!.slice(0, 40) })
 
     const result = await db.verifyRoster(VAULT)
     expect(result.unverified).toEqual([{ userId: 'bob', reason: 'unparseable' }])
@@ -232,7 +232,7 @@ describe('#1121 — what the review of the first draft found', () => {
     await db.grant(VAULT, { userId: 'bob', displayName: 'Bob', role: 'viewer', secret: 'bob-pass-1' })
 
     const env = (await store.get(VAULT, '_keyring', 'bob'))!
-    await store.put(VAULT, '_keyring', 'bob', { ...env, _data: env._data.slice(0, 40) })
+    await store.put(VAULT, '_keyring', 'bob', { ...env, _data: env._data!.slice(0, 40) })
 
     const result = await db.quarantineKeyring(VAULT, 'bob')
     expect(result.reason).toBe('unparseable')

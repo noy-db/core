@@ -111,7 +111,7 @@ describe('echo mode end to end', () => {
     const db = await createNoydb({ store, user: 'owner', secretMode: 'echo', secret: PARTS, deviceSeal: seal })
     await db.openVault('acme')
     const env = await store.get('acme', '_keyring', 'owner')
-    const file = JSON.parse(env!._data) as KeyringFile
+    const file = JSON.parse(env!._data!) as KeyringFile
     expect(file.echo?.reveal.kind).toBe('sealed')
     if (file.echo?.reveal.kind === 'sealed') expect(file.echo.reveal.provider_hint).toBe('test:dev')
     db.close()
@@ -122,7 +122,7 @@ describe('echo mode end to end', () => {
     const db = await createNoydb({ store, user: 'owner', secretMode: 'echo', secret: PARTS })
     await db.openVault('acme')
     const env = await store.get('acme', '_keyring', 'owner')
-    const file = JSON.parse(env!._data) as KeyringFile
+    const file = JSON.parse(env!._data!) as KeyringFile
     expect(file.echo?.reveal.kind).toBe('portable')
     db.close()
   }, T)
@@ -178,7 +178,7 @@ describe('echo mode end to end', () => {
     const store = inlineMemory()
     const db = await createNoydb({ store, user: 'o', secretMode: 'echo', secret: PARTS, echoMaskHint: 'first-letters' })
     await db.openVault('acme')
-    const file = JSON.parse((await store.get('acme', '_keyring', 'o'))!._data) as KeyringFile
+    const file = JSON.parse((await store.get('acme', '_keyring', 'o'))!._data!) as KeyringFile
     expect(file.echo?.mask_hint).toBe('first-letters')
     const ceremony = await beginEchoUnlock(store, 'acme', { userId: 'o', prompt: PARTS.prompt })
     expect(ceremony.maskHint).toBe('first-letters')

@@ -85,7 +85,7 @@ describe('#413 — debug-plaintext store mode', () => {
     await docs.put('d1', { id: 'd1', name: 'Bob' })
     const raw = (await store.get('t', 'docs', 'd1'))! as EncryptedEnvelope & Record<string, unknown>
     expect(raw._debug).toBeUndefined()
-    expect(JSON.parse(raw._data)).toEqual({ id: 'd1', name: 'Bob' })
+    expect(JSON.parse(raw._data!)).toEqual({ id: 'd1', name: 'Bob' })
     expect(await docs.get('d1')).toEqual({ id: 'd1', name: 'Bob' })
   })
 
@@ -138,11 +138,11 @@ describe('#413 P2 — debug-plaintext blobs: single un-gzipped object', () => {
     expect(chunkKeys.length).toBe(1)
     const chunk = (await store.get('t', '_blob_chunks', chunkKeys[0]!))!
     expect(chunk._iv).toBe('')
-    expect(Buffer.from(chunk._data, 'base64').equals(Buffer.from(data))).toBe(true)
+    expect(Buffer.from(chunk._data!, 'base64').equals(Buffer.from(data))).toBe(true)
 
     // Blob index records compression none + a single chunk.
     const idxKeys = await store.list('t', '_blob_index')
-    const idx = JSON.parse((await store.get('t', '_blob_index', idxKeys[0]!))!._data) as { compression: string; chunkCount: number }
+    const idx = JSON.parse((await store.get('t', '_blob_index', idxKeys[0]!))!._data!) as { compression: string; chunkCount: number }
     expect(idx.compression).toBe('none')
     expect(idx.chunkCount).toBe(1)
 
@@ -160,7 +160,7 @@ describe('#413 P2 — debug-plaintext blobs: single un-gzipped object', () => {
     await docs.blob('d1').put('f', payload(2000))
 
     const idxKeys = await store.list('t', '_blob_index')
-    const idx = JSON.parse((await store.get('t', '_blob_index', idxKeys[0]!))!._data) as { compression: string }
+    const idx = JSON.parse((await store.get('t', '_blob_index', idxKeys[0]!))!._data!) as { compression: string }
     expect(idx.compression).toBe('gzip')
   })
 })

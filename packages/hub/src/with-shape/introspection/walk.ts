@@ -280,7 +280,7 @@ async function statsForCollection(
   for (const id of ids) {
     const env = await adapter.get(vault, collection, id)
     if (!env) continue
-    const size = env._data.length
+    const size = (env._data ?? '').length
     total += size
     if (size < min) min = size
     if (size > max) max = size

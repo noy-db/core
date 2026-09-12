@@ -138,7 +138,7 @@ describe('#1041 — an untrusted store cannot alter, relocate, re-tier or re-aut
     const d1 = (await store.get(VAULT, COLL, 'd1'))!
     const d2 = (await store.get(VAULT, COLL, 'd2'))!
     // Same collection, same author, same tier — only the body is swapped in.
-    await store.put(VAULT, COLL, 'd1', { ...d1, _iv: d2._iv, _data: d2._data })
+    await store.put(VAULT, COLL, 'd1', { ...d1, _iv: d2._iv!, _data: d2._data! })
     await expect(coldRead(store)).rejects.toThrow()
   })
 

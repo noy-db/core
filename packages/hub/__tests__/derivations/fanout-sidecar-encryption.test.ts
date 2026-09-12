@@ -102,7 +102,7 @@ describe('M-3 — fanout sidecar encryption', () => {
     expect(env._iv).not.toBe('')
     let leaked = false
     try {
-      const parsed = JSON.parse(env._data) as { _noydb_fanout?: number }
+      const parsed = JSON.parse(env._data!) as { _noydb_fanout?: number }
       leaked = parsed._noydb_fanout === 1
     } catch { /* ciphertext is not JSON — good */ }
     expect(leaked).toBe(false)

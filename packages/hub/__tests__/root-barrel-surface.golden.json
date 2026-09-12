@@ -633,6 +633,7 @@
     "EnrollAuthenticatorOptions",
     "EnrollAuthenticatorWrappingDEKsOptions",
     "EnrollAuthenticatorWrappingKEKOptions",
+    "Envelope",
     "ErasureEnforcement",
     "ExactMath",
     "ExactOperand",

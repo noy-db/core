@@ -180,7 +180,7 @@ async function decryptEntry(
   encrypted: boolean,
   getDEK: (collection: string) => Promise<EnclaveKey>,
 ): Promise<ConsentAuditEntry> {
-  if (!encrypted) return JSON.parse(envelope._data) as ConsentAuditEntry
+  if (!encrypted) return JSON.parse(envelope._data ?? '') as ConsentAuditEntry
   const json = await openEnvelopeJson({ collection: CONSENT_AUDIT_COLLECTION, id }, envelope, await getDEK(CONSENT_AUDIT_COLLECTION))
   return JSON.parse(json) as ConsentAuditEntry
 }

@@ -97,7 +97,7 @@ function readDelivery(
   pid: string,
 ): SealedCekDeliveryEnvelope {
   const env = store.raw(vault, '_sealed_cek', `${collection}/${id}/${pid}`)!
-  return JSON.parse(env._data) as SealedCekDeliveryEnvelope
+  return JSON.parse(env._data!) as SealedCekDeliveryEnvelope
 }
 
 async function setup() {

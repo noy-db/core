@@ -125,7 +125,7 @@ describe('a real roster write advances the epoch (#1097)', () => {
 
   async function epochOf(store: ReturnType<typeof memoryStore>, vault: string, userId: string) {
     const env = await store.get(vault, '_keyring', userId)
-    return env ? (JSON.parse(env._data) as { roster_epoch?: number }).roster_epoch : undefined
+    return env ? (JSON.parse(env._data!) as { roster_epoch?: number }).roster_epoch : undefined
   }
 
   it('a brand-new vault starts its roster line at 1', async () => {

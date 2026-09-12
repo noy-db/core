@@ -415,7 +415,7 @@ describe('wire — additive, no format bump', () => {
     await db.openVault('acme')
     await db.setCover('acme', { custom: { 'noydb.viewer': { theme: 'dark' } } })
     const envelope = await store.get('acme', '_meta', 'public-envelope')
-    const parsed = JSON.parse(envelope!._data) as unknown
+    const parsed = JSON.parse(envelope!._data!) as unknown
     expect(isCover(parsed)).toBe(true)
     expect((parsed as Cover).custom).toEqual({ 'noydb.viewer': { theme: 'dark' } })
   })

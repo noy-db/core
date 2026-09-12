@@ -85,7 +85,7 @@ function readDelivery(
   pid: string,
 ): SealedCekDeliveryEnvelope {
   const env = store.raw(vault, '_sealed_cek', `${collection}/${id}/${pid}`)!
-  return JSON.parse(env._data) as SealedCekDeliveryEnvelope
+  return JSON.parse(env._data!) as SealedCekDeliveryEnvelope
 }
 
 async function setup() {
@@ -297,8 +297,12 @@ describe('record-scoped CEK sealing — cross-process reconstruction', () => {
     // host cannot be fed a body with its tags stripped or altered.
     const raw = store.raw('v', 'docs', 'd-1')!
     const recordEnv = {
-      _iv: raw._iv,
-      _data: raw._data,
+      // #15: bound the same conditional way `_tier`/`_by` already are, so the
+      // literal's type is `_iv?: string` — the widened `Envelope` shape —
+      // rather than `string | undefined`, which `exactOptionalPropertyTypes`
+      // treats as a different type entirely.
+      ...(raw._iv !== undefined ? { _iv: raw._iv } : {}),
+      ...(raw._data !== undefined ? { _data: raw._data } : {}),
       // #1093: `_v` joined the bound tuple, so it must cross the boundary too.
       _v: raw._v,
       ...(raw._tier !== undefined ? { _tier: raw._tier } : {}),
@@ -307,7 +311,9 @@ describe('record-scoped CEK sealing — cross-process reconstruction', () => {
 
     async function hostFunction(
       env: SealedCekDeliveryEnvelope,
-      rec: { _iv: string; _data: string; _v: number },
+      // #15: the host holds a widened `Envelope`, so its local signature
+      // widens with it — `openSealedRecord` refuses a bodyless one itself.
+      rec: { _iv?: string; _data?: string; _v: number },
       sealer: MemoryRecipientSealer,
     ): Promise<string> {
       return openSealedRecord(env, rec, sealer, 'docs', 'd-1')

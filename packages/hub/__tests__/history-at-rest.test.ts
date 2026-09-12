@@ -128,7 +128,7 @@ describe('rewrapHistory — primitive', () => {
     await expect(unwrapCek(after!._cek!, fromDek)).rejects.toThrow()
     // ...but is under toDek, and the content decrypts unchanged.
     const cek = await unwrapCek(after!._cek!, toDek)
-    const plaintext = await decrypt(after!._iv, after!._data, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, after!))
+    const plaintext = await decrypt(after!._iv!, after!._data!, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, after!))
     expect(plaintext).toBe('v1-secret')
     // Version/timestamp/format metadata untouched by the rewrap.
     expect(after!._v).toBe(1)
@@ -146,8 +146,8 @@ describe('rewrapHistory — primitive', () => {
 
     const after = await store.get(VAULT, HISTORY_COLLECTION, id)
     expect(after!._cek).toBeUndefined()
-    await expect(decrypt(after!._iv, after!._data, fromDek)).rejects.toThrow()
-    expect(await decrypt(after!._iv, after!._data, toDek, recordAadFor({ collection: HISTORY_COLLECTION, id }, after!))).toBe('legacy-body')
+    await expect(decrypt(after!._iv!, after!._data!, fromDek)).rejects.toThrow()
+    expect(await decrypt(after!._iv!, after!._data!, toDek, recordAadFor({ collection: HISTORY_COLLECTION, id }, after!))).toBe('legacy-body')
   })
 
   it('rewraps every matching version for the record, leaves other records untouched', async () => {
@@ -166,7 +166,7 @@ describe('rewrapHistory — primitive', () => {
     for (const id of [idV1, idV2]) {
       const env = await store.get(VAULT, HISTORY_COLLECTION, id)
       const cek = await unwrapCek(env!._cek!, toDek)
-      expect(await decrypt(env!._iv, env!._data, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, env!))).toMatch(/^v[12]$/)
+      expect(await decrypt(env!._iv!, env!._data!, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, env!))).toMatch(/^v[12]$/)
     }
     // d2's entry is untouched — still wrapped under fromDek only.
     const untouched = await store.get(VAULT, HISTORY_COLLECTION, otherId)
@@ -208,7 +208,7 @@ describe('rewrapHistory — primitive', () => {
 
     const after = await store.get(VAULT, HISTORY_COLLECTION, id)
     const cek = await unwrapCek(after!._cek!, toDek)
-    expect(await decrypt(after!._iv, after!._data, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, after!))).toBe('pre-fix-secret')
+    expect(await decrypt(after!._iv!, after!._data!, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, after!))).toBe('pre-fix-secret')
     await expect(unwrapCek(after!._cek!, tier0Dek)).rejects.toThrow()
     await expect(unwrapCek(after!._cek!, tierNDek)).rejects.toThrow()
   })
@@ -256,7 +256,7 @@ describe('rewrapHistory — primitive', () => {
 
     expect(afterSecond).toEqual(afterFirst)
     const cek = await unwrapCek(afterSecond!._cek!, toDek)
-    expect(await decrypt(afterSecond!._iv, afterSecond!._data, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, afterSecond!))).toBe('v1-secret')
+    expect(await decrypt(afterSecond!._iv!, afterSecond!._data!, cek, recordAadFor({ collection: HISTORY_COLLECTION, id }, afterSecond!))).toBe('v1-secret')
   })
 
   it('skips entries already wrapped under toDek — a crash-recovery retry does not re-touch already-migrated entries (#712 whole-branch fix-3)', async () => {
@@ -280,7 +280,7 @@ describe('rewrapHistory — primitive', () => {
     // v2 was migrated by this call, same as the ordinary rewrap path.
     const afterV2 = await store.get(VAULT, HISTORY_COLLECTION, idV2)
     const cek2 = await unwrapCek(afterV2!._cek!, toDek)
-    expect(await decrypt(afterV2!._iv, afterV2!._data, cek2, recordAadFor({ collection: HISTORY_COLLECTION, id: idV2 }, afterV2!))).toBe('v2-secret')
+    expect(await decrypt(afterV2!._iv!, afterV2!._data!, cek2, recordAadFor({ collection: HISTORY_COLLECTION, id: idV2 }, afterV2!))).toBe('v2-secret')
     await expect(unwrapCek(afterV2!._cek!, fromDek)).rejects.toThrow()
   })
 })
@@ -367,7 +367,7 @@ describe('#712 at-rest: history snapshots follow the record’s tier', () => {
     await expect(unwrapCek(after!._cek!, tier0Dek)).rejects.toThrow()
     // …and DOES under tier-1 (content preserved, moved not destroyed).
     const cek = await unwrapCek(after!._cek!, tier1Dek)
-    expect(await decrypt(after!._iv, after!._data, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, after!))).toContain('v1-secret')
+    expect(await decrypt(after!._iv!, after!._data!, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, after!))).toContain('v1-secret')
   })
 
   it('a cold tier-0-only session cannot decrypt an elevated record’s history at rest', async () => {
@@ -401,7 +401,7 @@ describe('#712 at-rest: history snapshots follow the record’s tier', () => {
     const env = await store.get('v1', '_history', 'docs:d1:0000000001')
     expect(env).not.toBeNull()
     const cek = await unwrapCek(env!._cek!, tier0Dek) // readable at tier-0 again
-    expect(await decrypt(env!._iv, env!._data, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, env!))).toContain('v1')
+    expect(await decrypt(env!._iv!, env!._data!, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, env!))).toContain('v1')
   })
 
   it('putAtTier(>0) over a record with history rewraps that history too', async () => {
@@ -465,7 +465,7 @@ describe('#712 at-rest: history snapshots follow the record’s tier', () => {
     const histAfter = await store.get('v1', '_history', 'docs:d1:0000000001')
     expect(histAfter).not.toBeNull()
     const cek = await unwrapCek(histAfter!._cek!, tier0Dek)
-    expect(await decrypt(histAfter!._iv, histAfter!._data, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, histAfter!))).toContain('v1')
+    expect(await decrypt(histAfter!._iv!, histAfter!._data!, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, histAfter!))).toContain('v1')
   })
 
   it('DEK-tracking holds across multi-step moves: elevate 0→1, elevate 1→2, demote 2→0', async () => {
@@ -496,6 +496,6 @@ describe('#712 at-rest: history snapshots follow the record’s tier', () => {
     const env = await store.get('v1', '_history', 'docs:d1:0000000001')
     expect(env).not.toBeNull()
     const cek = await unwrapCek(env!._cek!, tier0Dek)
-    expect(await decrypt(env!._iv, env!._data, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, env!))).toContain('v1')
+    expect(await decrypt(env!._iv!, env!._data!, cek, recordAadFor({ collection: '_history', id: 'docs:d1:0000000001' }, env!))).toContain('v1')
   })
 })
