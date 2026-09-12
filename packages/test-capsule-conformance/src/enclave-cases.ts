@@ -47,6 +47,12 @@ const REF = { collection: 'conformance', id: 'r1', version: 1 } as const
  *
  * `K` is the opaque key type (`EnclaveKey` in noy-db's reference enclave).
  */
+/** A record's address, as every body door takes it. Structural: a fork's own type is accepted. */
+export interface RecordRefLike {
+  readonly collection: string
+  readonly id: string
+}
+
 export interface EnclaveModule<K = unknown> {
   // ─── crypto ops + key lifecycle (unconditional core) ──────────────
   encrypt(plaintext: string, dek: K): Promise<{ iv: string; data: string }>
@@ -84,7 +90,13 @@ export interface EnclaveModule<K = unknown> {
 
   // ─── tombstone (unconditional core) ────────────────────────────────
   isTombstone(env: EncryptedEnvelope, encrypted: boolean): boolean
-  buildTombstone(version: number, actor: string): EncryptedEnvelope
+  // ⛔ `ref` FIRST. This was declared `(version, actor)` until #16, so the case
+  // below called `buildTombstone(3, 'user-1')` — spreading `3` as the ref
+  // (`{...3}` is `{}`), setting `version: 'user-1'`, and leaving `actor`
+  // undefined. The envelope it produced had no collection, no id and a STRING
+  // version, and `isTombstone` returned true anyway because it only inspects
+  // `_data`/`_cek`/`_del`. The assertion was green and proved nothing.
+  buildTombstone(ref: RecordRefLike, version: number, actor: string): EncryptedEnvelope
 
   // ─── optional group: sealing ───────────────────────────────────────
   deriveSealedFieldKey(dek: K, collectionName: string, field: string): Promise<K>
@@ -275,9 +287,18 @@ export function runEnclaveConformance<K>(enclave: EnclaveModule<K>, opts: Enclav
     })
 
     describe('tombstone semantics', () => {
-      it('buildTombstone -> isTombstone is true on an encrypted collection', () => {
-        const tombstone = enclave.buildTombstone(3, 'user-1')
+      it('buildTombstone -> isTombstone is true, and the tombstone carries its address', () => {
+        const tombstone = enclave.buildTombstone({ collection: REF.collection, id: REF.id }, 3, 'user-1')
         expect(enclave.isTombstone(tombstone, true)).toBe(true)
+
+        // ⛔ #16 — `isTombstone` inspects only `_data`/`_cek`/`_del`, so it
+        // returns true for ANY empty-bodied envelope, including a malformed
+        // one. Until the arity was fixed this case called
+        // `buildTombstone(3, 'user-1')`, produced an envelope with no
+        // collection, no id and a STRING version, and passed. Asserting the
+        // HEADER is what makes the tombstone assertion mean something.
+        expect(tombstone._v).toBe(3)
+        expect(tombstone._by).toBe('user-1')
       })
 
       it('a live envelope -> isTombstone is false', async () => {
@@ -288,7 +309,7 @@ export function runEnclaveConformance<K>(enclave: EnclaveModule<K>, opts: Enclav
       })
 
       it('plaintext-mode collections: isTombstone is always false', () => {
-        const tombstone = enclave.buildTombstone(1, 'user-1')
+        const tombstone = enclave.buildTombstone({ collection: REF.collection, id: REF.id }, 1, 'user-1')
         expect(enclave.isTombstone(tombstone, false)).toBe(false)
       })
     })
