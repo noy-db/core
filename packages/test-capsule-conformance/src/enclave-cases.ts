@@ -130,10 +130,16 @@ export interface EnclaveConformanceOptions {
 /** The stable code every `EnclaveNotSupportedError` (or fork subclass) carries. */
 const NOT_SUPPORTED_CODE = new EnclaveNotSupportedError('sealing').code
 
-/** One of the optional groups the enclave contract lets a fork refuse. */
+/** One of the optional groups the capsule contract lets an implementation refuse. */
 export type ConformanceGroup = 'sealing' | 'deterministic' | 'per-record-keys' | 'classify'
 
-/** True iff `err` is an `EnclaveNotSupportedError` (or fork subclass) refusal. */
+/**
+ * True iff `err` is a group-not-supported refusal.
+ *
+ * ⚠️ Matches on the CODE, not `instanceof`. A fork's capsule may throw its own
+ * error subclass, and those are exactly the implementations this suite exists
+ * to validate — an `instanceof` check would reject them for being forks.
+ */
 function isNotSupportedRefusal(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === NOT_SUPPORTED_CODE
 }

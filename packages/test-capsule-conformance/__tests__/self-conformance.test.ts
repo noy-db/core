@@ -7,8 +7,8 @@
  * step — a primitive whose behaviour changes breaks here first, in the repo
  * that owns it, rather than in a downstream capsule author's CI.
  */
-import { runCapsuleConformance, type CapsuleUnderTest } from '@noy-db/test-capsule-conformance'
-import * as capsule from '../src/capsule/index.js'
+import { runCapsuleConformance, type CapsuleUnderTest } from '../src/index.js'
+import * as capsule from '../../hub/src/capsule/index.js'
 
 runCapsuleConformance(capsule as unknown as CapsuleUnderTest, {
   // The CAPSULE's name, not hub's. The prefix rule is a claim about the

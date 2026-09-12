@@ -12,7 +12,7 @@
  * This IS the reference implementation, so every optional group is
  * supported and the suite must be fully green.
  */
-import * as enclave from '../../../packages/hub/src/kernel/enclave/index.js'
+import * as enclave from '../../hub/src/capsule/index.js'
 import { runEnclaveConformance } from '../src/index.js'
 
 runEnclaveConformance(enclave, {

@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { EnclaveNotSupportedError } from '@noy-db/hub'
-import * as real from '../../../packages/hub/src/kernel/enclave/index.js'
+import * as real from '../../hub/src/capsule/index.js'
 import { runEnclaveConformance, assertGroupRefuses, type EnclaveModule } from '../src/index.js'
 
 type Group = 'sealing' | 'deterministic' | 'per-record-keys' | 'classify'

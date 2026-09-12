@@ -284,7 +284,6 @@
   "devDependencies": {
     "@noy-db/attestation": "workspace:*",
     "@noy-db/shamir": "workspace:*",
-    "@noy-db/test-capsule-conformance": "workspace:*",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
     "happy-dom": "^18.0.0",
