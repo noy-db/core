@@ -106,7 +106,7 @@ describe('reKeyLedger', () => {
     const carried: LedgerEntry[] = []
     for (const id of ids) {
       const env = result.entries[id]!
-      carried.push(JSON.parse(await decrypt(env._iv, env._data, ledgerDek, recordAadFor({ collection: '_ledger', id }, env))) as LedgerEntry)
+      carried.push(JSON.parse(await decrypt(env._iv!, env._data!, ledgerDek, recordAadFor({ collection: '_ledger', id }, env))) as LedgerEntry)
     }
     expect(carried.some((e) => e.id === 'c-2')).toBe(false) // ann's client, outside closure
     expect(carried[0]!.index).toBe(0)
@@ -136,7 +136,7 @@ describe('reKeyLedger', () => {
     const carried: LedgerEntry[] = []
     for (const id of Object.keys(entries).sort()) {
       const env = entries[id]!
-      carried.push(JSON.parse(await decrypt(env._iv, env._data, ledgerDek, recordAadFor({ collection: '_ledger', id }, env))) as LedgerEntry)
+      carried.push(JSON.parse(await decrypt(env._iv!, env._data!, ledgerDek, recordAadFor({ collection: '_ledger', id }, env))) as LedgerEntry)
     }
     const puts = carried.filter((e) => e.collection === 'clients' && e.id === 'c-1' && e.op === 'put')
     expect(puts.length).toBe(2) // both versions carried (audit fidelity)
@@ -157,12 +157,12 @@ describe('extractPartition carryLedger — non-destructive on the source', () =>
     const vault = await db.openVault('demo-co')
     await vault.collection<Client>('clients').put('c-1', { id: 'c-1', name: 'Hotel', operatorUserId: 'belle' })
 
-    const before = JSON.parse((await sourceStore.get('demo-co', '_keyring', 'alice'))!._data) as { deks: Record<string, unknown> }
+    const before = JSON.parse((await sourceStore.get('demo-co', '_keyring', 'alice'))!._data!) as { deks: Record<string, unknown> }
     expect(before.deks).not.toHaveProperty('_ledger')
 
     await extractPartition(vault, { seeds: { clients: () => true }, carryLedger: true })
 
-    const after = JSON.parse((await sourceStore.get('demo-co', '_keyring', 'alice'))!._data) as { deks: Record<string, unknown> }
+    const after = JSON.parse((await sourceStore.get('demo-co', '_keyring', 'alice'))!._data!) as { deks: Record<string, unknown> }
     expect(after.deks).not.toHaveProperty('_ledger')
   })
 })

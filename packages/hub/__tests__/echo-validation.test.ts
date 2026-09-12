@@ -170,7 +170,7 @@ describe('secretMode: echo is wired through createNoydb', () => {
     const store = inlineMemory()
     const db = await createNoydb({ store, user: 'alice', secretMode: 'echo', secret: GOOD })
     await expect(db.openVault('acme')).resolves.toBeDefined()
-    const file = JSON.parse((await store.get('acme', '_keyring', 'alice'))!._data)
+    const file = JSON.parse((await store.get('acme', '_keyring', 'alice'))!._data!)
     expect(file.echo).toBeDefined()
     db.close()
   }, 600_000)

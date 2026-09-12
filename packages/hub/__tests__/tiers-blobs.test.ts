@@ -1165,9 +1165,9 @@ describe('#724 re-review: genuine slot-map read failure surfaces as forget resid
     // (e.g. record-scoped-cek-sealing.test.ts).
     const slotsEnv = await store.get('v1', '_blob_slots_docs', 'd1')
     expect(slotsEnv).not.toBeNull()
-    const goodChar = slotsEnv!._data[0]
+    const goodChar = slotsEnv!._data![0]
     const badChar = goodChar === 'A' ? 'B' : 'A'
-    const corrupted = { ...slotsEnv!, _data: badChar + slotsEnv!._data.slice(1) }
+    const corrupted = { ...slotsEnv!, _data: badChar + slotsEnv!._data!.slice(1) }
     await store.put('v1', '_blob_slots_docs', 'd1', corrupted)
 
     const result = await vault.forget('d1')

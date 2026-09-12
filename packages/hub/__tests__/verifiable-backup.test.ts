@@ -368,7 +368,7 @@ describe('verifiable backups.', () => {
     if (!env) throw new Error('expected envelope')
     const tampered: EncryptedEnvelope = {
       ...env,
-      _data: env._data.split('').reverse().join(''),
+      _data: env._data!.split('').reverse().join(''),
     }
     await adapter.put('demo-co', 'invoices', 'inv-1', tampered)
 

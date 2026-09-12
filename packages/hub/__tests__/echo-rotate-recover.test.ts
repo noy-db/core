@@ -90,7 +90,7 @@ const T = 600_000
 
 async function readKeyringFile(store: NoydbStore, vault: string, userId: string): Promise<KeyringFile> {
   const env = await store.get(vault, '_keyring', userId)
-  return JSON.parse(env!._data) as KeyringFile
+  return JSON.parse(env!._data!) as KeyringFile
 }
 
 /**
@@ -105,7 +105,7 @@ async function readKeyringFile(store: NoydbStore, vault: string, userId: string)
  */
 async function graftEchoBlock(store: NoydbStore, vault: string, userId: string): Promise<void> {
   const env = await store.get(vault, '_keyring', userId)
-  const file = JSON.parse(env!._data) as KeyringFile
+  const file = JSON.parse(env!._data!) as KeyringFile
   const withEcho = { ...file, echo: await buildEchoBlock(PARTS, { kind: 'none' }) }
   await store.put(vault, '_keyring', userId, { ...env!, _data: JSON.stringify(withEcho) })
 }
@@ -231,7 +231,7 @@ describe('rotateSecret across secret modes (#940)', () => {
       meta: { salt: 'OLDSALT', minLength: 12 },
     }
     const env = await store.get('acme', '_keyring', 'alice')
-    const file = JSON.parse(env!._data) as KeyringFile
+    const file = JSON.parse(env!._data!) as KeyringFile
     await store.put('acme', '_keyring', 'alice', {
       ...env!,
       _data: JSON.stringify({ ...file, authenticators: [slot] }),

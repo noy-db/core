@@ -34,7 +34,7 @@ export async function readDirectoryConfig(
   const envelope = await store.get(vault, META_COLLECTION, DIRECTORY_RECORD_ID)
   if (!envelope) return undefined
   try {
-    const parsed = JSON.parse(envelope._data) as unknown
+    const parsed = JSON.parse(envelope._data ?? '') as unknown
     if (!isDirectoryConfig(parsed)) return undefined
     return parsed
   } catch {

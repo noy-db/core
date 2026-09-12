@@ -83,6 +83,7 @@ export type {
   Role,
   Permission,
   Permissions,
+  Envelope,
   EncryptedEnvelope,
   KeyringAuthenticator,
   KeyringAuthenticatorWrappingKEK,

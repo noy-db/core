@@ -68,7 +68,7 @@ async function setupVaultWithSlots(slots: KeyringAuthenticator[]): Promise<Noydb
   // faster than running the full enrollAuthenticator path for each.
   if (slots.length > 0) {
     const env = await store.get('acme', '_keyring', 'alice')
-    const file = JSON.parse(env!._data) as Record<string, unknown>
+    const file = JSON.parse(env!._data!) as Record<string, unknown>
     await store.put('acme', '_keyring', 'alice', {
       _noydb: 1, _v: 1, _ts: new Date().toISOString(), _iv: '',
       _data: JSON.stringify({ ...file, authenticators: slots }),

@@ -176,7 +176,7 @@ describe('updateKeyringIdentity (team layer, #54)', () => {
     // Inject a tier-2 slot directly into bob's keyring file (no real
     // ceremony needed — the test only asserts persistence semantics).
     const env = await store.get('acme', '_keyring', 'bob')
-    const file = JSON.parse(env!._data) as KeyringFile
+    const file = JSON.parse(env!._data!) as KeyringFile
     const slot: KeyringAuthenticator = {
       id: 'webauthn-yubikey',
       method: 'webauthn',

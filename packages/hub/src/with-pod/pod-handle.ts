@@ -22,7 +22,7 @@ export async function buildPodHandle(adapter: NoydbStore, name: string): Promise
   const existing = await adapter.get(name, '_meta', 'handle')
   if (existing) {
     try {
-      const parsed = JSON.parse(existing._data) as unknown
+      const parsed = JSON.parse(existing._data ?? '') as unknown
       if (parsed !== null && typeof parsed === 'object' && 'handle' in parsed) {
         const handle = (parsed as { handle: unknown }).handle
         if (typeof handle === 'string' && /^[0-9A-HJKMNP-TV-Z]{26}$/.test(handle)) {

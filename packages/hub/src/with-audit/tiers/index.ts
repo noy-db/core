@@ -37,6 +37,7 @@ import {
   type TierMode,
   type CrossTierAccessEvent,
 } from '../../kernel/types.js'
+import { sealedBodyArgs } from '../../capsule/index.js'
 
 /** Everything the moving tier methods touched on `this.*`, as a flat context. */
 export interface TiersContext<T> {
@@ -682,9 +683,9 @@ async function decryptElevated<T>(ctx: TiersContext<T>, id: string, envelope: En
   if (envelope._cek !== undefined) {
     cek = await unwrapCek(envelope._cek, dek)
     ctx.cekCache?.set(id, cek, 1)
-    plaintext = await decrypt(envelope._iv, envelope._data, cek, aad)
+    plaintext = await decrypt(...sealedBodyArgs(envelope, 'getAtTier'), cek, aad)
   } else {
-    plaintext = await decrypt(envelope._iv, envelope._data, dek, aad)
+    plaintext = await decrypt(...sealedBodyArgs(envelope, 'getAtTier'), dek, aad)
   }
   let record = JSON.parse(plaintext) as T
   if (envelope._sealed !== undefined) {

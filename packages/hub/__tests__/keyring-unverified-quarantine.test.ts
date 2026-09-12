@@ -48,7 +48,7 @@ async function ownerWith(store: NoydbStore) {
 
 async function fileOf(store: NoydbStore, userId: string): Promise<KeyringFile> {
   const env = (await store.get(VAULT, '_keyring', userId))!
-  return JSON.parse(env._data) as KeyringFile
+  return JSON.parse(env._data!) as KeyringFile
 }
 
 /** The store rewrites the one plaintext word. No key, no prior file. */
@@ -56,7 +56,7 @@ async function forgeRole(store: NoydbStore, userId: string, role: string): Promi
   const env = (await store.get(VAULT, '_keyring', userId))!
   await store.put(VAULT, '_keyring', userId, {
     ...env,
-    _data: env._data.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
+    _data: env._data!.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
   })
 }
 

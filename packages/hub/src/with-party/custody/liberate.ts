@@ -117,7 +117,7 @@ export async function liberateVault(
   if (!env) {
     throw new PermissionDeniedError(`new owner keyring for "${opts.newOwnerId}" did not persist`)
   }
-  const keyringFile = JSON.parse(env._data) as KeyringFile
+  const keyringFile = JSON.parse(env._data ?? '') as KeyringFile
   // #1096 — this is a read-BACK of the file `createOwnerKeyring` just wrote, and
   // it is about to be edited and restamped, so the store gets a window to alter
   // it in between. Verified against the NEW owner's own roster key, not the

@@ -290,9 +290,9 @@ describe('sync engine', () => {
       const localEnv = await local.get(COMP, 'invoices', 'inv-001')
       expect(localEnv).not.toBeNull()
       // _iv must be non-empty (a real 12-byte IV, base64-encoded)
-      expect(localEnv!._iv.length).toBeGreaterThan(0)
+      expect(localEnv!._iv!.length).toBeGreaterThan(0)
       // _data must not be parseable as plain JSON (it's ciphertext)
-      expect(() => JSON.parse(localEnv!._data)).toThrow()
+      expect(() => JSON.parse(localEnv!._data!)).toThrow()
 
       await db.push(COMP)
 

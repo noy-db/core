@@ -120,7 +120,7 @@ async function readableWith(
           const count = chunkCounts.get(eTag)
           if (count !== undefined) {
             try {
-              await decryptBytesWithAAD(env._iv, env._data, key, chunkAad(eTag, index, count))
+              await decryptBytesWithAAD(env._iv!, env._data!, key, chunkAad(eTag, index, count))
               opened = true
             } catch { /* not this key */ }
           }
@@ -469,7 +469,7 @@ describe('#1122 — a chunk that opens under neither key', () => {
     // under the retiring DEK, which is what made the old skip look safe.
     const id = `${eTag}_0`
     const chunk = (await store.get(VAULT, BLOB_CHUNKS_COLLECTION, id))!
-    const flipped = base64ToBuffer(chunk._data)
+    const flipped = base64ToBuffer(chunk._data!)
     flipped.set([(flipped[0] ?? 0) ^ 0xff], 0)
     await store.put(VAULT, BLOB_CHUNKS_COLLECTION, id, {
       ...chunk, _data: bufferToBase64(flipped),
@@ -508,7 +508,7 @@ describe('#1122 — a chunk that opens under neither key', () => {
     // the new key and its eTag-bound AAD still holds — not that it equals the
     // caller's bytes, which it never did at this layer.
     const plain = await decryptBytesWithAAD(
-      chunk._iv, chunk._data, newDek, chunkAad(eTag, 0, 1),
+      chunk._iv!, chunk._data!, newDek, chunkAad(eTag, 0, 1),
     )
     expect(plain.byteLength).toBeGreaterThan(0)
     void db, bytes

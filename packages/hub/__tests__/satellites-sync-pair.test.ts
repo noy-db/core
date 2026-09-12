@@ -157,7 +157,7 @@ describe('satellite sync pair-expansion + resolver mirroring (#591 Task 11)', ()
 
     const result = await db.push(COMP, { collections: ['msgs'] })
     const localEnv = await local.get(COMP, 'msgs_text', 'm4')
-    return { result, winner: (JSON.parse(localEnv!._data) as Msg).subject }
+    return { result, winner: (JSON.parse(localEnv!._data!) as Msg).subject }
   }
 
   it('rule 5b, NORMAL order: base declared with conflictPolicy first, satellite second — resolver still fires for a satellite conflict', async () => {

@@ -23,6 +23,7 @@ import type {
   SealedCekDeliveryEnvelope,
   SealedCekBinding,
 } from './types.js'
+import { sealedBodyArgs } from '../../capsule/index.js'
 
 export type { SealedCekDeliveryEnvelope, SealedCekBinding } from './types.js'
 export { SealedRecordExpiredError, SealedRecordMismatchError } from '../../kernel/errors.js'
@@ -70,8 +71,11 @@ export { SealedRecordNotEnabledError } from '../../kernel/errors.js'
 export async function openSealedRecord(
   sealedCekEnvelope: SealedCekDeliveryEnvelope,
   recordEnvelope: {
-    readonly _iv: string
-    readonly _data: string
+    // #15: optional, matching the widened `Envelope` callers now hold. A
+    // sealed record with no body is not openable, so this refuses below
+    // rather than declaring a shape the store contract can no longer supply.
+    readonly _iv?: string
+    readonly _data?: string
     /** Bound into the AAD since #1093 — a rewound body no longer opens. */
     readonly _v: number
     readonly _tier?: number | undefined
@@ -117,8 +121,7 @@ export async function openSealedRecord(
   // sealed CEK alongside record B's body and open it (#1041): the AAD would
   // describe A while the ciphertext was sealed for B.
   return decrypt(
-    recordEnvelope._iv,
-    recordEnvelope._data,
+    ...sealedBodyArgs(recordEnvelope, 'openSealedRecord'),
     cek,
     recordAadFor({ collection: expectedCollection, id: expectedId }, recordEnvelope),
   )

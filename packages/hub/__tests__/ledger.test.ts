@@ -324,7 +324,7 @@ describe('LedgerStore via Vault.ledger().', () => {
     if (!original) throw new Error('expected ledger entry to exist')
     const tampered: EncryptedEnvelope = {
       ...original,
-      _data: original._data.split('').reverse().join(''),
+      _data: original._data!.split('').reverse().join(''),
     }
     await adapter.put('demo-co', '_ledger', key, tampered)
 

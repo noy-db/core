@@ -89,7 +89,7 @@ describe('per-record CEK — slice 1: round-trip + flag + cache', () => {
     const env = store.raw('v', 'cek', 'd-1')!
     expect(env._cek).toBeDefined()
     expect(typeof env._cek).toBe('string')
-    expect(env._data.length).toBeGreaterThan(0)
+    expect(env._data!.length).toBeGreaterThan(0)
   })
 
   it('a CEK record body differs from a legacy record body for the same plaintext', async () => {

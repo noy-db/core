@@ -32,7 +32,7 @@ export async function loadCover(
   const envelope = await store.get(vault, '_meta', COVER_RECORD_ID)
   if (!envelope) return undefined
   try {
-    const parsed = JSON.parse(envelope._data) as unknown
+    const parsed = JSON.parse(envelope._data ?? '') as unknown
     if (!isCover(parsed)) return undefined
     return parsed
   } catch {

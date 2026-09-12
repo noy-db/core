@@ -87,7 +87,7 @@ describe('#199 P2 — unilateralWithdrawal', () => {
     // the frozen snapshot record exists and holds the original envelopes
     const snapEnv = await store.get('acme', '_frozen_snapshots', res.snapshot!.withdrawalId)
     expect(snapEnv).not.toBeNull()
-    const snap = JSON.parse(snapEnv!._data) as { collections: { invoices?: Record<string, unknown> } }
+    const snap = JSON.parse(snapEnv!._data!) as { collections: { invoices?: Record<string, unknown> } }
     expect(Object.keys(snap.collections.invoices ?? {})).toEqual(expect.arrayContaining(['i1', 'i2']))
     // live records gone
     expect(await cv.collection<{ id: string }>('invoices').get('i1')).toBeNull()

@@ -171,7 +171,7 @@ describe('cross-vault queries.', () => {
       // Surgically corrupt one wrapped DEK in T2's _keyring/alice envelope
       // so loadKeyring throws KeyringCorruptError (mixed-success path).
       const env = await adapter.get('T2', '_keyring', 'alice')
-      const file = JSON.parse(env!._data) as { deks: Record<string, string> }
+      const file = JSON.parse(env!._data!) as { deks: Record<string, string> }
       const collNames = Object.keys(file.deks).filter((n) => !n.startsWith('_'))
       const victim = collNames[0]!
       const original = file.deks[victim]!

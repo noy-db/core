@@ -230,7 +230,7 @@ describe('delta history.', () => {
     let totalDeltaBytes = 0
     for (const key of deltaKeys) {
       const env = await adapter.get('demo-co', '_ledger_deltas', key)
-      if (env) totalDeltaBytes += env._data.length + env._iv.length
+      if (env) totalDeltaBytes += env._data!.length + env._iv!.length
     }
 
     // Sanity: at least some deltas got written (100 edits after the genesis put).

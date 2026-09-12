@@ -124,7 +124,7 @@ describe('STRICT_POLICY revoke-user gate (#79)', () => {
     const env = (await store.get('acme', '_keyring', 'bob'))!
     await store.put('acme', '_keyring', 'bob', {
       ...env,
-      _data: env._data.replace(/"role":"[a-z]+"/, '"role":"admin"'),
+      _data: env._data!.replace(/"role":"[a-z]+"/, '"role":"admin"'),
     })
 
     await expect(

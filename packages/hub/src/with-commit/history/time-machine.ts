@@ -162,7 +162,7 @@ export class CollectionInstant<T = unknown> {
     // the address down with the bytes precisely so this read can name it.
     const plaintext = this.engine.encrypted
       ? await openEnvelopeJson(found.ref, found.envelope, await this.engine.getDEK(this.name))
-      : found.envelope._data
+      : (found.envelope._data ?? '')
     return JSON.parse(plaintext) as T
   }
 

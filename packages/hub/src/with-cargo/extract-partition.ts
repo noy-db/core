@@ -48,6 +48,7 @@ import {
   buildExtractedPartitionWrapper,
   type TransferSealPayload,
 } from '../with-pod/pod.js'
+import { sealedBodyArgs } from '../capsule/index.js'
 
 /** Re-keyed collections snapshot + the fresh DEKs used. */
 export interface ReKeyResult {
@@ -122,7 +123,7 @@ export async function reKeyClosure(
         // So the same AAD opens the source and seals the destination (#1041).
         const aad = recordAadFor({ collection: collectionName, id }, env)
         const cek = await unwrapCek(env._cek, srcDek)
-        const plaintext = await decrypt(env._iv, env._data, cek, aad)
+        const plaintext = await decrypt(...sealedBodyArgs(env, 'extractPartition'), cek, aad)
         const { iv, data } = await encrypt(project(plaintext), cek, aad)
         const wrapped = await wrapCek(cek, destDek)
         out[id] = { ...env, _iv: iv, _data: data, _cek: wrapped }
@@ -468,7 +469,7 @@ export async function reKeyBlobs(
         place(BLOB_CHUNKS_COLLECTION, chunkId, chunkEnv)
       } else {
         const aad = chunkAAD(eTag, i, blob.chunkCount)
-        const plain = await decryptBytesWithAAD(chunkEnv._iv, chunkEnv._data, srcBlobDek, aad)
+        const plain = await decryptBytesWithAAD(...sealedBodyArgs(chunkEnv, 'extractPartition'), srcBlobDek, aad)
         const { iv, data } = await encryptBytesWithAAD(plain, contentCek, aad)
         place(BLOB_CHUNKS_COLLECTION, chunkId, { ...chunkEnv, _iv: iv, _data: data })
       }

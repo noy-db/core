@@ -742,9 +742,9 @@ describe('#737 hasDerivedOutputs is source-grained', () => {
     // only reachable through the gated `existing`-decode.
     const stored = await store.get('demo', 'docs', 'd1')
     expect(stored).not.toBeNull()
-    const goodChar = stored!._data[0]
+    const goodChar = stored!._data![0]
     const badChar = goodChar === 'A' ? 'B' : 'A'
-    await store.put('demo', 'docs', 'd1', { ...stored!, _data: badChar + stored!._data.slice(1) })
+    await store.put('demo', 'docs', 'd1', { ...stored!, _data: badChar + stored!._data!.slice(1) })
 
     // GREEN: source-grained — `docs` has no derivation of its own, so the
     // gated decode is skipped and the corrupted body is never read.

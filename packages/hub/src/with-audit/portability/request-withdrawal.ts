@@ -81,7 +81,7 @@ async function readRequest(vault: Vault, requestId: string): Promise<{ req: With
   const { name: vaultName, adapter } = vault._introspectState()
   const env = await adapter.get(vaultName, WITHDRAWAL_REQUESTS_COLLECTION, requestId)
   if (!env) throw new WithdrawalRequestError(`withdrawal request "${requestId}" not found`)
-  return { req: JSON.parse(env._data) as WithdrawalRequest, version: env._v }
+  return { req: JSON.parse(env._data ?? '') as WithdrawalRequest, version: env._v }
 }
 
 /**
@@ -128,7 +128,7 @@ export async function listWithdrawalRequests(
   for (const id of ids) {
     const env = await adapter.get(vaultName, WITHDRAWAL_REQUESTS_COLLECTION, id)
     if (!env) continue
-    const req = JSON.parse(env._data) as WithdrawalRequest
+    const req = JSON.parse(env._data ?? '') as WithdrawalRequest
     if (!opts.status || req.status === opts.status) out.push(req)
   }
   return out

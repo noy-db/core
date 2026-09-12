@@ -199,7 +199,7 @@ describe('recoverUser (#34 atomicity, #33 owner→owner)', () => {
     // patch the persisted keyring file directly (faster than running
     // the full enrollAuthenticator path).
     const env = await store.get('acme', '_keyring', 'bob')
-    const file = JSON.parse(env!._data) as KeyringFile
+    const file = JSON.parse(env!._data!) as KeyringFile
     const slot: KeyringAuthenticator = {
       id: 'webauthn-old',
       method: 'webauthn',

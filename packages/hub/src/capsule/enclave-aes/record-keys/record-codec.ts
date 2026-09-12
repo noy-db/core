@@ -31,6 +31,7 @@ import { validateSchemaOutput, type StandardSchemaV1 } from '../../../kernel/sch
 import type { Lru } from '../../../kernel/cache/index.js'
 import type { ViaCryptoCtx, SealedSlotRef } from '../../../kernel/via/index.js'
 import type { ViaPipeline } from '../../../kernel/via/pipeline.js'
+import { sealedBodyArgs } from './envelope-body.js'
 
 /**
  * One classified per-slot verdict from {@link RecordCodec.classifySealedShred}.
@@ -612,13 +613,17 @@ export class RecordCodec<T> {
       // unencrypted collection, where the encryption-gated `isTombstone()`
       // check above doesn't fire. Treat it the same as an encrypted
       // tombstone: null, not a `JSON.parse('')` crash.
-      return envelope._data === '' ? null : envelope._data
+      // #15: an ABSENT `_data` lands in the same branch as an empty one —
+      // both say "no body", and the tombstone reading above is what that
+      // means on an unencrypted collection.
+      const plain = envelope._data ?? ''
+      return plain === '' ? null : plain
     }
     const aad = recordAadFor(ref, envelope)
     const cek = await this.resolveEnvelopeCek(envelope, id)
     const json = cek !== undefined
-      ? await decrypt(envelope._iv, envelope._data, cek, aad)
-      : await decrypt(envelope._iv, envelope._data, await this.ctx.getDEK(), aad)
+      ? await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), cek, aad)
+      : await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), await this.ctx.getDEK(), aad)
     this.observeDecrypt(ref)
     return json
   }
@@ -852,9 +857,9 @@ export class RecordCodec<T> {
     const aad = recordAadFor(ref, envelope)
     if (envelope._cek !== undefined) {
       cek = await unwrapCek(envelope._cek, dek)
-      plaintext = await decrypt(envelope._iv, envelope._data, cek, aad)
+      plaintext = await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), cek, aad)
     } else {
-      plaintext = await decrypt(envelope._iv, envelope._data, dek, aad)
+      plaintext = await decrypt(...sealedBodyArgs(envelope, 'RecordCodec'), dek, aad)
     }
     let record = JSON.parse(plaintext) as T
     if (envelope._sealed !== undefined && this.ctx.storeCiphertext) {

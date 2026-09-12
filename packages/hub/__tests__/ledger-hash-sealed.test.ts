@@ -182,7 +182,7 @@ describe('#306 Slice C — envelopePayloadHash binds _sealed', () => {
 
     const raw = store._data.get('firm')!.get('people')!.get('p1')!
     expect(raw._sealed).toBeUndefined()
-    const tampered = { ...raw, _data: raw._data.split('').reverse().join('') }
+    const tampered = { ...raw, _data: raw._data!.split('').reverse().join('') }
     store._data.get('firm')!.get('people')!.set('p1', tampered as EncryptedEnvelope)
 
     const result = await vault.verifyBackupIntegrity()

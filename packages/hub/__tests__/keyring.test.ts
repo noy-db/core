@@ -291,14 +291,14 @@ describe('keyring', () => {
 
       // Owner must be able to decrypt with the NEW DEK
       const newDek = owner.deks.get('invoices')!
-      const decrypted = await decrypt(envelope!._iv, envelope!._data, newDek, recordAadFor({ collection: 'invoices', id: 'inv-001' }, envelope!))
+      const decrypted = await decrypt(envelope!._iv!, envelope!._data!, newDek, recordAadFor({ collection: 'invoices', id: 'inv-001' }, envelope!))
       expect(JSON.parse(decrypted)).toEqual({ amount: 5000 })
 
       // Critical: the OLD DEK (captured before rotation) must no longer decrypt
       // If it does, key rotation is ineffective — a revoked user who saved their
       // DEK copy could still read all past and future records.
       expect(newDek).not.toBe(invoiceDek) // sanity: rotation produced a new key object
-      await expect(decrypt(envelope!._iv, envelope!._data, invoiceDek, recordAadFor({ collection: 'invoices', id: 'inv-001' }, envelope!))).rejects.toThrow()
+      await expect(decrypt(envelope!._iv!, envelope!._data!, invoiceDek, recordAadFor({ collection: 'invoices', id: 'inv-001' }, envelope!))).rejects.toThrow()
     })
   })
 

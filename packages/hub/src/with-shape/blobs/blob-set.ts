@@ -34,6 +34,7 @@ import type { UnlockedKeyring } from '../../with-party/team/keyring.js'
 import { detectMagic, isPreCompressed } from './mime-magic.js'
 import { createIntent, getIntent, deleteIntent, sweepBlobIntents, recordAppliedStamp, type BlobIntent, type BlobIntentHold } from './blob-intent.js'
 import { BLOB_ADDRESS_KEY_ID } from '../../kernel/constants.js' // #1126
+import { sealedBodyArgs } from '../../capsule/index.js'
 
 // ─── Internal collection names ─────────────────────────────────────────
 
@@ -469,7 +470,7 @@ export class BlobSet {
 
     if (!this.encrypted) {
       return {
-        slots: JSON.parse(envelope._data) as Record<string, SlotRecord>,
+        slots: JSON.parse(envelope._data ?? '') as Record<string, SlotRecord>,
         version: envelope._v,
       }
     }
@@ -501,7 +502,7 @@ export class BlobSet {
     if (!envelope) return { slots: {}, version: 0, atTier: fromTier }
 
     if (!this.encrypted) {
-      return { slots: JSON.parse(envelope._data) as Record<string, SlotRecord>, version: envelope._v, atTier: fromTier }
+      return { slots: JSON.parse(envelope._data ?? '') as Record<string, SlotRecord>, version: envelope._v, atTier: fromTier }
     }
 
     const fromDek = await this.getDEK(dekKey(this.collection, fromTier))
@@ -681,7 +682,7 @@ export class BlobSet {
     if (!envelope) return null
 
     if (!this.encrypted) {
-      return { blob: JSON.parse(envelope._data) as BlobObject, version: envelope._v, atTier: 0 }
+      return { blob: JSON.parse(envelope._data ?? '') as BlobObject, version: envelope._v, atTier: 0 }
     }
 
     const t = tier ?? await this.ownerTier()
@@ -1454,7 +1455,7 @@ export class BlobSet {
       try {
         const record = this.encrypted
           ? JSON.parse(await openEnvelopeJson({ collection: this.versionsCollection, id: key }, envelope, dek!)) as VersionRecord
-          : JSON.parse(envelope._data) as VersionRecord
+          : JSON.parse(envelope._data ?? '') as VersionRecord
         holds.set(record.eTag, (holds.get(record.eTag) ?? 0) + 1)
         readable.push(key)
       } catch {
@@ -1809,7 +1810,7 @@ export class BlobSet {
   ): Promise<{ record: VersionRecord; atTier: number } | null> {
     const envelope = await this.store.get(this.vault, this.versionsCollection, key)
     if (!envelope) return null
-    if (!this.encrypted) return { record: JSON.parse(envelope._data) as VersionRecord, atTier: fromTier }
+    if (!this.encrypted) return { record: JSON.parse(envelope._data ?? '') as VersionRecord, atTier: fromTier }
 
     const fromDek = await this.getDEK(dekKey(this.collection, fromTier))
     try {
@@ -2068,10 +2069,10 @@ export class BlobSet {
 
     if (dek) {
       const aad = chunkAAD(eTag, index, chunkCount)
-      return await decryptBytesWithAAD(envelope._iv, envelope._data, dek, aad)
+      return await decryptBytesWithAAD(...sealedBodyArgs(envelope, 'blobSet'), dek, aad)
     }
 
-    return base64ToBuffer(envelope._data)
+    return base64ToBuffer(envelope._data ?? '')
   }
 
   // ─── Version record I/O ───────────────────────────────────────────
@@ -2112,7 +2113,7 @@ export class BlobSet {
     if (!envelope) return null
 
     if (!this.encrypted) {
-      return JSON.parse(envelope._data) as VersionRecord
+      return JSON.parse(envelope._data ?? '') as VersionRecord
     }
 
     const dek = await this.getDEK(dekKey(this.collection, tier ?? await this.ownerTier()))
@@ -3322,7 +3323,7 @@ export class BlobSet {
       if (!envelope) continue
 
       if (!this.encrypted) {
-        versions.push(JSON.parse(envelope._data) as VersionRecord)
+        versions.push(JSON.parse(envelope._data ?? '') as VersionRecord)
       } else {
         const dek = await this.getDEK(this.collection)
         const json = await openEnvelopeJson({ collection: this.versionsCollection, id: key }, envelope, dek)
@@ -3477,7 +3478,7 @@ export class BlobSet {
 
     // Decrypt the single chunk
     const aad = chunkAAD(slot.eTag, 0, result.blob.chunkCount)
-    const decrypted = await decryptBytesWithAAD(envelope._iv, envelope._data, chunkKey, aad)
+    const decrypted = await decryptBytesWithAAD(...sealedBodyArgs(envelope, 'blobSet'), chunkKey, aad)
     const plaintext = result.blob.compression === 'gzip'
       ? await decompressBytes(decrypted)
       : decrypted

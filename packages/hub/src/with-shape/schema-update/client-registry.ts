@@ -44,7 +44,7 @@ export async function listClientDocs(store: NoydbStore, vault: string): Promise<
     const env = await store.get(vault, META_COLLECTION, id)
     if (!env) continue
     try {
-      const parsed = JSON.parse(env._data) as unknown
+      const parsed = JSON.parse(env._data ?? '') as unknown
       if (isClientDoc(parsed)) out.push(parsed)
     } catch { /* skip corrupt */ }
   }

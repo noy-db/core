@@ -1,4 +1,5 @@
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
+import { hasSealedBody } from '../../capsule/index.js'
 
 /**
  * Existence authority (spec § Convergence & existence authority, rule 1): the
@@ -7,7 +8,12 @@ import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
  * read as "not live" — undecrypted, envelope-level checks only.
  */
 function isEnvelopeLive(env: EncryptedEnvelope | null): boolean {
-  return env !== null && !(env._iv === '' && env._data === '')
+  // #15: absence is the same statement as `''`, so both spellings of a
+  // bodyless envelope must read as NOT existing. `hasSealedBody` carries
+  // that equivalence; the raw `=== ''` comparison silently lost it for an
+  // omitted field — and, being a comparison rather than a read, it stayed
+  // perfectly well-typed while doing so.
+  return env !== null && (hasSealedBody(env) || (env._data ?? '') !== '')
 }
 
 /** One undecrypted adapter `get` on the base — the store-shape the spec pins (zero extra crypto). */

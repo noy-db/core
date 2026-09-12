@@ -86,7 +86,7 @@ describe('DeferredNumberingStore.enqueue', () => {
     await eng.enqueue('invoices', 'r1')
     const env = await store.get('v', '_numbering_pending', 'invoices::r1')
     expect(env).not.toBeNull()
-    const entry = JSON.parse(env!._data)
+    const entry = JSON.parse(env!._data!)
     expect(entry.recordId).toBe('r1')
     expect(entry.storeLatest).toBeGreaterThanOrEqual(entry.storeEarliest)
   })

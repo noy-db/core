@@ -51,6 +51,7 @@ import {
 } from '../crypto.js'
 import { recordAadFor } from '../record-aad.js'
 import type { BlobObject, EncryptedEnvelope, NoydbStore } from '../../../kernel/types.js'
+import { sealedBodyArgs } from './envelope-body.js'
 
 /** Blob metadata envelopes, keyed by eTag. owner: with-shape/blobs/blob-set.ts */
 const BLOB_INDEX_COLLECTION = '_blob_index'
@@ -101,7 +102,7 @@ async function opensJson(
   key: EnclaveKey,
 ): Promise<string | null> {
   try {
-    return await decrypt(env._iv, env._data, key, recordAadFor(ref, env))
+    return await decrypt(...sealedBodyArgs(env, 'rekeyBlob'), key, recordAadFor(ref, env))
   } catch {
     return null
   }
@@ -175,7 +176,7 @@ export async function rekeyBlobSet(
       const aad = chunkAad(eTag, i, blob.chunkCount)
       let plain: Uint8Array
       try {
-        plain = await decryptBytesWithAAD(chunkEnv._iv, chunkEnv._data, oldDek, aad)
+        plain = await decryptBytesWithAAD(...sealedBodyArgs(chunkEnv, 'rekeyBlob'), oldDek, aad)
       } catch {
         // A blob that holds a content CEK (settled or pending) keeps its bytes
         // under that CEK, not under the `_blob` DEK — re-wrapping the CEK below
@@ -189,7 +190,7 @@ export async function rekeyBlobSet(
         // entry opened fine under `oldDek` and says nothing about its chunks, so
         // continuing here would walk past unreadable data and report success.
         try {
-          await decryptBytesWithAAD(chunkEnv._iv, chunkEnv._data, newDek, aad)
+          await decryptBytesWithAAD(...sealedBodyArgs(chunkEnv, 'rekeyBlob'), newDek, aad)
           continue
         } catch {
           throw new Error(

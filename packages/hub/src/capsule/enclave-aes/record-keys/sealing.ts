@@ -28,6 +28,7 @@ import { dualReadSealedSlot } from './sealed-slot.js'
 import { openVdigPayload, sealVdigPayload } from '../classify/vdig.js'
 import { RecordCekNotFoundError, ValidationError } from '../../../kernel/errors.js'
 import { buildRecordEnvelope } from '../record-envelope.js'
+import { sealedBodyArgs } from './envelope-body.js'
 
 const subtle = globalThis.crypto.subtle
 
@@ -179,7 +180,7 @@ export async function rotateRecordCek(
   // under what the live record carries, re-seal under what the new envelope
   // will carry (#1041).
   const openAad = recordAadFor({ collection, id }, live)
-  const json = await decrypt(live._iv, live._data, oldCek, openAad)
+  const json = await decrypt(...sealedBodyArgs(live, 'reseal'), oldCek, openAad)
 
   const rotatedIdentity: RecordIdentity = {
     // A CEK rotation DOES bump `_v` (asserted in `record-scoped-cek-sealing`:

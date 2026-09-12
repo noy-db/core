@@ -27,6 +27,7 @@ import { buildRecordAad, recordAadFor } from '../record-aad.js'
 import { SealedHandle, type EncryptedEnvelope } from '../../../kernel/types.js'
 import { ValidationError } from '../../../kernel/errors.js'
 import type { SealedSlotRef, ViaCryptoCtx } from '../../../kernel/via/index.js'
+import { sealedBodyArgs } from './envelope-body.js'
 
 /**
  * Key material for one collection's sealed-field derivation. `cek`, when
@@ -267,7 +268,7 @@ export function makeReservedEnvelopes(
     const decryptForPrefix = async (collection: string, id: string, env: EncryptedEnvelope): Promise<string> => {
       assertPrefixed(collection, 'decrypt')
       const dek = await dekResolver(collection)
-      return decrypt(env._iv, env._data, dek, recordAadFor({ collection, id }, env))
+      return decrypt(...sealedBodyArgs(env, 'openSealedSlots'), dek, recordAadFor({ collection, id }, env))
     }
 
     return { encrypt: encryptForPrefix, decrypt: decryptForPrefix }

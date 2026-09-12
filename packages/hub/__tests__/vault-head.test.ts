@@ -87,7 +87,7 @@ describe('#1044 — vault head', () => {
     await expect(openEnvelopeJson({ collection: VAULT_HEAD_COLLECTION, id: bucket! }, env, dek)).resolves.toContain('secret-invoice-id')
     // …and NOT at another, so a store cannot serve bucket 2's bytes as bucket 1.
     await expect(
-      decrypt(env._iv, env._data, dek, recordAadFor({ collection: VAULT_HEAD_COLLECTION, id: 'docs::99' }, env)),
+      decrypt(env._iv!, env._data!, dek, recordAadFor({ collection: VAULT_HEAD_COLLECTION, id: 'docs::99' }, env)),
     ).rejects.toThrow()
   })
 
@@ -229,7 +229,7 @@ describe('#1101 — the verdict is three-way, and "unverifiable" is not "clean"'
     // The sweep reads only `_v`, so a minimal envelope satisfies the expectation.
     const ident = { collection: COLL, id: 'd1', version: 1 }
     const body = await writeEnvelopeBody(ident, '{}', dek)
-    await noCas.put(VAULT, COLL, 'd1', buildRecordEnvelope(ident, { iv: body._iv, data: body._data }))
+    await noCas.put(VAULT, COLL, 'd1', buildRecordEnvelope(ident, { iv: body._iv!, data: body._data! }))
 
     const result = await verifyVaultHead(head, noCas, VAULT, getDEK, COLL)
     expect(result.discrepancies).toEqual([]) // nothing is actually wrong…

@@ -78,10 +78,10 @@ describe('persisted-schema storage', () => {
     const raw = await store.get(VAULT, '_schemas', 'invoices')
     expect(raw).not.toBeNull()
     // _iv must be a non-empty base64 string (AES-GCM IV present)
-    expect(raw!._iv.length).toBeGreaterThan(0)
+    expect(raw!._iv!.length).toBeGreaterThan(0)
     // _data must NOT parse as the original payload (i.e. it's ciphertext)
     expect(() => {
-      const parsed = JSON.parse(raw!._data) as Record<string, unknown>
+      const parsed = JSON.parse(raw!._data!) as Record<string, unknown>
       // ciphertext won't match — if it parses to an object with our shape, encryption is broken
       if (parsed._noydb_schema === 1) throw new Error('payload stored in plaintext!')
     }).toThrow()

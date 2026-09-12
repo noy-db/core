@@ -285,7 +285,7 @@ describe('#1096 — a tier-1 change must not launder a forged roster', () => {
     const env = (await store.get('acme', '_keyring', userId))!
     await store.put('acme', '_keyring', userId, {
       ...env,
-      _data: env._data.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
+      _data: env._data!.replace(/"role":"[a-z]+"/, `"role":"${role}"`),
     })
   }
 

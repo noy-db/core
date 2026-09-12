@@ -63,7 +63,7 @@ describe('#1454 — loadPeriods verifies the hash chain', () => {
   async function tamper(store: NoydbStore, key: string, patch: Record<string, unknown> | null) {
     if (patch === null) { await store.delete('acme', '_periods', key); return }
     const env = (await store.get('acme', '_periods', key))!
-    const rec = JSON.parse(env._data) as Record<string, unknown>
+    const rec = JSON.parse(env._data!) as Record<string, unknown>
     await store.put('acme', '_periods', key, { ...env, _data: JSON.stringify({ ...rec, ...patch }) })
   }
 

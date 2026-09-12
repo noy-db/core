@@ -75,7 +75,7 @@ describe('M-5 — sealed-record revoke softness', () => {
       expiresAt: new Date(Date.now() + HOUR).toISOString(),
     })
     // Host fetches the delivery before revocation.
-    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data) as SealedCekDeliveryEnvelope
+    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data!) as SealedCekDeliveryEnvelope
 
     await vault.revokeSealedRecord('docs', 'd-1', pid) // default = soft
 
@@ -94,7 +94,7 @@ describe('M-5 — sealed-record revoke softness', () => {
     const { pid } = await vault.sealRecordToHost('docs', 'd-1', host, {
       expiresAt: new Date(Date.now() + HOUR).toISOString(),
     })
-    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data) as SealedCekDeliveryEnvelope
+    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data!) as SealedCekDeliveryEnvelope
 
     await vault.revokeSealedRecord('docs', 'd-1', pid, { hard: true })
 

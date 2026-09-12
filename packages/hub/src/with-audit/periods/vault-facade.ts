@@ -742,7 +742,7 @@ export class VaultPeriods {
   private async readReserved<T>(collection: string, key: string): Promise<T | null> {
     const env = await this.deps.adapter.get(this.deps.vault, collection, key)
     if (!env) return null
-    const json = this.deps.encrypted ? await openEnvelopeJson({ collection, id: key }, env, await this.deps.getDEK(collection)) : env._data
+    const json = this.deps.encrypted ? await openEnvelopeJson({ collection, id: key }, env, await this.deps.getDEK(collection)) : (env._data ?? '')
     return JSON.parse(json) as T
   }
 
@@ -752,7 +752,7 @@ export class VaultPeriods {
       const dek = await this.deps.getDEK(PERIODS_COLLECTION)
       json = await openEnvelopeJson({ collection: PERIODS_COLLECTION, id: periodId }, envelope, dek)
     } else {
-      json = envelope._data
+      json = (envelope._data ?? '')
     }
     return JSON.parse(json) as PeriodRecord
   }

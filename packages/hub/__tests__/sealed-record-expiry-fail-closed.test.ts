@@ -124,7 +124,7 @@ describe('M-4 — sealed-record expiry fails closed', () => {
     const { pid } = await vault.sealRecordToHost('docs', 'd-1', host, {
       expiresAt: new Date(Date.now() + HOUR).toISOString(),
     })
-    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data) as SealedCekDeliveryEnvelope
+    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data!) as SealedCekDeliveryEnvelope
     const recordEnv = store.raw('v', 'docs', 'd-1')!
     const json = await openSealedRecord(delivery, recordEnv, host, 'docs', 'd-1')
     expect(JSON.parse(json)).toMatchObject({ id: 'd-1', secret: 'the eagle lands at dawn' })
@@ -138,7 +138,7 @@ describe('M-4 — sealed-record expiry fails closed', () => {
     const { pid } = await vault.sealRecordToHost('docs', 'd-1', host, {
       expiresAt: new Date(Date.now() - HOUR).toISOString(),
     })
-    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data) as SealedCekDeliveryEnvelope
+    const delivery = JSON.parse(store.raw('v', '_sealed_cek', `docs/d-1/${pid}`)!._data!) as SealedCekDeliveryEnvelope
     const recordEnv = store.raw('v', 'docs', 'd-1')!
     await expect(
       openSealedRecord(delivery, recordEnv, host, 'docs', 'd-1'),

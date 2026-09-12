@@ -105,7 +105,7 @@ export async function adoptPartition(
   // clobber the existing partition. Either way, pick a fresh vaultName.
   const existing = await destinationStore.get(vaultName, '_meta', 'adoption')
   if (existing) {
-    const prior = JSON.parse(existing._data) as { sealId?: string }
+    const prior = JSON.parse(existing._data ?? '') as { sealId?: string }
     if (prior.sealId === seal.sealId) {
       throw new AdoptionStateError(
         `partition (sealId ${seal.sealId}) is already adopted into vault "${vaultName}".`,
@@ -233,7 +233,7 @@ export async function createOwnerOnAdoptedPartition(
       + `createOwnerOnAdoptedPartition only applies to vaults created via adoptPartition.`,
     )
   }
-  const adoption = JSON.parse(adoptionEnv._data) as {
+  const adoption = JSON.parse(adoptionEnv._data ?? '') as {
     sealId: string; adoptedAt: string; needsOwner?: boolean
     consumedAt?: string; transferSeal?: TransferSealPayload
   }
@@ -270,7 +270,7 @@ export async function createOwnerOnAdoptedPartition(
   // no recovery has been enrolled yet — guaranteed here because enrollment
   // (Stage C) runs strictly after Stage A completes.
   const partitionCollections = [...partitionDeks.keys()]
-  const priorDeks = existingKeyring ? (JSON.parse(existingKeyring._data) as KeyringFile).deks : {}
+  const priorDeks = existingKeyring ? (JSON.parse(existingKeyring._data ?? '') as KeyringFile).deks : {}
   const ownerMinted = existingKeyring !== null && partitionCollections.every((c) => c in priorDeks)
   if (!ownerMinted) {
     // Resolve the owner secret. Managed mode mints a random secret, seals
@@ -288,7 +288,7 @@ export async function createOwnerOnAdoptedPartition(
     // Merge the partition DEKs (wrapped under the new KEK) into the keyring.
     const env = await store.get(vaultName, '_keyring', userId)
     if (!env) throw new AdoptionStateError(`keyring write for "${userId}" did not persist`)
-    const keyringFile = JSON.parse(env._data) as KeyringFile
+    const keyringFile = JSON.parse(env._data ?? '') as KeyringFile
     const kek = unlocked.kek
     if (!kek) throw new AdoptionStateError(`owner keyring for "${userId}" has no KEK to wrap partition DEKs under`)
     const mergedDeks: Record<string, string> = { ...keyringFile.deks }

@@ -125,7 +125,7 @@ describe('#1074 part 2 — interrupted rotation is resumable', () => {
 
     const keyringRaw = await store.get(VAULT, '_keyring', 'owner')
     expect(keyringRaw, 'owner keyring must exist').toBeTruthy()
-    const file = JSON.parse(keyringRaw!._data) as { pending_deks?: Record<string, string> }
+    const file = JSON.parse(keyringRaw!._data!) as { pending_deks?: Record<string, string> }
     expect(file.pending_deks?.[COLL], 'pending DEK must be on disk before the loop runs').toBeTruthy()
   })
 
@@ -135,7 +135,7 @@ describe('#1074 part 2 — interrupted rotation is resumable', () => {
     await owner.rotate(VAULT, [COLL])
 
     const keyringRaw = await store.get(VAULT, '_keyring', 'owner')
-    const file = JSON.parse(keyringRaw!._data) as { pending_deks?: Record<string, string> }
+    const file = JSON.parse(keyringRaw!._data!) as { pending_deks?: Record<string, string> }
     expect(file.pending_deks?.[COLL], 'a committed rotation must leave no pending marker').toBeFalsy()
   })
 })

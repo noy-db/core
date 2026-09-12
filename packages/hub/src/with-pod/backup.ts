@@ -103,7 +103,7 @@ export async function dumpVault(ctx: BackupContext): Promise<string> {
   for (const keyringId of keyringIds) {
     const envelope = await ctx.adapter.get(ctx.vault, '_keyring', keyringId)
     if (envelope) {
-      keyrings[keyringId] = JSON.parse(envelope._data)
+      keyrings[keyringId] = JSON.parse(envelope._data ?? '')
     }
   }
 

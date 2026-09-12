@@ -503,7 +503,7 @@ export async function loadSealedSecret(
   const envelope = await store.get(vault, '_meta', SEALED_SECRET_RECORD_ID)
   if (!envelope) return undefined
   try {
-    return parseSealedEnvelope(JSON.parse(envelope._data))
+    return parseSealedEnvelope(JSON.parse(envelope._data ?? ''))
   } catch {
     return undefined
   }

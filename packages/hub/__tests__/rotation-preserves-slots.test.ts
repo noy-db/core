@@ -88,8 +88,8 @@ describe('#1074 — rotation preserves envelope slots', () => {
   it('6. the body actually re-keys — readable under the new DEK, not the old', async () => {
     const out = await rekeyEnvelopeToDek(REF, await bareEnvelope(), oldDek, newDek)
     // AAD is unchanged by a rotation — only the key moves (#1041).
-    expect(await decrypt(out._iv, out._data, newDek, recordAadFor(REF, out))).toBe(BODY)
-    await expect(decrypt(out._iv, out._data, oldDek, recordAadFor(REF, out))).rejects.toThrow()
+    expect(await decrypt(out._iv!, out._data!, newDek, recordAadFor(REF, out))).toBe(BODY)
+    await expect(decrypt(out._iv!, out._data!, oldDek, recordAadFor(REF, out))).rejects.toThrow()
   })
 
   it('7. a per-record-CEK record re-wraps its CEK and leaves the body ALONE', async () => {
@@ -110,7 +110,7 @@ describe('#1074 — rotation preserves envelope slots', () => {
     expect(out._by).toBe('bob')
     // ...and the CEK now unwraps under the NEW dek, opening the same body.
     const rewrapped = await unwrapCek(out._cek!, newDek)
-    expect(await decrypt(out._iv, out._data, rewrapped)).toBe(BODY)
+    expect(await decrypt(out._iv!, out._data!, rewrapped)).toBe(BODY)
     await expect(unwrapCek(out._cek!, oldDek)).rejects.toThrow()
   })
 

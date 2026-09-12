@@ -62,8 +62,8 @@ describe('persistJsonSchema option on vault.collection()', () => {
 
     const stored = await adapter.get(COMP, SCHEMAS_COLLECTION, 'invoices')
     expect(stored).not.toBeNull()
-    expect(stored!._iv.length).toBeGreaterThan(0)
-    expect(stored!._data.length).toBeGreaterThan(0)
+    expect(stored!._iv!.length).toBeGreaterThan(0)
+    expect(stored!._data!.length).toBeGreaterThan(0)
   })
 
   it('reopening the vault with an unchanged schema does NOT bump _v (hash-skip)', async () => {

@@ -239,7 +239,7 @@ describe('NoydbOptions.getKeyring (issue #5)', () => {
     // Inject a tier-2 slot directly into alice's keyring file so the snapshot
     // has a non-empty `authenticators` array with a real `meta` to mutate.
     const env = await adapter.get('acme', '_keyring', 'alice')
-    const file = JSON.parse(env!._data) as Record<string, unknown> & { authenticators?: unknown[] }
+    const file = JSON.parse(env!._data!) as Record<string, unknown> & { authenticators?: unknown[] }
     file.authenticators = [{
       id: 'webauthn-yubi',
       method: 'webauthn',

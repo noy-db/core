@@ -32,6 +32,7 @@
 import { NOYDB_FORMAT_VERSION } from '../../kernel/types.js'
 import type { EncryptedEnvelope } from '../../kernel/types.js'
 import type { RecordIdentity } from './record-aad.js'
+import { requireSealedBody } from './record-keys/envelope-body.js'
 
 /** The body an envelope carries, independent of who is writing it. */
 export interface RecordEnvelopeBody {
@@ -129,10 +130,15 @@ export async function buildSealedRecordEnvelope(
   body: Omit<RecordEnvelopeBody, 'iv' | 'data' | 'cek'>,
 ): Promise<EncryptedEnvelope> {
   const sealed = await seal(identity)
+  // #15: `seal` returns the widened `Pick<Envelope, …>`, so both fields are
+  // optional at the type level. A sealer that returned neither has not sealed
+  // anything, and building a record envelope around that would persist a row
+  // whose body silently became `''`. Refuse instead.
+  const { iv, data } = requireSealedBody(sealed, 'buildSealedRecordEnvelope')
   return buildRecordEnvelope(identity, {
     ...body,
-    iv: sealed._iv,
-    data: sealed._data,
+    iv,
+    data,
     cek: sealed._cek,
   })
 }

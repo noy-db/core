@@ -84,7 +84,7 @@ export class LinkSet implements LinkSetHandle {
   }
 
   private async decryptEntry(key: string, env: EncryptedEnvelope): Promise<LinkEntry> {
-    const json = this.encrypted ? await openEnvelopeJson({ collection: this.collName, id: key }, env, await this.dek()) : env._data
+    const json = this.encrypted ? await openEnvelopeJson({ collection: this.collName, id: key }, env, await this.dek()) : (env._data ?? '')
     return JSON.parse(json) as LinkEntry
   }
 

@@ -105,7 +105,7 @@ export async function describeUserAuth(
   // The `role` reported here is therefore what the STORE says, not what an
   // authorised editor wrote. Safe because this is descriptive output, never an
   // authorisation input — do not let it become one.
-  const file = JSON.parse(env._data) as KeyringFile
+  const file = JSON.parse(env._data ?? '') as KeyringFile
 
   const lines: string[] = []
   lines.push(

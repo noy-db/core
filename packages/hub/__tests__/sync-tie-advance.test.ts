@@ -75,7 +75,7 @@ describe('#936 — local-wins tie resolution advances the version', () => {
     // The winner's content SUPERSEDES the tie: remote at v3, and the local
     // store mirrors the advanced envelope so both sides agree.
     const remoteEnv = (await remote.get(COMP, 'notes', 'note-1'))!
-    expect(JSON.parse(remoteEnv._data).title).toBe('local v2')
+    expect(JSON.parse(remoteEnv._data!).title).toBe('local v2')
     expect(remoteEnv._v).toBe(3)
     expect((await local.get(COMP, 'notes', 'note-1'))!._v).toBe(3)
   })
@@ -109,7 +109,7 @@ describe('#936 — local-wins tie resolution advances the version', () => {
     for (const store of [localA, localB, remote]) {
       const env = (await store.get(COMP, 'notes', 'note-1'))!
       expect(env._v).toBe(3)
-      expect(JSON.parse(env._data).title).toBe('B v2')
+      expect(JSON.parse(env._data!).title).toBe('B v2')
     }
   })
 })

@@ -95,9 +95,9 @@ describe('schema-manifest storage + strict-CAS writer', () => {
     await saveSchemaManifest(store, VAULT, manifest, 0, getDEK)
     const raw = await store.get(VAULT, MANIFEST_COLLECTION, MANIFEST_SCHEMA_RECORD_ID)
     expect(raw).not.toBeNull()
-    expect(raw!._iv.length).toBeGreaterThan(0)
+    expect(raw!._iv!.length).toBeGreaterThan(0)
     expect(() => {
-      const parsed = JSON.parse(raw!._data) as Record<string, unknown>
+      const parsed = JSON.parse(raw!._data!) as Record<string, unknown>
       if (parsed.kind === 'schema') throw new Error('payload stored in plaintext!')
     }).toThrow()
   })

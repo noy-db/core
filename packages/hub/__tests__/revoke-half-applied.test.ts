@@ -128,7 +128,7 @@ describe('#1077 — a failed revoke() leaves a half-applied state', () => {
 
     // ...and it COMPLETED the rotation rather than merely not throwing.
     const ownerKeyring = await store.get(VAULT, '_keyring', 'owner')
-    const ownerFile = JSON.parse(ownerKeyring!._data) as { pending_deks?: Record<string, string> }
+    const ownerFile = JSON.parse(ownerKeyring!._data!) as { pending_deks?: Record<string, string> }
     expect(ownerFile.pending_deks?.[COLL], 'retry must COMPLETE the rotation').toBeFalsy()
 
     // 3. ...but the rotation never completed, so the retained copy still opens

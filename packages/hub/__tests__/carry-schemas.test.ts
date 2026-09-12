@@ -123,7 +123,7 @@ describe('reKeySchemas', () => {
     const schemas = await reKeySchemas(company, new Map([['clients', new Set(['c-1'])]]), new Map([['clients', destDek]]))
 
     const env = schemas['clients']!
-    const json = await decrypt(env._iv, env._data, destDek, recordAadFor({ collection: '_schemas', id: 'clients' }, env))
+    const json = await decrypt(env._iv!, env._data!, destDek, recordAadFor({ collection: '_schemas', id: 'clients' }, env))
     expect(JSON.parse(json)._noydb_schema).toBe(1)
   })
 

@@ -165,6 +165,44 @@ export class DecryptionError extends NoydbError {
 }
 
 /**
+ * **Means exactly: "this envelope carries no sealed body, and this path needs
+ * one."** (#15)
+ *
+ * Since `_iv`/`_data` became optional, an envelope written by an *exclave*
+ * capsule has no ciphertext body at all. Handed to an AES decrypt path, that
+ * is neither corruption nor an attack — it is a capsule mismatch, and it must
+ * not be reported as one of the two errors it superficially resembles:
+ *
+ *  - **not {@link TamperedError}**, whose entire documented meaning is "the
+ *    AEAD tag did not verify under this key". That class is hub's security
+ *    alert; raising it for a structurally absent body would manufacture a
+ *    tamper signal out of a configuration difference, and the operator
+ *    response to the two is completely different.
+ *  - **not a bare `TypeError`**, which is what reading `.length` or passing
+ *    `undefined` into `decrypt()` produced before this issue — an internal
+ *    slip surfacing as if hub had a bug in its own arithmetic.
+ *
+ * `where` names the call path that required the body, because the same
+ * absence is legitimate two frames earlier: {@link hasSealedBody} answers
+ * false for it, and a tombstone, a `_del` marker and a plaintext collection
+ * all reach that answer by design.
+ */
+export class MissingEnvelopeBodyError extends NoydbError {
+  /** The operation that required a sealed body, e.g. `'openEnvelopeJson'`. */
+  readonly where: string
+
+  constructor(where: string) {
+    super(
+      'ENVELOPE_BODY_MISSING',
+      `${where}: this envelope carries no sealed body (_iv/_data absent). ` +
+      'An enclave capsule cannot open a row written by an exclave capsule.',
+    )
+    this.name = 'MissingEnvelopeBodyError'
+    this.where = where
+  }
+}
+
+/**
  * **Means exactly: "AEAD failed under this key."** Nothing more (lanna-db #4,
  * 2026-09-03). AES-256-GCM authenticates the ciphertext on every decrypt; if
  * the tag does not verify under the DEK the caller supplied, the enclave
