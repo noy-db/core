@@ -10,7 +10,7 @@
  * without `listPage` keep the original N+1 loop.
  */
 import type { EncryptedEnvelope, NoydbStore } from './types.js'
-import { isTombstone, isDeleteMarker } from './enclave/index.js'
+import { isTombstone, isDeleteMarker } from '../capsule/index.js'
 
 /** Page size for the listPage batching path (#713). */
 const COUNT_PAGE_SIZE = 1000

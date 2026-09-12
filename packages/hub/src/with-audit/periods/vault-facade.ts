@@ -10,7 +10,7 @@
  * Internal service — reached through `vault.closePeriod(...)` etc.
  */
 import { ValidationError } from '../../kernel/errors.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import type { EncryptedEnvelope, NoydbStore } from '../../kernel/types.js'
 import type { LedgerStore } from '../../with-commit/history/ledger/store.js'
 import type { Collection } from '../../kernel/collection.js'

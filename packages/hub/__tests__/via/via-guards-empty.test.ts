@@ -20,7 +20,7 @@
  * - `VIA_SHAPE_ALLOWLIST` (Check 14, `via-layering`, the kernel→via
  *   direction) — empty since #650 Task 6.
  * - `VIA_ENCLAVE_ALLOWLIST` (Check 15, `via-enclave-isolation`, the reverse
- *   via→kernel/enclave direction) — empty since #629 Task 4, gained its
+ *   via→capsule/enclave-aes direction) — empty since #629 Task 4, gained its
  *   own synthetic-fire proof in #650 Task 7.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -250,11 +250,11 @@ describe('via-enclave-isolation allowlist stays EMPTY (#650 Task 7)', () => {
     expect(result.output).toMatch(/Architecture invariants OK/)
   })
 
-  it('the guard still FIRES on a synthetic via/** -> kernel/enclave/ import', () => {
+  it('the guard still FIRES on a synthetic via/** -> capsule/enclave-aes/ import', () => {
     expect(existsSync(ENCLAVE_SYNTHETIC_FILE)).toBe(false)
     writeFileSync(
       ENCLAVE_SYNTHETIC_FILE,
-      "import { RecordCodec } from '../../kernel/enclave/index.js'\nexport const _syntheticViaEnclaveProbe = RecordCodec\n",
+      "import { RecordCodec } from '../../capsule/enclave-aes/index.js'\nexport const _syntheticViaEnclaveProbe = RecordCodec\n",
     )
     try {
       const result = runArchitectureCheck()

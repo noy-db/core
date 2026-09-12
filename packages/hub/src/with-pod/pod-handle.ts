@@ -9,7 +9,7 @@
  * Internal — reached through `vault.getPodHandle()`.
  */
 import type { NoydbStore, EncryptedEnvelope } from '../kernel/types.js'
-import { buildRecordEnvelope } from '../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../capsule/index.js'
 
 /**
  * Return the stable opaque bundle handle for the given vault adapter,

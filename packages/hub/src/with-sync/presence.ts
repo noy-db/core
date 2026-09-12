@@ -15,11 +15,11 @@
  *     (if available) or local adapter, and polled periodically.
  */
 
-import { buildRecordEnvelope } from '../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../capsule/index.js'
 import type { NoydbStore, PresencePeer } from '../kernel/types.js'
 import {
   encrypt, decrypt, derivePresenceKey, derivePresenceTagKey, hmacSignHex, type EnclaveKey,
-} from '../kernel/enclave/index.js'
+} from '../capsule/index.js'
 
 /** Options for constructing a PresenceHandle. @internal */
 export interface PresenceHandleOpts {
@@ -181,7 +181,7 @@ export class PresenceHandle<P> {
    * Derive (and cache) the presence-tag key — a non-extractable, sign-only
    * HMAC-SHA256 key HKDF-derived from the collection DEK, domain-separated
    * from the presence payload key by the enclave's `derivePresenceTagKey`
-   * domain. Mirrors `deriveClassifyIndexKey` (kernel/enclave/classify/bidx.ts).
+   * domain. Mirrors `deriveClassifyIndexKey` (capsule/enclave-aes/classify/bidx.ts).
    * No PBKDF2 stretch — the adapter never holds this key, so a plain keyed
    * HMAC tag is sufficient and deterministic. Returns `null` when unencrypted
    * (no DEK to derive from).

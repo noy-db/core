@@ -37,7 +37,7 @@
  */
 import type { EncryptedEnvelope } from '../kernel/types.js'
 import { ValidationError } from '../kernel/errors.js'
-import { isTombstoneShape, isDeleteMarker } from '../kernel/enclave/index.js'
+import { isTombstoneShape, isDeleteMarker } from '../capsule/index.js'
 import {
   PERIODS_COLLECTION,
   PERIOD_FREEZES_COLLECTION,

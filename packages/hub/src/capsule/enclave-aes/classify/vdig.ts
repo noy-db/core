@@ -15,7 +15,7 @@
  * @module
  */
 import { encryptBytesWithAAD, decryptBytesWithAAD, base64ToBuffer, type EnclaveKey } from '../crypto.js'
-import { TamperedError } from '../../errors.js'
+import { TamperedError } from '../../../kernel/errors.js'
 
 const subtle = globalThis.crypto.subtle
 

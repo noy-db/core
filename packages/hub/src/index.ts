@@ -621,7 +621,7 @@ export { beginEchoUnlock } from './with-party/team/echo-ceremony.js'
 export type { EchoCeremony, BeginEchoUnlockOptions } from './with-party/team/echo-ceremony.js'
 export { MemoryDeviceSeal } from './with-party/team/device-seal.js'
 export type { NoydbDeviceSeal } from './with-party/team/device-seal.js'
-export type { EchoSecretParts } from './kernel/enclave/index.js'
+export type { EchoSecretParts } from './capsule/index.js'
 export type { KeyringEchoBlock } from './kernel/types.js'
 export type { EchoRecipientSecret } from './with-party/team/keyring.js'
 export { EchoCeremonyRequiredError, WrongPromptError, WrongEchoError } from './kernel/errors.js'
@@ -808,7 +808,7 @@ export { resolveCrdtSnapshot, mergeCrdtStates } from './with-commit/crdt/crdt.js
 // Presence
 export { PresenceHandle } from './with-sync/presence.js'
 export type { PresencePeer } from './kernel/types.js'
-export { derivePresenceKey } from './kernel/enclave/index.js'
+export { derivePresenceKey } from './capsule/index.js'
 export { SyncEngine } from './with-sync/engine.js'
 export { SyncTransaction } from './with-sync/transaction.js'
 
@@ -1095,10 +1095,10 @@ export { isDiscriminant } from './kernel/util/discriminant.js'
  * the envelope was fetched from and reads `_tier`/`_by` off the envelope
  * itself, so callers thread two fields rather than four.
  */
-export { recordAadFor } from './kernel/enclave/index.js'
-export type { RecordIdentity, RecordRef } from './kernel/enclave/index.js'
-export { bufferToBase64, base64ToBuffer, encryptBytes, decryptBytes } from './kernel/enclave/index.js'
-export { encryptDeterministic, decryptDeterministic } from './kernel/enclave/index.js'
+export { recordAadFor } from './capsule/index.js'
+export type { RecordIdentity, RecordRef } from './capsule/index.js'
+export { bufferToBase64, base64ToBuffer, encryptBytes, decryptBytes } from './capsule/index.js'
+export { encryptDeterministic, decryptDeterministic } from './capsule/index.js'
 // Enclave fork-swap contract — optional-group refusal (C4)
 export { EnclaveNotSupportedError } from './kernel/errors.js'
 
@@ -1347,7 +1347,7 @@ export { PersistedIndexCompensationError } from './kernel/errors.js'
 // #837 — types named by this barrel's own public signatures that were
 // previously unspellable (exported from no entry at all). The
 // type-reachability guard now fails the build when a new one appears.
-export type { EnclaveKey, EncryptResult } from './kernel/enclave/index.js'
+export type { EnclaveKey, EncryptResult } from './capsule/index.js'
 export type { LookupBacking } from './via/lookup/descriptor.js'
 export type { PolicyEnforcerOptions } from './with-party/session/session-policy.js'
 export type { TransformFn } from './with-shape/schema-update/types.js'

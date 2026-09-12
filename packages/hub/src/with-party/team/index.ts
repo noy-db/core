@@ -154,7 +154,7 @@ export { MemoryDeviceSeal } from './device-seal.js'
 export type { NoydbDeviceSeal } from './device-seal.js'
 // Types the echo signatures name — exported from the same entry so the
 // type-reachability check (`check:types`) holds for `./team` consumers.
-export type { EchoSecretParts } from '../../kernel/enclave/index.js'
+export type { EchoSecretParts } from '../../capsule/index.js'
 export type { KeyringEchoBlock, NoydbStore } from '../../kernel/types.js'
 
 // #843 C3b — auth-config introspection. These are the `db.team.describeAuthConfig()` /

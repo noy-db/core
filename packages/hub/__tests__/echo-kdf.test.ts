@@ -7,7 +7,7 @@ import {
   generateDEK,
   wrapKey,
   unwrapKey,
-} from '../src/kernel/enclave/index.js'
+} from '../src/capsule/enclave-aes/index.js'
 import { ValidationError } from '../src/kernel/errors.js'
 
 const PARTS = { prompt: 'mi chiamo vicio', echo: 'ma da piccolo mi chiamavano', key: 'ciccio' }

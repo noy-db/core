@@ -44,7 +44,7 @@ import {
   exportDekSet,
   importDekSet,
   type EnclaveKey,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import { InvalidKeyError, TamperedError } from '../../kernel/errors.js'
 
 const PBKDF2_ITERATIONS = 600_000

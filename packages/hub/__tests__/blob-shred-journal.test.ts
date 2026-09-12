@@ -22,7 +22,7 @@ import { withForget } from '../src/with-audit/forget/index.js'
 import { withBlobs } from '../src/via/blob/index.js'
 import { withTiers } from '../src/with-audit/tiers/index.js'
 import { ConflictError } from '../src/kernel/errors.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/kernel/types.js'
 import {
   BLOB_INTENT_COLLECTION,

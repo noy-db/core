@@ -7,7 +7,7 @@ import {
 } from '../src/with-party/team/echo-secret.js'
 import { MemoryDeviceSeal } from '../src/with-party/team/device-seal.js'
 import { WrongPromptError, ValidationError } from '../src/kernel/errors.js'
-import { bufferToBase64, base64ToBuffer } from '../src/kernel/enclave/index.js'
+import { bufferToBase64, base64ToBuffer } from '../src/capsule/enclave-aes/index.js'
 
 const PARTS = { prompt: 'mi chiamo vicio', echo: 'da piccolo mi chiamavano', key: 'ciccio' }
 const T = 240_000 // real 600K PBKDF2, several derivations per test

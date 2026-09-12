@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { issueAttestationCore } from '../src/with-audit/attestation/issue.js'
 import { verifyAttestation } from '@noy-db/attestation'
 import type { AttestationFieldSchema } from '@noy-db/attestation'
-import { recordAadFor, generateDEK, decrypt } from '../src/kernel/enclave/index.js'
+import { recordAadFor, generateDEK, decrypt } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/kernel/types.js'
 import { ConflictError } from '../src/kernel/errors.js'
 

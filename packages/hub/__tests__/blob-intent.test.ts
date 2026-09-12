@@ -24,7 +24,7 @@ import { createNoydb } from '../src/kernel/noydb.js'
 import { withBlobs } from '../src/via/blob/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
 import { BlobIntentPendingError, ConflictError } from '../src/kernel/errors.js'
-import { generateDEK, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { generateDEK, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 import {
   BLOB_INTENT_COLLECTION,
   createIntent,

@@ -32,7 +32,7 @@ import type { NoydbStore, EncryptedEnvelope, KeyringAuthenticator } from '../src
 import { createOwnerKeyring, loadKeyring, persistKeyring, rotateKeys } from '../src/with-party/team/keyring.js'
 import { rotateSecret } from '../src/with-party/team/rotate-recover.js'
 import { enrollAuthenticator, removeAuthenticator, revokeAuthenticator } from '../src/with-party/team/authenticators.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 
 function inlineMemory(): NoydbStore {
   const store = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()

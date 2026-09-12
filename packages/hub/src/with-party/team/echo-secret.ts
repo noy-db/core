@@ -17,7 +17,7 @@
  *     (`verifyTypedEcho`) for that degraded path.
  *
  * Deriving the actual KEK from all three parts together is
- * `deriveEchoKey`/`encodeEchoParts` (`kernel/enclave/crypto.ts`) — a
+ * `deriveEchoKey`/`encodeEchoParts` (`capsule/enclave-aes/crypto.ts`) — a
  * separate concern from this module's per-part verifiers.
  *
  * Known, accepted disclosure: `prompt_verifier` and `echo_verifier` are
@@ -40,7 +40,7 @@ import {
   base64ToBuffer,
   encodeEchoParts,
   type EchoSecretParts,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import type { KeyringEchoBlock } from '../../kernel/types.js'
 import type { NoydbDeviceSeal } from './device-seal.js'
 import { WrongPromptError } from '../../kernel/errors.js'

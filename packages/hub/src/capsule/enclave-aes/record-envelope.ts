@@ -29,8 +29,8 @@
  *
  * @packageDocumentation
  */
-import { NOYDB_FORMAT_VERSION } from '../types.js'
-import type { EncryptedEnvelope } from '../types.js'
+import { NOYDB_FORMAT_VERSION } from '../../kernel/types.js'
+import type { EncryptedEnvelope } from '../../kernel/types.js'
 import type { RecordIdentity } from './record-aad.js'
 
 /** The body an envelope carries, independent of who is writing it. */

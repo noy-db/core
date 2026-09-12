@@ -3,7 +3,7 @@
  *
  * Lives in the enclave because it is envelope surgery: it reads and writes the
  * protected body slots (`_iv`/`_data`/`_cek`), which `enclave-body-only`
- * reserves to `kernel/enclave/**`. `rotateKeys` previously did this inline in
+ * reserves to `capsule/enclave-aes/**`. `rotateKeys` previously did this inline in
  * `with-party/team/keyring.ts` and got it wrong in two ways that the guard
  * would have caught had the code lived here.
  *
@@ -11,7 +11,7 @@
  */
 import { encrypt, decrypt, wrapCek, unwrapCek, type EnclaveKey } from '../crypto.js'
 import { recordAadFor } from '../record-aad.js'
-import type { EncryptedEnvelope } from '../../types.js'
+import type { EncryptedEnvelope } from '../../../kernel/types.js'
 
 /**
  * Produce the envelope `envelope` becomes once its collection's DEK rotates

@@ -141,8 +141,8 @@ import {
   type OpenPeriodOptions,
   purgeMarkersOn,
 } from '../with-audit/periods/index.js'
-import { buildRecordAad, buildRecordEnvelope } from './enclave/index.js'
-import { encrypt, openEnvelopeJson, hasPerRecordKey, SEALED_CEK_NS, type SealingContext, type EnclaveKey, buildDeleteMarker, makeReservedEnvelopes } from './enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope } from '../capsule/index.js'
+import { encrypt, openEnvelopeJson, hasPerRecordKey, SEALED_CEK_NS, type SealingContext, type EnclaveKey, buildDeleteMarker, makeReservedEnvelopes } from '../capsule/index.js'
 import type { RecipientSealer } from '../with-party/team/managed-secret.js'
 import {
   createExportBlobsHandle,
@@ -1355,7 +1355,7 @@ export class Vault {
           )
         },
         emitter: this.emitter,
-        buildDeleteMarker, // #647 fix wave 1 — real kernel/enclave builder; LookupHandle can't import it directly
+        buildDeleteMarker, // #647 fix wave 1 — real capsule/enclave-aes builder; LookupHandle can't import it directly
         // #650 Task 4 (#647) — choke-point participation for LOCAL writes: dirty-log tracking + a
         // one-shot graph-dispatch wave (local-write's `graphDispatch.collect`-equivalent; Task 5's ref edges give it dependents).
         onDirty: this.onDirty,

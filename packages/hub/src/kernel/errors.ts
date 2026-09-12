@@ -3840,7 +3840,7 @@ export class RecoveryProfileNotImplementedError extends NoydbError {
 // ─── Enclave Errors ────────────────────────────────────────────────────
 
 /**
- * Thrown by a `kernel/enclave` fork's **optional groups** — sealing,
+ * Thrown by a `capsule/enclave-aes` fork's **optional groups** — sealing,
  * deterministic, per-record-key lifecycle — when that fork's crypto
  * engine does not implement the requested behavior.
  *
@@ -3874,7 +3874,7 @@ export class EnclaveNotSupportedError extends NoydbError {
  * Raised when a collection's `classifiedFields` configuration is invalid
  * (e.g. a claimed field name collides with a rider companion or another
  * classified field). Homed in `kernel/errors.ts` (rather than the classified
- * feature module) so `kernel/enclave/classify/*` can throw it without
+ * feature module) so `capsule/enclave-aes/classify/*` can throw it without
  * importing with-*; the classified feature module re-exports it under the
  * same name for backward-compatible import paths.
  */

@@ -9,7 +9,7 @@
  */
 import { ConflictError } from '../../src/kernel/errors.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../../src/kernel/types.js'
-import { issueChallenge, verifyBrokerProof, base64ToBuffer } from '../../src/kernel/enclave/index.js'
+import { issueChallenge, verifyBrokerProof, base64ToBuffer } from '../../src/capsule/enclave-aes/index.js'
 
 // ─── In-memory NoydbStore (mirrors __tests__/sync-credentials.test.ts) ─────
 

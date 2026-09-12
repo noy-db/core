@@ -10,15 +10,15 @@ import type { SealedRecordStrategy } from './strategy.js'
 export function withSealedRecord(): SealedRecordStrategy {
   return {
     async sealRecordToHost(ctx, collection, id, hostSealer, opts) {
-      const { sealRecordToHost } = await import('../../kernel/enclave/index.js')
+      const { sealRecordToHost } = await import('../../capsule/index.js')
       return sealRecordToHost(ctx, collection, id, hostSealer, opts)
     },
     async revokeSealedRecord(ctx, collection, id, pid, opts) {
-      const { revokeSealedRecord } = await import('../../kernel/enclave/index.js')
+      const { revokeSealedRecord } = await import('../../capsule/index.js')
       return revokeSealedRecord(ctx, collection, id, pid, opts)
     },
     async rotateRecordCek(ctx, collection, id) {
-      const { rotateRecordCek } = await import('../../kernel/enclave/index.js')
+      const { rotateRecordCek } = await import('../../capsule/index.js')
       return rotateRecordCek(ctx, collection, id)
     },
   }

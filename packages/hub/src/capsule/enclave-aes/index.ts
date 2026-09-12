@@ -1,13 +1,13 @@
 /**
- * **kernel/enclave** — the hub's crypto interior, behind one door.
+ * **capsule/enclave-aes** — the hub's crypto interior, behind one door.
  *
  * This barrel is **the fork-swap contract**: a sister project that wants a
  * different crypto engine (a different KDF, a hardware-backed keystore, a
- * post-quantum wrap algorithm, …) replaces the entire `kernel/enclave/`
+ * post-quantum wrap algorithm, …) replaces the entire `capsule/enclave-aes/`
  * folder wholesale and only has to honor the exports below. Nothing outside
- * `kernel/enclave/**` may deep-import `crypto.js` or `record-keys/*` directly
+ * `capsule/enclave-aes/**` may deep-import `crypto.js` or `record-keys/*` directly
  * — `scripts/check-architecture.mjs`'s `enclave-barrel-only` check enforces
- * that mechanically. Import sites inside `kernel/enclave/**` keep their
+ * that mechanically. Import sites inside `capsule/enclave-aes/**` keep their
  * existing relative imports; this door is for everyone else.
  *
  * The export list is the OBSERVED contract — exactly the symbols consumed

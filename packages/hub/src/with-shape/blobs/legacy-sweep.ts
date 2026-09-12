@@ -17,7 +17,7 @@
  * are skipped, not counted: this is a tier-0 pass.
  */
 import type { NoydbStore, BlobObject } from '../../kernel/types.js'
-import { openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import { TamperedError } from '../../kernel/errors.js'
 import { BLOB_COLLECTION, BLOB_INDEX_COLLECTION, BLOB_CHUNKS_COLLECTION } from './blob-set.js'
 

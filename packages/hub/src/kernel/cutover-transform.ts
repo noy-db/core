@@ -10,7 +10,7 @@
  * @internal
  */
 import type { EncryptedEnvelope, NoydbStore, VdigFieldPolicy } from './types.js'
-import { isTombstone, isDeleteMarker, type RecordCodec, type EnclaveKey } from './enclave/index.js'
+import { isTombstone, isDeleteMarker, type RecordCodec, type EnclaveKey } from '../capsule/index.js'
 import { assertCutoverTierSafe } from './tier-visibility.js'
 import type { MutationOrigin } from './mutation.js'
 

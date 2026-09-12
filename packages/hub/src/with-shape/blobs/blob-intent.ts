@@ -38,7 +38,7 @@
  * 2, rehome — mint/resume/consume for `op:'rehome'` markers).
  */
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
-import { buildSealedRecordEnvelope, writeEnvelopeBody, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildSealedRecordEnvelope, writeEnvelopeBody, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import { isConflictError, BlobIntentPendingError, ValidationError } from '../../kernel/errors.js'
 
 /** Reserved collection holding `_blob_intent` marker rows. */

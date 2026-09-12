@@ -26,7 +26,7 @@ import type { NoydbStore } from '../../kernel/types.js'
 import type { UnlockedKeyring } from '../../with-party/team/keyring.js'
 import type { RefRegistry } from '../../kernel/refs.js'
 import type { VaultMeta } from './meta.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 
 /**
  * The minimal slice of Vault internal state the walker needs.

@@ -4,7 +4,7 @@
  * pattern of `_meta/policy` (no PII — a counter + a state enum).
  */
 import type { NoydbStore } from '../../kernel/types.js'
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
 
 export type FenceState = 'normal' | 'draining' | 'migrating' | 'complete'
 

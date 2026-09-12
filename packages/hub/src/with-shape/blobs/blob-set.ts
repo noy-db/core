@@ -25,7 +25,7 @@ import { buildRecordAad,
   unwrapCek,
   sha256Hex,
   type EnclaveKey,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import { BlobIntentPendingError, BlobOfflineError, ConflictError, isConflictError, NotFoundError, TamperedError, TierNotGrantedError, UnsupportedTierCompositionError, ValidationError } from '../../kernel/errors.js'
 import { blobPinKey, type BlobPinCache, type BlobPinEntry } from './blob-pinning.js'
 import { liveRecordIsElevated, liveRecordTier } from '../../kernel/tier-visibility.js'
@@ -990,7 +990,7 @@ export class BlobSet {
    *     covered by rotation.
    *
    * This also makes one ordering rule true across the blob subsystem rather
-   * than two opposite ones: `kernel/enclave/record-keys/rekey-blob.ts` already
+   * than two opposite ones: `capsule/enclave-aes/record-keys/rekey-blob.ts` already
    * re-encrypts chunks before re-sealing their index entry, and documents that
    * order as its resume property.
    *

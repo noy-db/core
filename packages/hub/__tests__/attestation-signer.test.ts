@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { loadOrCreateSigner, loadSigner, SIGNER_RECORD_ID, ATTESTATIONS_COLLECTION, type DocSigner } from '../src/with-audit/attestation/signer.js'
-import { buildRecordAad, generateDEK, encrypt } from '../src/kernel/enclave/index.js'
+import { buildRecordAad, generateDEK, encrypt } from '../src/capsule/enclave-aes/index.js'
 import { ed25519Verify, signPayloadCore, generateDocSigningKeyPair } from '@noy-db/attestation'
 import { NOYDB_FORMAT_VERSION } from '../src/kernel/types.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/kernel/types.js'

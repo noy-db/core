@@ -15,7 +15,7 @@ export { readPath } from '../kernel/query/predicate.js'
 export { reduceRecords } from '../with-lookup/reduce/reduction.js'
 export { groupAndReduce } from '../with-lookup/reduce/groupby.js'
 export { generateULID } from '../with-pod/ulid.js'
-export { sha256Hex } from '../kernel/enclave/index.js'
+export { sha256Hex } from '../capsule/index.js'
 // Coordination port — the stable drain-barrier seam an outward
 // orchestrator (@klum-db/lobby) or a `by-*` transport binds to. The pure
 // helpers are runtime; the port + presence/fence shapes are types only

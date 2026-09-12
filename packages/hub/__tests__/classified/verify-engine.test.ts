@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { generateDEK, encrypt, deriveSealedFieldKeyFromCek } from '../../src/kernel/enclave/index.js'
-import { mintVdigSlot } from '../../src/kernel/enclave/classify/write.js'
+import { generateDEK, encrypt, deriveSealedFieldKeyFromCek } from '../../src/capsule/enclave-aes/index.js'
+import { mintVdigSlot } from '../../src/capsule/enclave-aes/classify/write.js'
 import {
   verifyDigestField, verifyTextField, matchGroupFields, type VerifyEngineCtx,
-} from '../../src/kernel/enclave/classify/verify.js'
+} from '../../src/capsule/enclave-aes/classify/verify.js'
 import type { EncryptedEnvelope, VdigFieldPolicy } from '../../src/kernel/types.js'
 import { ClassifiedConfigError, ClassifiedVerifyError } from '../../src/kernel/errors.js'
 

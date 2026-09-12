@@ -5,7 +5,7 @@
  * (`quiescedAtVersion`). Plaintext envelope, like the fence doc.
  */
 import type { NoydbStore } from '../../kernel/types.js'
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
 
 const META_COLLECTION = '_meta'
 const CLIENT_PREFIX = 'schema-fence:client:'

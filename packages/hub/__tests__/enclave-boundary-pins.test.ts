@@ -35,7 +35,7 @@ import {
   importRecipientPublicKeySpki,
   recipientWrap,
   recipientUnwrap,
-} from '../src/kernel/enclave/index.js'
+} from '../src/capsule/enclave-aes/index.js'
 import {
   deriveMagicLinkContentKey,
   MAGIC_LINK_CONTENT_INFO_PREFIX,

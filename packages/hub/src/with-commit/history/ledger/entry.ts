@@ -56,7 +56,7 @@
  * timestamps. This is an accepted trade-off for the tamper-evidence
  * property; full ORAM-level privacy is out of scope for noy-db.
  */
-import { sha256Hex as sha256HexBytes } from '../../../kernel/enclave/index.js'
+import { sha256Hex as sha256HexBytes } from '../../../capsule/index.js'
 
 export interface LedgerEntry {
   /**

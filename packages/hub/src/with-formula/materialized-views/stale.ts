@@ -8,7 +8,7 @@ import type { MaterializedViewRegistry, RegisteredMV } from './registry.js'
 // Keeps the executor chunk out of the floor bundle (mirrors v1 floor-bundle isolation).
 import type { MVQueryContext } from './types.js'
 import type { NoydbStore } from '../../kernel/types.js'
-import { RecordCodec } from '../../kernel/enclave/index.js'
+import { RecordCodec } from '../../capsule/index.js'
 
 import { lazy } from '../../kernel/lazy.js'
 

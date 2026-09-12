@@ -11,7 +11,7 @@
  */
 
 import { canonicalize } from './canonicalize.js'
-import { sha256Hex } from '../../kernel/enclave/index.js'
+import { sha256Hex } from '../../capsule/index.js'
 import type { PersistedSchemaEnvelope, PersistedSchemaKind } from './types.js'
 
 /**

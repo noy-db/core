@@ -19,7 +19,7 @@
  *
  * @module
  */
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import type { UserVisibility } from './types.js'
 import { META_COLLECTION } from './storage.js'

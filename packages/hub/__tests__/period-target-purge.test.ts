@@ -4,7 +4,7 @@ import { createNoydb } from '../src/kernel/noydb.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
 import { withSync } from '../src/with-sync/index.js'
-import { isDeleteMarker } from '../src/kernel/enclave/index.js'
+import { isDeleteMarker } from '../src/capsule/enclave-aes/index.js'
 
 function toMemory(): NoydbStore & { raw(c: string, col: string, id: string): EncryptedEnvelope | undefined } {
   const store = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()

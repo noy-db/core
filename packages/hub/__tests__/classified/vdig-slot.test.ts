@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { generateDEK } from '../../src/kernel/enclave/index.js'
+import { generateDEK } from '../../src/capsule/enclave-aes/index.js'
 import {
   VDIG_SALT_DOMAIN, buildVdigAad, deriveVdigSlotKey,
   sealVdigPayload, openVdigPayload, type VdigPayload,
-} from '../../src/kernel/enclave/classify/vdig.js'
+} from '../../src/capsule/enclave-aes/classify/vdig.js'
 import { TamperedError } from '../../src/kernel/errors.js'
 
 const payload: VdigPayload = {

@@ -15,7 +15,7 @@
  * (`_writeTombstone`) and drives `vault.forget()` lives with the collection /
  * vault; it calls into these.
  */
-import { type EncryptedEnvelope } from '../../types.js'
+import { type EncryptedEnvelope } from '../../../kernel/types.js'
 import { buildRecordEnvelope } from '../record-envelope.js'
 import type { RecordRef } from '../record-aad.js'
 

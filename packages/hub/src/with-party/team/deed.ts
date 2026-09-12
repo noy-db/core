@@ -29,7 +29,7 @@
  * @module
  */
 
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import type { UnlockedKeyring } from './keyring.js'
 import { createOwnerKeyring } from './keyring.js'

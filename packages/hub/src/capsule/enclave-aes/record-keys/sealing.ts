@@ -23,10 +23,10 @@ import {
   type RecipientSealer,
   type SealedCekBinding,
   type SealedCekDeliveryEnvelope,
-} from '../../types.js'
+} from '../../../kernel/types.js'
 import { dualReadSealedSlot } from './sealed-slot.js'
 import { openVdigPayload, sealVdigPayload } from '../classify/vdig.js'
-import { RecordCekNotFoundError, ValidationError } from '../../errors.js'
+import { RecordCekNotFoundError, ValidationError } from '../../../kernel/errors.js'
 import { buildRecordEnvelope } from '../record-envelope.js'
 
 const subtle = globalThis.crypto.subtle

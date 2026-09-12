@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import { ConflictError } from '../src/kernel/errors.js'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { toMemory } from '../../to-memory/src/index.js'

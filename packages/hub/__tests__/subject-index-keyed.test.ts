@@ -13,7 +13,7 @@ import { createNoydb } from '../src/kernel/noydb.js'
 import { ConflictError } from '../src/kernel/errors.js'
 import { withForget } from '../src/with-audit/forget/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/kernel/types.js'
 import {
   addSubjectRef,
@@ -134,7 +134,7 @@ describe('M-2 — subject index keyed id + bucketed ref list', () => {
     const keyedId = store.rawList('v', '_subject_index')[0]!
     const keyedEnv = store.raw('v', '_subject_index', keyedId)!
     const legacyId = await sha256HexUtf8('buyer-1')
-    const { encrypt, buildRecordAad, openEnvelopeJson } = await import('../src/kernel/enclave/index.js')
+    const { encrypt, buildRecordAad, openEnvelopeJson } = await import('../src/capsule/enclave-aes/index.js')
     const subjDek = await vault._introspectState().getDEK('_subject_index')
     const body = await openEnvelopeJson({ collection: '_subject_index', id: keyedId }, keyedEnv, subjDek)
     const { iv, data } = await encrypt(body, subjDek, buildRecordAad({ collection: '_subject_index', id: legacyId, version: keyedEnv._v }))
@@ -155,7 +155,7 @@ describe('M-2 — subject index keyed id + bucketed ref list', () => {
     const getDEK = async () => dek
     // Hand-write a legacy entry: sha256 key + bare-array body encrypted under DEK.
     const legacyId = await sha256HexUtf8('buyer-L')
-    const { encrypt, buildRecordAad } = await import('../src/kernel/enclave/index.js')
+    const { encrypt, buildRecordAad } = await import('../src/capsule/enclave-aes/index.js')
     // #1041: seal against the address it is stored at.
     const { iv, data } = await encrypt(JSON.stringify([{ collection: 'invoices', id: 'i-L' }]), dek, buildRecordAad({ collection: '_subject_index', id: legacyId, version: 1 }))
     await store.put('v', '_subject_index', legacyId, {

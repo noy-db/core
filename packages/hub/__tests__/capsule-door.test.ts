@@ -13,7 +13,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import * as door from '../src/capsule/index.js'
-import * as barrel from '../src/kernel/enclave/index.js'
+import * as barrel from '../src/capsule/enclave-aes/index.js'
 
 describe('capsule door', () => {
   it('re-exports every runtime value the enclave barrel exports, by identity', () => {

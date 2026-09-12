@@ -6,7 +6,7 @@
  *
  * @module
  */
-import { buildRecordEnvelope } from '../../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../../capsule/index.js'
 import type { NoydbStore } from '../../../kernel/types.js'
 import type { Cover } from './types.js'
 import { isCover } from './schema.js'

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildRecordAad } from '../src/kernel/enclave/record-aad.js'
-import type { RecordIdentity } from '../src/kernel/enclave/record-aad.js'
+import { buildRecordAad } from '../src/capsule/enclave-aes/record-aad.js'
+import type { RecordIdentity } from '../src/capsule/enclave-aes/record-aad.js'
 
 /**
  * Output-domain invariants on what may reach a seal (#1220).

@@ -27,7 +27,7 @@ export const ENTRIES = {
   // source typechecks, hub's own suite runs from src, and only a consumer
   // installing the tarball sees ERR_MODULE_NOT_FOUND. Measured 2026-09-12.
   // This adds no PUBLISHED subpath — it is absent from `exports` on purpose.
-  'kernel/enclave/index': 'src/kernel/enclave/index.ts',
+  'capsule/enclave-aes/index': 'src/capsule/enclave-aes/index.ts',
   // #1458 — the three query-tier extensions. Each is a SIDE-EFFECT entry
   // (it patches Query.prototype on load) and each is named in package.json's
   // `sideEffects` array; see `src/kernel/query/relate/index.ts`.

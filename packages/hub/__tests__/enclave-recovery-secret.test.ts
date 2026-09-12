@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { generateRecoverySecret } from '../src/kernel/enclave/index.js'
+import { generateRecoverySecret } from '../src/capsule/enclave-aes/index.js'
 
 describe('generateRecoverySecret — enclave-owned recovery secret', () => {
   it('returns 32 bytes in the reference enclave', () => {

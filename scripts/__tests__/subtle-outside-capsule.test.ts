@@ -1,7 +1,7 @@
 /**
- * #1319 — `check-architecture`'s `subtle-outside-enclave` BAN.
+ * #1319 — `check-architecture`'s `subtle-outside-capsule` BAN.
  *
- * `enclave-barrel-only` bans a file outside `kernel/enclave/**` from
+ * `enclave-barrel-only` bans a file outside `capsule/enclave-aes/**` from
  * IMPORTING past the barrel. It says nothing about a file calling
  * `globalThis.crypto.subtle` directly, which reaches around the fork-swap
  * contract just as completely — and is how `wrapped-deks.ts:100` came to
@@ -32,10 +32,10 @@ afterEach(() => {
   if (existsSync(PROBE)) rmSync(PROBE)
 })
 
-describe('check-architecture — subtle-outside-enclave ban', () => {
-  it('the tree as committed has NO direct crypto.subtle call outside kernel/enclave', () => {
+describe('check-architecture — subtle-outside-capsule ban', () => {
+  it('the tree as committed has NO direct crypto.subtle call outside capsule/enclave-aes', () => {
     const { status, out } = runCheck()
-    expect(out).not.toMatch(/subtle-outside-enclave/)
+    expect(out).not.toMatch(/subtle-outside-capsule/)
     expect(status).toBe(0)
   })
 
@@ -49,16 +49,16 @@ describe('check-architecture — subtle-outside-enclave ban', () => {
     expect(src).not.toMatch(/SUBTLE_OUTSIDE_ENCLAVE\s*=\s*new Map\(/)
   })
 
-  it('a NEW file calling crypto.subtle outside kernel/enclave fails, naming the check and the door', () => {
+  it('a NEW file calling crypto.subtle outside capsule/enclave-aes fails, naming the check and the door', () => {
     writeFileSync(
       PROBE,
       "export async function probe(b: Uint8Array): Promise<ArrayBuffer> {\n  return globalThis.crypto.subtle.digest('SHA-256', b as BufferSource)\n}\n",
     )
     const { status, out } = runCheck()
     expect(status).not.toBe(0)
-    expect(out).toMatch(/subtle-outside-enclave/)
+    expect(out).toMatch(/subtle-outside-capsule/)
     expect(out).toMatch(/__subtle_ratchet_probe__\.ts/)
-    expect(out).toMatch(/kernel\/enclave\/index\.js/)
+    expect(out).toMatch(/capsule\/enclave-aes\/index\.js/)
   })
 
   it('a subtle call that appears only inside a comment does not count', () => {
@@ -67,7 +67,7 @@ describe('check-architecture — subtle-outside-enclave ban', () => {
       "// callers used to do subtle.digest('SHA-256', b) here\n/** and `subtle.encrypt(...)` in docs */\nexport const probe = 1\n",
     )
     const { status, out } = runCheck()
-    expect(out).not.toMatch(/subtle-outside-enclave/)
+    expect(out).not.toMatch(/subtle-outside-capsule/)
     expect(status).toBe(0)
   })
 })

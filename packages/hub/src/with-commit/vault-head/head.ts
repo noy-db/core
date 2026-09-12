@@ -9,7 +9,7 @@
  *
  * @packageDocumentation
  */
-import { encrypt, buildRecordAad, openEnvelopeJson, buildRecordEnvelope, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { encrypt, buildRecordAad, openEnvelopeJson, buildRecordEnvelope, type EnclaveKey } from '../../capsule/index.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import { VAULT_HEAD_COLLECTION } from './strategy.js'
 

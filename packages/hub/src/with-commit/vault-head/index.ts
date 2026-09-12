@@ -18,4 +18,4 @@ export {
 // consumer must be able to NAME them without reaching for another entry point
 // (check:types / type-reachability).
 export type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
-export type { EnclaveKey } from '../../kernel/enclave/index.js'
+export type { EnclaveKey } from '../../capsule/index.js'

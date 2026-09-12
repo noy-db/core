@@ -31,7 +31,7 @@
 
 import type { NoydbStore, EncryptedEnvelope, SlotInfo } from '../../kernel/types.js'
 import { ValidationError } from '../../kernel/errors.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, type EnclaveKey } from '../../capsule/index.js'
 import { reportOrphanBlobChunks, type OrphanChunkReport } from './orphan-report.js'
 import { sweepUnreferencedLegacyBlobs, type UnreferencedLegacyBlobReport } from './legacy-sweep.js'
 

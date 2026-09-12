@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { envelopeBodyForHash } from '../../src/kernel/enclave/index.js'
+import { envelopeBodyForHash } from '../../src/capsule/enclave-aes/index.js'
 import type { EncryptedEnvelope } from '../../src/kernel/types.js'
 
 const base = { _noydb: 1 as const, _v: 1, _ts: 't', _iv: 'i' }

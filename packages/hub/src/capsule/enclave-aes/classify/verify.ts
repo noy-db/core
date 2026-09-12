@@ -21,8 +21,8 @@ import { blindedEqual } from './compare.js'
 import { evaluateKofN } from './kofn.js'
 import { openVdigPayload, type VdigPayload } from './vdig.js'
 import { dualReadSealedSlot } from '../record-keys/sealed-slot.js'
-import { ClassifiedConfigError, ClassifiedVerifyError } from '../../errors.js'
-import type { EncryptedEnvelope, VdigFieldPolicy, ClassifiedVerdict } from '../../types.js'
+import { ClassifiedConfigError, ClassifiedVerifyError } from '../../../kernel/errors.js'
+import type { EncryptedEnvelope, VdigFieldPolicy, ClassifiedVerdict } from '../../../kernel/types.js'
 
 export interface VerifyEngineCtx {
   readonly collection: string

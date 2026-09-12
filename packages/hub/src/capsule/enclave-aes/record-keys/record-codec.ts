@@ -17,20 +17,20 @@
  * Internal service — not exported as a `@noy-db/hub/*` subpath.
  */
 import { encrypt, decrypt, encryptDeterministic, deriveDeterministicKey, wrapCek, unwrapCek, deriveSealedFieldKeyFromCek, type EnclaveKey } from '../crypto.js'
-import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope, type CrdtMode, type CrdtState, type CrdtStrategy, type VdigFieldPolicy, type SealedHandle } from '../../types.js'
+import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope, type CrdtMode, type CrdtState, type CrdtStrategy, type VdigFieldPolicy, type SealedHandle } from '../../../kernel/types.js'
 import { isTombstone, isDeleteMarker } from './tombstone.js'
 import { parseSealedSlot } from './sealed-slot.js'
 import { buildRecordEnvelope } from '../record-envelope.js'
 import { buildRecordAad, recordAadFor, type RecordIdentity, type RecordRef } from '../record-aad.js'
 import { sealFields, unsealOneField, unsealFields, makeHandleProducer, makeSealedSlotCapability, makeReservedEnvelopes, type SealKeyMaterial } from './sealed-slots.js'
-import { DebugReservedFieldError, ClassifiedConfigError, ValidationError } from '../../errors.js'
+import { DebugReservedFieldError, ClassifiedConfigError, ValidationError } from '../../../kernel/errors.js'
 import { mintVdigSlot } from '../classify/write.js'
 import { mintBidxTag } from '../classify/bidx.js'
 import { normalizeForVerify } from '../classify/normalize.js'
-import { validateSchemaOutput, type StandardSchemaV1 } from '../../schema.js'
-import type { Lru } from '../../cache/index.js'
-import type { ViaCryptoCtx, SealedSlotRef } from '../../via/index.js'
-import type { ViaPipeline } from '../../via/pipeline.js'
+import { validateSchemaOutput, type StandardSchemaV1 } from '../../../kernel/schema.js'
+import type { Lru } from '../../../kernel/cache/index.js'
+import type { ViaCryptoCtx, SealedSlotRef } from '../../../kernel/via/index.js'
+import type { ViaPipeline } from '../../../kernel/via/pipeline.js'
 
 /**
  * One classified per-slot verdict from {@link RecordCodec.classifySealedShred}.

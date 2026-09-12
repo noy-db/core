@@ -5,7 +5,7 @@
  * `_v`, `_ts`, `_by`, `_source`, `_sourceTs`, `_tier`, `_elevatedBy`) and a
  * protected body (enclave-owned; `_iv`, `_data`, `_cek`, `_det`, `_sealed`,
  * `_debug`). The four helpers below are the ONLY sanctioned way for code
- * outside `kernel/enclave/**` to read or construct the protected body —
+ * outside `capsule/enclave-aes/**` to read or construct the protected body —
  * later migration batches move the ~121 direct `_iv`/`_data`/`_cek`/`_sealed`
  * access sites in `with-*` services onto these.
  *
@@ -15,7 +15,7 @@
  */
 import { buildRecordAad, recordAadFor, type RecordIdentity, type RecordRef } from '../record-aad.js'
 import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek, type EnclaveKey } from '../crypto.js'
-import type { EncryptedEnvelope } from '../../types.js'
+import type { EncryptedEnvelope } from '../../../kernel/types.js'
 
 /**
  * Open an envelope's protected body to its JSON text.
@@ -120,7 +120,7 @@ export function hasPerRecordKey(env: EncryptedEnvelope): boolean {
  *
  * Deliberately reimplements the two-key-object canonicalization inline
  * rather than importing `with-commit/history/ledger/entry.ts`'s general
- * `canonicalJson` — `kernel/enclave/**` may import only spine types (C3),
+ * `canonicalJson` — `capsule/enclave-aes/**` may import only spine types (C3),
  * never a `with-*` service. For this fixed `{ _data: string; _sealed:
  * Record<string, string> }` shape the two produce byte-identical output
  * (verified against that exact call site's oracle expression in

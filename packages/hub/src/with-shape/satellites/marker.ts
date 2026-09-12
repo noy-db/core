@@ -1,5 +1,5 @@
 import type { NoydbStore } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import { SatelliteConfigError } from '../../kernel/errors.js'
 import { hashFields } from './validate.js'
 import type { PairingMarker, SatelliteSpec } from './types.js'

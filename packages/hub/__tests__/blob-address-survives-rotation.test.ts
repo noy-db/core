@@ -18,7 +18,7 @@ import { memoryStore, ValidationError } from '../src/index.js'
 import { withTeam } from '../src/with-party/team/index.js'
 import { withBlobs } from '../src/via/blob/index.js'
 import { withTiers } from '../src/with-audit/tiers/index.js'
-import { deriveBlobAddressKey, generateDEK, hmacSha256Hex } from '../src/kernel/enclave/index.js'
+import { deriveBlobAddressKey, generateDEK, hmacSha256Hex } from '../src/capsule/enclave-aes/index.js'
 import { BLOB_ADDRESS_KEY_ID } from '../src/kernel/constants.js'
 import type { NoydbStore } from '../src/kernel/types.js'
 

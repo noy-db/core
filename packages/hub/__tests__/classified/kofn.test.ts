@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evaluateKofN } from '../../src/kernel/enclave/classify/kofn.js'
+import { evaluateKofN } from '../../src/capsule/enclave-aes/classify/kofn.js'
 
 describe('evaluateKofN', () => {
   it('truth table', () => {

@@ -28,7 +28,7 @@
  * ## Why it lives in the enclave
  *
  * It reads and writes protected body slots and it unwraps/re-wraps keys — the
- * two things `enclave-body-only` reserves to `kernel/enclave/**`, and the same
+ * two things `enclave-body-only` reserves to `capsule/enclave-aes/**`, and the same
  * reason `rekeyEnvelopeToDek` moved here in #1074. `with-party` orchestrates
  * the rotation and must not touch a body to do it.
  *
@@ -50,7 +50,7 @@ import {
   type EnclaveKey,
 } from '../crypto.js'
 import { recordAadFor } from '../record-aad.js'
-import type { BlobObject, EncryptedEnvelope, NoydbStore } from '../../types.js'
+import type { BlobObject, EncryptedEnvelope, NoydbStore } from '../../../kernel/types.js'
 
 /** Blob metadata envelopes, keyed by eTag. owner: with-shape/blobs/blob-set.ts */
 const BLOB_INDEX_COLLECTION = '_blob_index'

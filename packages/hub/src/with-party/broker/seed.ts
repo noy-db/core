@@ -47,8 +47,8 @@ import {
   base64ToBuffer,
   deriveBrokerProofBits,
   computeBrokerProof,
-} from '../../kernel/enclave/index.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import {
   PermissionDeniedError,
   ValidationError,

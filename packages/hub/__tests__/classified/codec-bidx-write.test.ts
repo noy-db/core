@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { RecordCodec, generateDEK } from '../../src/kernel/enclave/index.js'
-import { computeBidxTarget } from '../../src/kernel/enclave/classify/find.js'
+import { RecordCodec, generateDEK } from '../../src/capsule/enclave-aes/index.js'
+import { computeBidxTarget } from '../../src/capsule/enclave-aes/classify/find.js'
 import { NO_CRDT } from '../../src/with-commit/crdt/strategy.js'
 import type { VdigFieldPolicy } from '../../src/kernel/types.js'
 

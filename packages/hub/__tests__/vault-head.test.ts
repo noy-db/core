@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { memoryStore } from '../src/index.js'
-import { generateDEK, openEnvelopeJson, recordAadFor, decrypt, writeEnvelopeBody, buildRecordEnvelope, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { generateDEK, openEnvelopeJson, recordAadFor, decrypt, writeEnvelopeBody, buildRecordEnvelope, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 import { withVaultHead, verifyVaultHead, VAULT_HEAD_COLLECTION } from '../src/with-commit/vault-head/index.js'
 import { bucketIndex } from '../src/with-commit/vault-head/head.js'
 

@@ -23,7 +23,7 @@
 export { withTiers } from './active.js'
 export { NO_TIERS, type TiersStrategy } from './strategy.js'
 export { TiersNotEnabledError } from '../../kernel/errors.js'
-import { recordAadFor, type RecordIdentity, buildRecordAad, buildRecordEnvelope, encrypt, decrypt, unwrapCek, rewrapBodyToDek, applyRewrappedBody, isDeleteMarker, isTombstoneShape, type RecordCodec, type EnclaveKey, type SealedShredSlot } from '../../kernel/enclave/index.js'
+import { recordAadFor, type RecordIdentity, buildRecordAad, buildRecordEnvelope, encrypt, decrypt, unwrapCek, rewrapBodyToDek, applyRewrappedBody, isDeleteMarker, isTombstoneShape, type RecordCodec, type EnclaveKey, type SealedShredSlot } from '../../capsule/index.js'
 import { TierDemoteDeniedError, UnsupportedTierCompositionError, PersistedIndexCompensationError, UniqueConstraintError } from '../../kernel/errors.js'
 import { dekKey, assertTierAccess } from '../../with-party/team/tiers.js'
 import type { UnlockedKeyring } from '../../with-party/team/keyring.js'
@@ -1107,4 +1107,4 @@ export function classifySealedShred<T>(
 }
 
 // #837 — classifySealedShred's slot type must be nameable from this entry.
-export type { SealedShredSlot } from '../../kernel/enclave/index.js'
+export type { SealedShredSlot } from '../../capsule/index.js'

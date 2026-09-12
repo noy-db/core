@@ -26,7 +26,7 @@ import type { SchemaUpdateStrategy, UpdateDecision, SchemaDelta } from '../schem
 import type { NoydbStore, ClassifiedMarker } from '../../kernel/types.js'
 import type { PersistedSchemaEnvelope } from './types.js'
 import type { PairingMarker } from '../satellites/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 
 /**
  * Max optimistic-CAS retries for the shared `_schemas/<collection>` record

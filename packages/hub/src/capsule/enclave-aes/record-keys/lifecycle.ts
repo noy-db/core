@@ -20,9 +20,9 @@
  * returned key themselves.
  */
 import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek, type EnclaveKey } from '../crypto.js'
-import type { EncryptedEnvelope } from '../../types.js'
+import type { EncryptedEnvelope } from '../../../kernel/types.js'
 import { buildRecordAad, type RecordIdentity } from '../record-aad.js'
-import type { Lru } from '../../cache/index.js'
+import type { Lru } from '../../../kernel/cache/index.js'
 
 /** Dependencies {@link resolveStableCek} needs from its collection. */
 export interface StableCekDeps {

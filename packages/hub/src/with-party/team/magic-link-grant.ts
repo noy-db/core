@@ -50,7 +50,7 @@
 
 import type { NoydbStore } from '../../kernel/types.js'
 import type { UnlockedKeyring } from './keyring.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, wrapKey, unwrapKey, sha256Bytes, hkdfAesGcmKey, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, wrapKey, unwrapKey, sha256Bytes, hkdfAesGcmKey, type EnclaveKey } from '../../capsule/index.js'
 import { dekKey } from './tiers.js'
 import { DelegationTargetMissingError } from '../../kernel/errors.js'
 

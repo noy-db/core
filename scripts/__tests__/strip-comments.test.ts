@@ -68,7 +68,7 @@ describe('stripComments — a line comment must never swallow code', () => {
       'src/**',
       'a/*.ts',
       'foo/**/bar',
-      'kernel/enclave/*',
+      'capsule/enclave-aes/*',
       'see /* this */ inline',
     ]
     for (const m of mentions) {

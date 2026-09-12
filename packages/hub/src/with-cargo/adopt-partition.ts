@@ -10,7 +10,7 @@
 import {
   base64ToBuffer, bufferToBase64, wrapKey, importTransferKey, decryptBytes, importDekSet,
   type EnclaveKey,
-} from '../kernel/enclave/index.js'
+} from '../capsule/index.js'
 import { TransferSealError, AdoptionStateError, ValidationError } from '../kernel/errors.js'
 import type { NoydbStore, VaultSnapshot, KeyringFile } from '../kernel/types.js'
 import { createOwnerKeyring, requireRosterKey } from '../with-party/team/keyring.js'
@@ -24,7 +24,7 @@ import { LedgerStore } from '../with-commit/history/ledger/store.js'
 import { LEDGER_COLLECTION } from '../with-commit/history/ledger/constants.js'
 import type { TransferSealPayload } from '../with-pod/pod.js'
 import { readPodHeader, readPod, parseExtractedPartitionBody } from '../with-pod/pod.js'
-import { buildRecordEnvelope } from '../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../capsule/index.js'
 
 /**
  * Reverse of `sealDeks`. Imports the transfer key, decrypts the

@@ -7,8 +7,8 @@
  */
 import { dualReadSealedSlot } from '../record-keys/sealed-slot.js'
 import { isTombstone } from '../record-keys/tombstone.js'
-import { ClassifiedRevealError } from '../../errors.js'
-import type { EncryptedEnvelope } from '../../types.js'
+import { ClassifiedRevealError } from '../../../kernel/errors.js'
+import type { EncryptedEnvelope } from '../../../kernel/types.js'
 import type { EnclaveKey } from '../crypto.js'
 
 export interface RevealEngineCtx {

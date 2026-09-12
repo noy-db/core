@@ -55,7 +55,7 @@ import {
 import { signRecord, verifyRecord } from './signature.js'
 import type { Redirect } from './redirect.js'
 import type { DocSigner } from '../with-audit/attestation/signer.js'
-import { sha256Hex as sha256HexBytes } from '../kernel/enclave/index.js'
+import { sha256Hex as sha256HexBytes } from '../capsule/index.js'
 import { PodIntegrityError, PodSealMismatchError, ValidationError } from '../kernel/errors.js'
 import type { Vault } from '../kernel/vault.js'
 import type { PodRecipient } from '../with-party/team/keyring.js'

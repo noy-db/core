@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
 import { inlineMemory } from './classified/harness.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import { ensureSatelliteMarker } from '../src/with-shape/satellites/marker.js'
 import { persistSchemaIfNeeded } from '../src/with-shape/persisted-schemas/register.js'
 import { loadPersistedSchema } from '../src/with-shape/persisted-schemas/storage.js'

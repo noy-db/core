@@ -36,7 +36,7 @@
  * @module
  */
 
-import { DecryptionError, InvalidKeyError, TamperedError, ValidationError } from '../errors.js'
+import { DecryptionError, InvalidKeyError, TamperedError, ValidationError } from '../../kernel/errors.js'
 
 /**
  * **EnclaveKey** — the opaque key type at the enclave seam.
@@ -44,7 +44,7 @@ import { DecryptionError, InvalidKeyError, TamperedError, ValidationError } from
  * In noy-db's reference enclave this is `CryptoKey` (the Web Crypto API's
  * key handle). A fork's enclave redefines this alias to its own key
  * representation (e.g. `type EnclaveKey = null` for a keyless HSM-backed
- * fork) — outside `kernel/enclave/**`, every consumer must treat it as
+ * fork) — outside `capsule/enclave-aes/**`, every consumer must treat it as
  * opaque: never construct, inspect, or serialize it directly, only pass it
  * between barrel functions (`encrypt`/`decrypt`/`wrapKey`/`unwrapKey`/…).
  */
@@ -231,7 +231,7 @@ export async function generateEphemeralKey(): Promise<CryptoKey> {
 // recovery-shamir, tier-2 password slots). It is an enclave door because it
 // is the one place a key's REPRESENTATION crosses into bytes: a fork with its
 // own EnclaveKey (hardware-backed, post-quantum, no encryption) decides here
-// what "the bytes of a key" means, and nothing outside kernel/enclave has to
+// what "the bytes of a key" means, and nothing outside capsule/enclave-aes has to
 // know. Byte-for-byte what wrapped-deks.ts did inline before #1317.
 
 /** Serialize a DEK set to `{ collection: base64(rawKey) }`. */

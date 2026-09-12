@@ -12,7 +12,7 @@
  * secret/salt must produce byte-identical wrapped output.
  */
 import { describe, it, expect } from 'vitest'
-import { deriveKey, generateDEK, wrapKey } from '../src/kernel/enclave/index.js'
+import { deriveKey, generateDEK, wrapKey } from '../src/capsule/enclave-aes/index.js'
 
 const PBKDF2_ITERATIONS = 600_000
 const subtle = globalThis.crypto.subtle

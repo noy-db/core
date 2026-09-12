@@ -1,4 +1,4 @@
-import { buildRecordEnvelope } from '../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../capsule/index.js'
 import type {
   NoydbStore,
   DirtyEntry,
@@ -28,7 +28,7 @@ import {
 import type { NoydbEventEmitter } from '../kernel/events.js'
 import type { SyncPolicy } from '../kernel/sync-policy.js'
 import { SyncScheduler } from '../kernel/sync-policy.js'
-import { isTombstoneShape, isDeleteMarker, envelopeBodySize } from '../kernel/enclave/index.js'
+import { isTombstoneShape, isDeleteMarker, envelopeBodySize } from '../capsule/index.js'
 
 /** #650 Task 4 (#647) — the declared reserved-lookup (`_dict_*`/`_lookup_*`) collection-name
  *  registry a `SyncEngine` enumerates on pull. Explicit, not a blanket underscore-glob — other

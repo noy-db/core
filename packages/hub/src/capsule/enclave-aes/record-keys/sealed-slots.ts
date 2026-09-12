@@ -17,16 +17,16 @@
  * `deriveSealedFieldKeyFromCek`/`encrypt`/`decrypt` directly — this file IS
  * kernel enclave code (C3), so it is exempt from `enclave-barrel-only` the
  * same way `record-codec.ts`/`sealing.ts` are. A file outside
- * `kernel/enclave/**` would have had to go through the enclave barrel
- * (`kernel/enclave/index.ts`), which does not (yet) export these symbols.
+ * `capsule/enclave-aes/**` would have had to go through the enclave barrel
+ * (`capsule/enclave-aes/index.ts`), which does not (yet) export these symbols.
  */
 import { encrypt, decrypt, deriveSealedFieldKey, deriveSealedFieldKeyFromCek, type EnclaveKey } from '../crypto.js'
 import { dualReadSealedSlot } from './sealed-slot.js'
 import { buildRecordEnvelope } from '../record-envelope.js'
 import { buildRecordAad, recordAadFor } from '../record-aad.js'
-import { SealedHandle, type EncryptedEnvelope } from '../../types.js'
-import { ValidationError } from '../../errors.js'
-import type { SealedSlotRef, ViaCryptoCtx } from '../../via/index.js'
+import { SealedHandle, type EncryptedEnvelope } from '../../../kernel/types.js'
+import { ValidationError } from '../../../kernel/errors.js'
+import type { SealedSlotRef, ViaCryptoCtx } from '../../../kernel/via/index.js'
 
 /**
  * Key material for one collection's sealed-field derivation. `cek`, when

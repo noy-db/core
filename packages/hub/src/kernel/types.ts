@@ -69,7 +69,7 @@ import type { FormatsStrategy } from '../port/with/formats-strategy.js'
 import type { NoydbMesh } from '../port/by/types.js'
 import type { ScriptWarning } from '../port/with/i18n-strategy.js'
 import type { ViaDescriptor } from './via/index.js'
-import type { EnclaveKey, EchoSecretParts } from './enclave/index.js'
+import type { EnclaveKey, EchoSecretParts } from '../capsule/index.js'
 import type { NoydbDeviceSeal } from '../port/with/device-seal-strategy.js'
 
 export type { EchoSecretParts }

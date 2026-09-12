@@ -3,9 +3,9 @@
  * Deferred numbering engine — store-clock-ordered, gap-free serials assigned
  * at an explicit numbering pass. See the design spec.
  */
-import { buildRecordAad, buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope } from '../../capsule/index.js'
 import type { NoydbStore, EncryptedEnvelope, StoreTime } from '../../kernel/types.js'
-import { encrypt, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import { isConflictError, NumberingUncertaintyError } from '../../kernel/errors.js'
 import type { DeferredNumberingConfig } from './descriptor.js'
 

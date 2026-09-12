@@ -23,7 +23,7 @@
     "#capsule": {
       "noy-db:exclave-plain": "@noy-db/exclave-plain",
       "noy-db:enclave-pqc": "@noy-db/enclave-pqc",
-      "default": "./dist/kernel/enclave/index.js"
+      "default": "./dist/capsule/enclave-aes/index.js"
     }
   },
   "exports": {

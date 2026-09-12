@@ -54,7 +54,7 @@ import {
   base64ToBuffer,
   bufferToBase64,
   type EnclaveKey,
-} from '../src/kernel/enclave/index.js'
+} from '../src/capsule/enclave-aes/index.js'
 import {
   BLOB_INDEX_COLLECTION,
   BLOB_CHUNKS_COLLECTION,

@@ -18,7 +18,7 @@
 import type { ClassifiedFieldSpec } from '../../via/classified/descriptor.js'
 import { ClassifiedNotEnabledError } from '../../kernel/errors.js'
 import type { EncryptedEnvelope } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import { linkClassifiedVia } from '../../via/classified/binding.js'
 
 // #629 Task 10 — re-export the classified binding's erase-cfg TYPE (not

@@ -45,7 +45,7 @@
  *   11. enclave-body-only — non-enclave `packages/hub/src/**` may not read
  *                       or construct the envelope's protected-body fields
  *                       (`_iv`/`_data`/`_cek`/`_det`/`_sealed`) directly;
- *                       only `kernel/enclave/**` may. A per-file grandfather
+ *                       only `capsule/enclave-aes/**` may. A per-file grandfather
  *                       map (PRE_EXISTING_BODY_ACCESS) ratchets the count
  *                       down as call-sites migrate onto the barrel helpers —
  *                       stored count must always equal actual, in both
@@ -958,16 +958,16 @@ const KERNEL_SURFACE_BUDGET = {
   // placeholder in the RecordCodec constructor call (Task 8 replaces it with the real map).
   // Bumped 4358→4394 (2026-07-04 classified stage-2 T8): prev-envelope threading for
   // digest-only `_vdig` carry-forward (C6) — thin { id, prev } plumbing at the
-  // encryptRecord call sites; the digest/carry crypto lives in kernel/enclave/classify/.
+  // encryptRecord call sites; the digest/carry crypto lives in capsule/enclave-aes/classify/.
   // Bumped 4394→4436 (2026-07-04, classified stage 2 T13): both-door Refusal-matrix
   // guard call-sites (R1-R6) — the stored `classifiedGuardCtx` + the door-2 guard,
   // the R6 session form-flip refusal, and the digest-only retro-attach refusal in
   // `_applyClassifiedFields`; the guard logic lives in with-shape/classified/guards.ts.
   // Bumped 4436→4478 (2026-07-04, classified stage 2 T15): verify()/verifyGroup()
-  // public oracle doors — thin ctx builders; the oracle lives in kernel/enclave/classify/verify.ts.
+  // public oracle doors — thin ctx builders; the oracle lives in capsule/enclave-aes/classify/verify.ts.
   // Bumped 4478→4481 (2026-07-04, classified stage 2 T16): reveal() ctx widened from a
   // single getView() to the raw-envelope shape (getEnvelope/resolveCek/getDEK) — the
-  // reveal engine itself moved into kernel/enclave/classify/reveal.ts (I6).
+  // reveal engine itself moved into capsule/enclave-aes/classify/reveal.ts (I6).
   // Bumped 4481→4506 (2026-07-04, classified slice 2b T6): C-A/R10 config-drift guard —
   // per-handle memoization state + the first-write marker-persist hook + the naive-handle
   // codec signal. Irreducible kernel write-path wiring; the marker store I/O itself lives in
@@ -1217,7 +1217,7 @@ const KERNEL_SURFACE_BUDGET = {
   // `undefined` there so the decrypt path stays a single `!== undefined` test.
   // Every line of the sensor — sketches, accounting, alerting — lives in
   // src/with-audit/coverage/, and the decrypt hook itself is in
-  // kernel/enclave/record-keys/record-codec.ts, which carries no ceiling.
+  // capsule/enclave-aes/record-keys/record-codec.ts, which carries no ceiling.
   // Bumped 4354→4371 (2026-09-04): #1420 lost update. `put()`/`delete()` now
   // delegate their bodies to a private `#putGated`/`#deleteGated` so the
   // in-flight-write registration runs BEFORE the method's first `await` — the
@@ -2535,11 +2535,11 @@ const PRE_EXISTING_SPINE_SERVICE_IMPORTS = new Map([
     // reference is the RESULT TYPE the (now-stubbed) terminal publishes.
     '../../with-lookup/reduce/reduction.js',
   ]],
-  ['packages/hub/src/kernel/enclave/record-keys/record-codec.ts', [
+  ['packages/hub/src/capsule/enclave-aes/record-keys/record-codec.ts', [
     '../../../with-commit/crdt/crdt.js',
     '../../../with-commit/crdt/strategy.js',
   ]],
-  ['packages/hub/src/kernel/enclave/record-keys/sealing.ts', [
+  ['packages/hub/src/capsule/enclave-aes/record-keys/sealing.ts', [
     '../../../with-audit/sealed-record/types.js',
     '../../../with-party/team/managed-secret.js',
   ]],
@@ -2644,19 +2644,19 @@ function checkPortLayering() {
 
 // ─── Check 10: enclave-barrel-only (S5 family doors) ────────────────────
 //
-// kernel/enclave/ (crypto.ts + record-keys/**) is the hub's crypto
+// capsule/enclave-aes/ (crypto.ts + record-keys/**) is the hub's crypto
 // interior — the piece a forked sister project replaces wholesale,
-// honoring only kernel/enclave/index.ts (the barrel, THE fork-swap
-// contract). A file outside kernel/enclave/** that statically imports an
+// honoring only capsule/enclave-aes/index.ts (the barrel, THE fork-swap
+// contract). A file outside capsule/enclave-aes/** that statically imports an
 // enclave path deeper than the barrel (e.g. './enclave/crypto.js' or
-// '../kernel/enclave/record-keys/index.js') reaches around that contract.
+// '../capsule/enclave-aes/record-keys/index.js') reaches around that contract.
 // Only hub/src is scanned — tests aren't architecture-bound, though they
 // were migrated to the barrel too for consistency. Only static
 // `import`/`export … from` clauses are checked; a dynamic `import()` is
 // not statically analyzable here (same carve-out as port-layering above).
 //
 // The reverse direction (C3 — self-contained folder, Enclave Contract v1):
-// a file INSIDE kernel/enclave/** may import only spine types (kernel/**,
+// a file INSIDE capsule/enclave-aes/** may import only spine types (kernel/**,
 // port/**) — never a with-* service. Contract types a service used to hand
 // the enclave (CRDT mode/state/strategy, RecipientSealer, the sealed-CEK
 // wire types) are hoisted into kernel/types.ts precisely so this direction
@@ -2664,12 +2664,27 @@ function checkPortLayering() {
 
 function checkEnclaveBarrelOnly() {
   const hubSrc = join(PACKAGES_DIR, 'hub', 'src')
-  const enclaveDir = join(hubSrc, 'kernel', 'enclave')
+  const capsuleDir = join(hubSrc, 'capsule')
+
+  const doorFile = join(capsuleDir, 'index.ts')
 
   walkTsFiles(hubSrc, (file, content) => {
     const rel = relative(ROOT, file)
-    const insideEnclave = !relative(enclaveDir, file).startsWith('..')
+    const insideEnclave = !relative(capsuleDir, file).startsWith('..')
     const code = stripComments(content)
+
+    // ⛔ `#capsule` is the BOUND capsule. Only the door may name it. Without
+    // this clause the door is a suggestion: any file could import `#capsule`
+    // and the "one place that knows which capsule is bound" property would be
+    // false while everything still compiled. The enclave rules this check
+    // replaced had no equivalent, because there was nothing to bind.
+    if (file !== doorFile && /['"]#capsule['"]/.test(code)) {
+      fail(
+        'capsule-door-only',
+        `${rel} names "#capsule" — only capsule/index.ts (the door) may import the bound capsule. Import the door instead: it is what makes a capsule swap reach every caller.`,
+        file,
+      )
+    }
 
     for (const spec of staticImportSpecs(code)) {
       if (!spec.startsWith('.')) continue
@@ -2678,18 +2693,18 @@ function checkEnclaveBarrelOnly() {
       if (insideEnclave) {
         if (/^with-[^/]+(\/|$)/.test(target)) {
           fail(
-            'enclave-barrel-only',
-            `${rel} statically imports service-layer path "${spec}" — kernel/enclave/** must be self-contained (C3): it may import only spine types, never a with-* service. Hoist the contract type into kernel/types.ts and re-export it from the service instead.`,
+            'capsule-door-only',
+            `${rel} statically imports service-layer path "${spec}" — capsule/enclave-aes/** must be self-contained (C3): it may import only spine types, never a with-* service. Hoist the contract type into kernel/types.ts and re-export it from the service instead.`,
             file,
           )
         }
         continue // internal (relative-within-enclave) imports are the barrel's own business
       }
 
-      if (target.startsWith('kernel/enclave/') && target !== 'kernel/enclave/index.js') {
+      if (target.startsWith('capsule/enclave-aes/') && target !== 'capsule/enclave-aes/index.js') {
         fail(
-          'enclave-barrel-only',
-          `${rel} statically imports "${spec}" — reaches past the enclave barrel. Import from kernel/enclave/index.js instead; it is the fork-swap contract a sister project replaces wholesale.`,
+          'capsule-door-only',
+          `${rel} statically imports "${spec}" — reaches past the enclave barrel. Import from capsule/enclave-aes/index.js instead; it is the fork-swap contract a sister project replaces wholesale.`,
           file,
         )
       }
@@ -2699,7 +2714,7 @@ function checkEnclaveBarrelOnly() {
 
 // ─── Check 10b: subtle-outside-enclave (direct WebCrypto ban) ────────────
 //
-// Check 10 bans a file outside `kernel/enclave/**` from IMPORTING past the
+// Check 10 bans a file outside `capsule/enclave-aes/**` from IMPORTING past the
 // barrel. This one bans it from calling `globalThis.crypto.subtle` directly,
 // which reaches around the fork-swap contract just as completely —
 // `subtle.exportKey('raw', dek)` in `with-party/team/wrapped-deks.ts`
@@ -2723,17 +2738,17 @@ function checkEnclaveBarrelOnly() {
 // skipped — tests may drive WebCrypto directly to build oracles.
 function checkSubtleOutsideEnclave() {
   const hubSrc = join(PACKAGES_DIR, 'hub', 'src')
-  const enclaveDir = join(hubSrc, 'kernel', 'enclave')
+  const capsuleDir = join(hubSrc, 'capsule')
 
   walkTsFiles(hubSrc, (file, content) => {
     if (file.endsWith('.test.ts')) return
-    if (!relative(enclaveDir, file).startsWith('..')) return
+    if (!relative(capsuleDir, file).startsWith('..')) return
     const hits = stripComments(content).match(/\bsubtle\.[A-Za-z]+\(/g)
     if (!hits) return
     const rel = relative(ROOT, file)
     fail(
-      'subtle-outside-enclave',
-      `${rel} calls crypto.subtle directly ${hits.length} time(s) — only kernel/enclave/** may call WebCrypto. Go through the enclave barrel (kernel/enclave/index.js: encryptBytes/decryptBytes, exportDekSet/importDekSet, importTransferKey, generateEphemeralKey, mintCanary/checkCanary, hkdfAesGcmKey, derivePresenceTagKey/hmacSignHex, the recipient group, …) or add the missing primitive to kernel/enclave/crypto.ts.`,
+      'subtle-outside-capsule',
+      `${rel} calls crypto.subtle directly ${hits.length} time(s) — only capsule/enclave-aes/** may call WebCrypto. Go through the enclave barrel (capsule/enclave-aes/index.js: encryptBytes/decryptBytes, exportDekSet/importDekSet, importTransferKey, generateEphemeralKey, mintCanary/checkCanary, hkdfAesGcmKey, derivePresenceTagKey/hmacSignHex, the recipient group, …) or add the missing primitive to capsule/enclave-aes/crypto.ts.`,
       join(ROOT, rel),
     )
   })
@@ -2745,7 +2760,7 @@ function checkSubtleOutsideEnclave() {
 // owned: `_noydb`/`_v`/`_ts`/`_by`/`_source`/`_sourceTs`/`_tier`/
 // `_elevatedBy` — stores/sync/history/klum read these freely) and a
 // protected body (`_iv`/`_data`/`_cek`/`_det`/`_sealed`/`_debug` — enclave
-// territory). Only `kernel/enclave/**` may read or construct these body
+// territory). Only `capsule/enclave-aes/**` may read or construct these body
 // fields; everyone else goes through the barrel helpers
 // (`openEnvelopeJson`/`writeEnvelopeBody`/`hasPerRecordKey`/
 // `envelopeBodyForHash`, per the design doc).
@@ -2779,14 +2794,14 @@ function checkSubtleOutsideEnclave() {
 // message) would. That's an accepted, understood overcount: it keeps this
 // check's helpers identical to its siblings, and any such site is rare and
 // stable, so the ratchet doesn't flap. `*.test.ts` files are excluded (tests
-// aren't architecture-bound) as is everything under `kernel/enclave/**`
+// aren't architecture-bound) as is everything under `capsule/enclave-aes/**`
 // (that's the barrel's own home turf).
 
 const BODY_FIELD_ACCESS_RE =
   /\._iv\b|\._data\b|\._cek\b|\._det\b|\._sealed\b|\._debug\b|\b_iv\s*:|\b_data\s*:|\b_cek\s*:|\b_det\s*:|\b_sealed\s*:|\b_debug\s*:/g
 
 // Snapshotted 2026-07-03 by running the scanner below in report mode over
-// `packages/hub/src/**` (excluding `kernel/enclave/**` and `*.test.ts`).
+// `packages/hub/src/**` (excluding `capsule/enclave-aes/**` and `*.test.ts`).
 // 53 files, 337 occurrences (incl. _debug). Shrink an entry (or delete it at 0) as Tasks
 // 6-7 migrate call-sites onto the barrel helpers — never raise one without
 // a reviewed, justified new direct access.
@@ -2908,7 +2923,7 @@ const PRE_EXISTING_BODY_ACCESS = new Map([
   // reservedEnvelopes('_dict_') capability instead of building `_iv`/`_data`
   // literals inline — down from 5 (the plaintext branch's `_iv: ''`/`_data:`
   // + decryptEntry's `envelope._data` read remain; the two-occurrence
-  // encrypted-branch envelope literal moved into kernel/enclave/).
+  // encrypted-branch envelope literal moved into capsule/enclave-aes/).
   // #650 Task 1: DictionaryHandle (renamed LookupHandle) moved wholesale to
   // via/lookup/handle.ts — this entry retargets with it (same 3:
   // plaintext-branch `_iv: ''`/`_data:` + decryptEntry's `envelope._data`
@@ -2932,12 +2947,12 @@ const PRE_EXISTING_BODY_ACCESS = new Map([
 
 function checkEnclaveBodyOnly() {
   const hubSrc = join(PACKAGES_DIR, 'hub', 'src')
-  const enclaveDir = join(hubSrc, 'kernel', 'enclave')
+  const capsuleDir = join(hubSrc, 'capsule')
 
   const actualCounts = new Map()
   walkTsFiles(hubSrc, (file, content) => {
     if (file.endsWith('.test.ts')) return
-    const insideEnclave = !relative(enclaveDir, file).startsWith('..')
+    const insideEnclave = !relative(capsuleDir, file).startsWith('..')
     if (insideEnclave) return
     const code = stripComments(content)
     const matches = code.match(BODY_FIELD_ACCESS_RE)
@@ -2954,19 +2969,19 @@ function checkEnclaveBodyOnly() {
 
     if (stored === undefined) {
       fail(
-        'enclave-body-only',
-        `${rel} has ${actual} protected-body field access(es) (_iv/_data/_cek/_det/_sealed) but is not in PRE_EXISTING_BODY_ACCESS — only kernel/enclave/** may read or construct these fields directly. Go through the enclave barrel helpers (openEnvelopeJson/writeEnvelopeBody/hasPerRecordKey/envelopeBodyForHash), or if this is a deliberate grandfathered exception add an entry to PRE_EXISTING_BODY_ACCESS in scripts/check-architecture.mjs.`,
+        'capsule-body-only',
+        `${rel} has ${actual} protected-body field access(es) (_iv/_data/_cek/_det/_sealed) but is not in PRE_EXISTING_BODY_ACCESS — only capsule/enclave-aes/** may read or construct these fields directly. Go through the enclave barrel helpers (openEnvelopeJson/writeEnvelopeBody/hasPerRecordKey/envelopeBodyForHash), or if this is a deliberate grandfathered exception add an entry to PRE_EXISTING_BODY_ACCESS in scripts/check-architecture.mjs.`,
         file,
       )
     } else if (actual > stored) {
       fail(
-        'enclave-body-only',
-        `${rel} has ${actual} protected-body field access(es), up from the grandfathered ${stored} — new direct _iv/_data/_cek/_det/_sealed access outside kernel/enclave/** is not allowed. Go through the enclave barrel helpers instead of adding to the grandfathered count.`,
+        'capsule-body-only',
+        `${rel} has ${actual} protected-body field access(es), up from the grandfathered ${stored} — new direct _iv/_data/_cek/_det/_sealed access outside capsule/enclave-aes/** is not allowed. Go through the enclave barrel helpers instead of adding to the grandfathered count.`,
         file,
       )
     } else if (actual < stored) {
       fail(
-        'enclave-body-only',
+        'capsule-body-only',
         `${rel} has ${actual} protected-body field access(es), down from the grandfathered ${stored} — count drifted down without being banked. Update PRE_EXISTING_BODY_ACCESS's entry for this file to ${actual} (or remove the entry if it reached 0) to lock in the reduction.`,
         file,
       )
@@ -2977,7 +2992,7 @@ function checkEnclaveBodyOnly() {
 // ─── Check 12: enclave-classify-only (M1 — stage-2 identifier ratchet) ──
 //
 // Stage-2 classified: plaintext/digest/key operations live ONLY in
-// kernel/enclave/** (the classify/ folder). Outside it, referencing the
+// capsule/enclave-aes/** (the classify/ folder). Outside it, referencing the
 // verify-crypto identifiers — or the vdig salt-domain literal — is a leak
 // of enclave interior into service/kernel code. Opaque `_vdig`
 // ciphertext-map TRANSIT is explicitly permitted (collection/vault/backup/
@@ -2992,11 +3007,11 @@ const CLASSIFY_ENCLAVE_ONLY_RE =
 
 function checkEnclaveClassifyOnly() {
   const hubSrc = join(PACKAGES_DIR, 'hub', 'src')
-  const enclaveDir = join(hubSrc, 'kernel', 'enclave')
+  const capsuleDir = join(hubSrc, 'capsule')
   walkTsFiles(hubSrc, (file, content) => {
     if (file.endsWith('.test.ts')) return
     if (relative(ROOT, file).split('/').includes('__tests__')) return
-    const insideEnclave = !relative(enclaveDir, file).startsWith('..')
+    const insideEnclave = !relative(capsuleDir, file).startsWith('..')
     if (insideEnclave) return
     const code = stripComments(content)
     const m = code.match(CLASSIFY_ENCLAVE_ONLY_RE)
@@ -3017,11 +3032,11 @@ function checkEnclaveClassifyOnly() {
 //
 // Slice-2b blind-index: the bidx key/salt-derivation and target-computation
 // identifiers — plus the index salt-domain literals — live ONLY in
-// kernel/enclave/** (the classify/ folder). Outside it, referencing these
+// capsule/enclave-aes/** (the classify/ folder). Outside it, referencing these
 // is a leak of enclave interior into service/kernel code. The ONE sanctioned
 // exception is via/classified/active.ts, which reaches
 // computeBidxTarget exclusively through the dynamic-import strategy seam
-// (kernel/enclave/classify/find.js) — that file is allowlisted the same way
+// (capsule/enclave-aes/classify/find.js) — that file is allowlisted the same way
 // enclave/test files are exempt elsewhere in this script. Opaque `_bidx`
 // tag-map TRANSIT is explicitly permitted (codec carry-forward, sealing.ts
 // verbatim carry, backup/history plumbing), which is why `_bidx` is
@@ -3037,11 +3052,11 @@ const CLASSIFY_INDEX_ALLOWLIST = new Set(['packages/hub/src/via/classified/activ
 
 function checkEnclaveClassifyIndexOnly() {
   const hubSrc = join(PACKAGES_DIR, 'hub', 'src')
-  const enclaveDir = join(hubSrc, 'kernel', 'enclave')
+  const capsuleDir = join(hubSrc, 'capsule')
   walkTsFiles(hubSrc, (file, content) => {
     if (file.endsWith('.test.ts')) return
     if (relative(ROOT, file).split('/').includes('__tests__')) return
-    const insideEnclave = !relative(enclaveDir, file).startsWith('..')
+    const insideEnclave = !relative(capsuleDir, file).startsWith('..')
     if (insideEnclave) return
     if (CLASSIFY_INDEX_ALLOWLIST.has(relative(ROOT, file))) return
     const code = stripComments(content)
@@ -3085,7 +3100,7 @@ function checkEnclaveClassifyIndexOnly() {
 // below holds exactly the one #626 baseline the original brief specified.
 //
 // The reverse direction — no file under src/via/* may import
-// kernel/enclave/ (crypto should reach features only via ctx, not a direct
+// capsule/enclave-aes/ (crypto should reach features only via ctx, not a direct
 // enclave-barrel import) — is enforced separately by Check 15
 // (via-enclave-isolation) below.
 //
@@ -3131,15 +3146,15 @@ function checkViaLayering() {
   }
 }
 
-// ─── Check 15: via-enclave-isolation (#623 — src/via/* → kernel/enclave/ ban) ──
+// ─── Check 15: via-enclave-isolation (#623 — src/via/* → capsule/enclave-aes/ ban) ──
 //
 // The reverse direction from Check 14: no file under src/via/**
 // (the Via port's feature layer — money, i18n) may statically
-// import kernel/enclave/ — crypto should reach a feature only via ctx
+// import capsule/enclave-aes/ — crypto should reach a feature only via ctx
 // (phase B's ViaCryptoCtx, milestone #28), never a direct enclave-barrel
 // import. This is STRICTER than Check 10 (enclave-barrel-only), which only
 // bans reaching *past* the barrel; importing the barrel itself
-// (kernel/enclave/index.js) from anywhere outside kernel/enclave/** is
+// (capsule/enclave-aes/index.js) from anywhere outside capsule/enclave-aes/** is
 // explicitly Check-10-legal. Check 15 additionally bans via/** from
 // importing the barrel at all.
 //
@@ -3172,10 +3187,10 @@ function checkViaEnclaveIsolation() {
         if (!spec.startsWith('.')) continue // only relative imports resolve inside hub/src
         if (allowedImports?.includes(spec)) continue // frozen baseline import — grandfathered
         const target = importTargetRelToHubSrc(file, spec, hubSrc)
-        if (target.startsWith('kernel/enclave/')) {
+        if (target.startsWith('capsule/enclave-aes/')) {
           fail(
             'via-enclave-isolation',
-            `${rel} statically imports enclave path "${spec}" — src/via/** (the Via port's feature layer) may not reach kernel/enclave/ directly, not even the barrel; crypto should reach a feature only via ctx (phase B's ViaCryptoCtx, milestone #28). VIA_ENCLAVE_ALLOWLIST is EMPTY (the DictionaryHandle baseline it once held was retired by #629 Task 4) — there is no grandfathered import left to match.`,
+            `${rel} statically imports enclave path "${spec}" — src/via/** (the Via port's feature layer) may not reach capsule/enclave-aes/ directly, not even the barrel; crypto should reach a feature only via ctx (phase B's ViaCryptoCtx, milestone #28). VIA_ENCLAVE_ALLOWLIST is EMPTY (the DictionaryHandle baseline it once held was retired by #629 Task 4) — there is no grandfathered import left to match.`,
             file,
           )
         }

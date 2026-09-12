@@ -20,7 +20,7 @@
 import { groupKeySourceField, type GroupKey } from './query/reduce/date-trunc.js'
 import type { StrategyBag } from '../port/with/strategies.js'
 import type { NoydbStore, ConflictPolicy, CollectionConflictResolver, HistoryConfig, TierMode, CrossTierAccessEvent, VdigFieldPolicy } from './types.js'
-import type { EnclaveKey } from './enclave/index.js'
+import type { EnclaveKey } from '../capsule/index.js'
 import type { UnlockedKeyring } from '../with-party/team/keyring.js'
 import type { NoydbEventEmitter } from './events.js'
 import type { WriteQueueTracker } from './write-queue.js'

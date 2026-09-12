@@ -20,7 +20,7 @@
  * stored at rest.
  */
 import type { Vault } from '../../kernel/vault.js'
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
 import { NoydbError } from '../../kernel/errors.js'
 import { resolveAccessibleCollections, buildAccessibleBundle } from './export-accessible.js'
 import { freezeAndDeleteClosure, randomId, type FrozenSnapshotRef, type WithdrawResult } from './withdraw-accessible.js'

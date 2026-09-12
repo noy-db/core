@@ -35,7 +35,7 @@
  */
 import type { NoydbStore, KeyringFile, Role } from '../../kernel/types.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
-import { buildRecordEnvelope, deriveKey, generateSalt, wrapKey, bufferToBase64 } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope, deriveKey, generateSalt, wrapKey, bufferToBase64 } from '../../capsule/index.js'
 import { NoAccessError, PermissionDeniedError, PrivilegeEscalationError } from '../../kernel/errors.js'
 import { assertStrongSecret, type SecretPolicy } from '../../kernel/validation.js'
 import type { UnlockedKeyring } from './keyring.js'

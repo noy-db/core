@@ -8,8 +8,8 @@ import { pbkdf2VerifyDigest, VDIG_ITERATIONS } from './digest.js'
 import { normalizeForVerify } from './normalize.js'
 import { blindedEqual } from './compare.js'
 import { sealVdigPayload, openVdigPayload, type VdigPayload, type VdigDigestEntry } from './vdig.js'
-import { ClassifiedRotationError, TamperedError } from '../../errors.js'
-import type { VdigFieldPolicy } from '../../types.js'
+import { ClassifiedRotationError, TamperedError } from '../../../kernel/errors.js'
+import type { VdigFieldPolicy } from '../../../kernel/types.js'
 
 export async function mintVdigSlot(
   rawValue: string,

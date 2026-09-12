@@ -2,7 +2,7 @@
  * Pin test — `with-party/team/wrapped-deks.ts`'s `deriveWrappingKey` used to
  * PBKDF2/AES-GCM-derive its wrapping key inline; C6 (enclave contract v1)
  * consolidates that onto the barrel's `deriveSecretKey` primitive
- * (`kernel/enclave/crypto.ts`). This is call-site consolidation, not a KDF
+ * (`capsule/enclave-aes/crypto.ts`). This is call-site consolidation, not a KDF
  * change — the derived key must be byte-identical to what the old inline
  * code produced.
  *
@@ -15,7 +15,7 @@
  * would fail and decryption would throw.
  */
 import { describe, it, expect } from 'vitest'
-import { deriveSecretKey } from '../src/kernel/enclave/index.js'
+import { deriveSecretKey } from '../src/capsule/enclave-aes/index.js'
 
 const PBKDF2_ITERATIONS = 600_000
 const subtle = globalThis.crypto.subtle

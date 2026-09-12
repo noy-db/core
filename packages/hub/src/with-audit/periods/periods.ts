@@ -148,7 +148,7 @@
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
 import type { LedgerStore } from '../../with-commit/history/ledger/index.js'
 import { sha256Hex, canonicalJson } from '../../with-commit/history/ledger/index.js'
-import { isDeleteMarker } from '../../kernel/enclave/index.js'
+import { isDeleteMarker } from '../../capsule/index.js'
 import { PeriodChainError, PeriodClosedError, ValidationError } from '../../kernel/errors.js'
 
 // The reserved collection names + `periodExclusiveUpperBound` moved to the

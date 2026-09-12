@@ -47,7 +47,7 @@ describe('capsule binding', () => {
 
   it("emits the default target as its own entry, or #capsule points at nothing", () => {
     const target = pkg.imports!['#capsule']!['default']!
-    // './dist/kernel/enclave/index.js' -> 'kernel/enclave/index'
+    // './dist/capsule/enclave-aes/index.js' -> 'capsule/enclave-aes/index'
     const entryKey = target.replace(/^\.\/dist\//, '').replace(/\.js$/, '')
     expect(tsupEntries).toContain(`'${entryKey}'`)
   })

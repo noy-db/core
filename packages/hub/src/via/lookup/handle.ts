@@ -29,8 +29,8 @@ import {
 
 /**
  * Delete-marker predicate, duplicated (not imported) from
- * `kernel/enclave/record-keys/tombstone.ts`'s `isDeleteMarker` (#647 fix wave 1).
- * `via/lookup/**` may not statically import `kernel/enclave/` — not even the barrel
+ * `capsule/enclave-aes/record-keys/tombstone.ts`'s `isDeleteMarker` (#647 fix wave 1).
+ * `via/lookup/**` may not statically import `capsule/enclave-aes/` — not even the barrel
  * (Check 15, `via-enclave-isolation`) — and this predicate carries zero crypto/protected-body
  * surface (just the `_del` protocol-header field, not `_iv`/`_data`), so duplicating it here
  * mirrors the same call `port/with/i18n-strategy.ts` already makes for `isDictCollectionName`
@@ -38,7 +38,7 @@ import {
  *
  * `buildDeleteMarker` (which DOES construct the protected `_iv`/`_data` body fields — Check 11,
  * `enclave-body-only`) can't be duplicated the same way; it's injected via the constructor
- * instead, built from the real `kernel/enclave` function at the Vault call site.
+ * instead, built from the real `capsule/enclave-aes` function at the Vault call site.
  */
 function isDeleteMarker(envelope: EncryptedEnvelope): boolean {
   return envelope._del === true
@@ -151,9 +151,9 @@ export class LookupHandle<Keys extends string = string> {
      * #647 fix wave 1 — mints a version-ordered delete-marker envelope (the reserved-tier
      * mirror of #589's ordinary-collection delete marker). Injected rather than imported:
      * `buildDeleteMarker` constructs the envelope's protected-body fields (`_iv`/`_data`), and
-     * `via/lookup/**` may not reach `kernel/enclave/` directly (Check 11
+     * `via/lookup/**` may not reach `capsule/enclave-aes/` directly (Check 11
      * `enclave-body-only` / Check 15 `via-enclave-isolation`) — the Vault binds the real
-     * `kernel/enclave` function at construction time, same pattern as `reservedEnvelopes` above.
+     * `capsule/enclave-aes` function at construction time, same pattern as `reservedEnvelopes` above.
      */
     private readonly buildDeleteMarker: (identity: { collection: string; id: string }, version: number, actor: string) => EncryptedEnvelope,
     /** #650 Task 4 (#647) — dirty-log participation hook (origin `local-write`), threaded from `BuildLookupHandleOptions`. */
@@ -195,7 +195,7 @@ export class LookupHandle<Keys extends string = string> {
     if (!this.encrypted) {
       // Plaintext/debug vault: no AEAD, therefore no AAD to bind — this literal
       // has nothing `buildRecordEnvelope` could authenticate, and `via/lookup/**`
-      // may not import `kernel/enclave/` to reach it anyway (Check 15,
+      // may not import `capsule/enclave-aes/` to reach it anyway (Check 15,
       // `via-enclave-isolation`). The ENCRYPTED branch below is the one that
       // matters, and it is bound: `reservedEnvelopes.encrypt` holds the DEK, so
       // it is where identity AAD is applied (#1051).

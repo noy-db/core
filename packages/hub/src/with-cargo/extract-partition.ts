@@ -25,7 +25,7 @@ import { buildRecordAad, recordAadFor,
   unwrapCek,
   wrapCek,
   type EnclaveKey,
-} from '../kernel/enclave/index.js'
+} from '../capsule/index.js'
 import {
   BLOB_COLLECTION,
   BLOB_INDEX_COLLECTION,
@@ -42,7 +42,7 @@ import { LEDGER_COLLECTION } from '../with-commit/history/ledger/constants.js'
 import { canonicalJson, hashEntry } from '../with-commit/history/ledger/entry.js'
 import type { LedgerEntry } from '../with-commit/history/ledger/entry.js'
 import { envelopePayloadHash } from '../with-commit/history/ledger/hash.js'
-import { buildRecordEnvelope } from '../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../capsule/index.js'
 import {
   assemblePodContainer,
   buildExtractedPartitionWrapper,

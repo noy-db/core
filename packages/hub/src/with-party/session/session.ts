@@ -44,7 +44,7 @@
 import {
   bufferToBase64, base64ToBuffer, exportDekSet, importDekSet,
   generateEphemeralKey, encryptBytes, decryptBytes,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import { generateULID } from '../../with-pod/ulid.js'
 import type { Role } from '../../kernel/types.js'
 import type { UnlockedKeyring } from '../team/keyring.js'

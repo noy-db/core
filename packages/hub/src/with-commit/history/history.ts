@@ -1,7 +1,7 @@
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
-import type { RecordIdentity } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
+import type { RecordIdentity } from '../../capsule/index.js'
 import type { NoydbStore, EncryptedEnvelope, HistoryOptions, PruneOptions } from '../../kernel/types.js'
-import { isTombstone, isTombstoneShape, rewrapEnvelope, isRewrappedUnder, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { isTombstone, isTombstoneShape, rewrapEnvelope, isRewrappedUnder, type EnclaveKey } from '../../capsule/index.js'
 
 /**
  * History storage convention:

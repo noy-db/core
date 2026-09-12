@@ -16,7 +16,7 @@ export default defineConfig({
       // Measured 2026-09-12: without this alias, `capsule-door.test.ts` sees
       // `_RecordCodec` (dist) where it expects `RecordCodec` (src). That test
       // asserts IDENTITY precisely so this cannot pass unnoticed.
-      '#capsule': fileURLToPath(new URL('./src/kernel/enclave/index.ts', import.meta.url)),
+      '#capsule': fileURLToPath(new URL('./src/capsule/enclave-aes/index.ts', import.meta.url)),
     },
   },
   test: {

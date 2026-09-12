@@ -24,7 +24,7 @@ import { buildRecordAad,
   deriveSealedFieldKey,
   deriveSealedFieldKeyFromCek,
   decrypt,
-} from '../src/kernel/enclave/index.js'
+} from '../src/capsule/enclave-aes/index.js'
 import { NOYDB_FORMAT_VERSION } from '../src/kernel/types.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/kernel/types.js'
 import { withHistory } from '../src/with-commit/history/index.js'

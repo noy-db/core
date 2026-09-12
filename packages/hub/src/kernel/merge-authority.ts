@@ -17,11 +17,11 @@
  *
  * @packageDocumentation
  */
-import { verifyRecordIdentity, rewrapBodyToDek, applyRewrappedBody, hasSealedBody } from './enclave/index.js'
+import { verifyRecordIdentity, rewrapBodyToDek, applyRewrappedBody, hasSealedBody } from '../capsule/index.js'
 import { dekKey } from './tier-visibility.js'
 import { ValidationError } from './errors.js'
 import type { MergeAuthority } from '../port/with/merge-authority.js'
-import type { EnclaveKey } from './enclave/index.js'
+import type { EnclaveKey } from '../capsule/index.js'
 
 /**
  * ⚠️ **A client cannot verify what it cannot decrypt** — and that boundary is

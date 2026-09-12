@@ -19,7 +19,7 @@ import { type RecordIdentity,
   isTombstone, isDeleteMarker, buildTombstone, buildDeleteMarker,
   resolveStableCek, findByDet, queryByDet, RecordCodec,
   type DeterministicContext, type EnclaveKey, type SealedShredSlot,
-} from './enclave/index.js'
+} from '../capsule/index.js'
 import { countLiveEnvelopes } from './lazy-count.js'
 import { findMatchingIdsByPairs } from './match-pairs.js'
 import { liveRecordIsElevated, assertTierWritable } from './tier-visibility.js'
@@ -1171,7 +1171,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     //    through import(), never a static deep import). NOT strategy.verify —
     //    that re-fetches via ctx.getEnvelope AND emits a per-id 'verify' op.
     if (hits.length === 0) return []
-    const { verifyDigestField } = await import('./enclave/classify/verify.js')
+    const { verifyDigestField } = await import('../capsule/enclave-aes/classify/verify.js')
     const policy: VdigFieldPolicy = {
       normalize: spec.verifyNormalize ?? 'password',
       notLastN: spec.notLastN ?? 0,

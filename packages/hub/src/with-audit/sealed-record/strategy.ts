@@ -12,7 +12,7 @@
  * stays ungated). Only the vault-side grantor operations are the capability.
  * @internal
  */
-import type { SealingContext } from '../../kernel/enclave/index.js'
+import type { SealingContext } from '../../capsule/index.js'
 import type { RecipientSealer } from '../../with-party/team/managed-secret.js'
 import { SealedRecordNotEnabledError } from '../../kernel/errors.js'
 

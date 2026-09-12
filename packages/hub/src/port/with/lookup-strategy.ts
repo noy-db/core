@@ -82,8 +82,8 @@ export interface BuildLookupHandleOptions<Keys extends string = string> {
   readonly emitter: NoydbEventEmitter
   /**
    * #647 fix wave 1 — mints a version-ordered delete-marker envelope. Bound by the Vault to the
-   * real `kernel/enclave` `buildDeleteMarker` function — `LookupHandle` (`via/lookup/**`)
-   * may not import `kernel/enclave/` itself (Check 11/15), so this capability is injected the
+   * real `capsule/enclave-aes` `buildDeleteMarker` function — `LookupHandle` (`via/lookup/**`)
+   * may not import `capsule/enclave-aes/` itself (Check 11/15), so this capability is injected the
    * same way `reservedEnvelopes` above is.
    */
   readonly buildDeleteMarker: (identity: { collection: string; id: string }, version: number, actor: string) => EncryptedEnvelope

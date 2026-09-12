@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { createNoydb, ConflictError, TierNotGrantedError, TierDemoteDeniedError } from '../src/index.js'
 import { withTiers } from '../src/with-audit/tiers/index.js'
-import { rewrapBodyToDek, buildDeleteMarker } from '../src/kernel/enclave/index.js'
+import { rewrapBodyToDek, buildDeleteMarker } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot, GhostRecord, CrossTierAccessEvent } from '../src/index.js'
 
 interface Doc {
