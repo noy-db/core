@@ -97,6 +97,35 @@ export class WriteQueueTracker implements WriteQueue {
     }
   }
 
+  /**
+   * Run a write whose PRE-COMMIT phase may legitimately REFUSE — the schema
+   * gates, and a user `beforeWrite` hook that throws to abort. `fn` calls
+   * `committed()` at the point the store write itself begins.
+   *
+   * Before that point a rejection releases the depth it took but records NO
+   * queue error; after it, a rejection settles as a failure like `track`.
+   *
+   * #11 — why the phase is inside `depth` at all: `pending` is the documented
+   * shutdown guard (see the `writeQueue` getter's `beforeunload` example) and
+   * the schema fence does a fresh store read per write, so leaving the gates
+   * outside made `pending` read `false` during a real round-trip on every
+   * write. The refusal carve-out is what the old outside-the-queue placement
+   * was protecting ("a rejected write never counts toward depth") — it is kept
+   * deliberately, so a refused write cannot reject a concurrent `onFlush()`.
+   */
+  async trackGated<R>(fn: (committed: () => void) => Promise<R>): Promise<R> {
+    this.begin()
+    let refusable = true
+    try {
+      const value = await fn(() => { refusable = false })
+      this.settle()
+      return value
+    } catch (error) {
+      this.settle(refusable ? undefined : (error as Error))
+      throw error
+    }
+  }
+
   #emitChange(): void {
     for (const handler of this.#changeHandlers) handler()
   }

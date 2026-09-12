@@ -1562,12 +1562,8 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
 
   /** @internal The body of {@link put}; see the #1420 note there for why it is split. */
   async #putGated(id: string, record: T, options?: { readonly reason?: string; readonly source?: string; readonly sourceTs?: string }): Promise<void> {
-    // Refuse the write if an update strategy rejected the schema
-    // change. Awaited OUTSIDE track() so a rejected write never counts
-    // toward writeQueue.depth.
-    // BYPASS HAZARD: any refusal or side-effect added to this wrapper must ALSO be covered on the atomic tx path — extend _assertWriteGates or _txAtomicSafe (see commitAtomicBatch in with-commit/tx/transaction.ts); two m44 holes (write-hooks, schema gates) came from exactly this bypass.
-    await this.schemaUpdateGate?.assertWritable()
-    await this.schemaFence?.assertWritable(this.name)
+    // #11 — the gate phase runs INSIDE the queue; `trackGated`'s doc says why,
+    // and `__tests__/writequeue-covers-gate-phase.test.ts` pins both halves.
     // TODO: putManyAtomic / CRDT / blob write paths are not yet tracked by writeQueue nor fired through the write hooks (tx-execute now asserts the schema gates directly — see _assertWriteGates).
     // User write-hooks AND the observe bus both need the
     // WriteEvent. Build it if EITHER consumer is active so the bus is not
@@ -1576,6 +1572,10 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     const busAfterPut = (this.subsystemBus?.hasHandlers('afterPut') ?? false)
       && !(this.subsystemBus?.dispatching ?? false)
     let event: WriteEvent | undefined
+    const gated = async (committed: () => void): Promise<void> => {
+    // BYPASS HAZARD: any refusal or side-effect added to this wrapper must ALSO be covered on the atomic tx path — extend _assertWriteGates or _txAtomicSafe (see commitAtomicBatch in with-commit/tx/transaction.ts); two m44 holes (write-hooks, schema gates) came from exactly this bypass.
+    await this.schemaUpdateGate?.assertWritable()
+    await this.schemaFence?.assertWritable(this.name)
     if (hooksActive || busAfterPut) {
       const prior = await this.#priorForHook(id)
       event = {
@@ -1586,8 +1586,11 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
       }
       if (hooksActive) await this.writeHooks!.runBefore(event) // throw → aborts the write
     }
-    if (this.writeQueue) await this.writeQueue.track(() => this._putInternal(id, record, options))
-    else await this._putInternal(id, record, options)
+      committed()
+      await this._putInternal(id, record, options)
+    }
+    if (this.writeQueue) await this.writeQueue.trackGated(gated)
+    else await gated(() => {})
     if (event) {
       // Ordering: user afterWrite hooks run BEFORE observe-bus dispatch in
       // slice 1. Revisit when internal observe services (e.g. MV-refresh
@@ -2389,9 +2392,6 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
 
   /** @internal The body of {@link delete}; see the #1420 note on {@link put}. */
   async #deleteGated(id: string): Promise<void> {
-    // BYPASS HAZARD: any refusal or side-effect added to this wrapper must ALSO be covered on the atomic tx path — extend _assertWriteGates or _txAtomicSafe (see commitAtomicBatch in with-commit/tx/transaction.ts); two m44 holes (write-hooks, schema gates) came from exactly this bypass.
-    await this.schemaUpdateGate?.assertWritable()
-    await this.schemaFence?.assertWritable(this.name)
     // User write-hooks AND the Track A observe bus both need the
     // WriteEvent. Build it if EITHER consumer is active so the bus is not
     // coupled to write-hooks being present. Mirrors the put() path.
@@ -2399,6 +2399,11 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     const busAfterDelete = (this.subsystemBus?.hasHandlers('afterDelete') ?? false)
       && !(this.subsystemBus?.dispatching ?? false)
     let event: WriteEvent | undefined
+    // #11 — gate phase inside the queue; see #putGated and `trackGated`.
+    const gated = async (committed: () => void): Promise<void> => {
+    // BYPASS HAZARD: any refusal or side-effect added to this wrapper must ALSO be covered on the atomic tx path — extend _assertWriteGates or _txAtomicSafe (see commitAtomicBatch in with-commit/tx/transaction.ts); two m44 holes (write-hooks, schema gates) came from exactly this bypass.
+    await this.schemaUpdateGate?.assertWritable()
+    await this.schemaFence?.assertWritable(this.name)
     if (hooksActive || busAfterDelete) {
       const prior = await this.#priorForHook(id)
       event = {
@@ -2408,8 +2413,11 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
       }
       if (hooksActive) await this.writeHooks!.runBefore(event)
     }
-    if (this.writeQueue) await this.writeQueue.track(() => this._deleteInternal(id))
-    else await this._deleteInternal(id)
+      committed()
+      await this._deleteInternal(id)
+    }
+    if (this.writeQueue) await this.writeQueue.trackGated(gated)
+    else await gated(() => {})
     if (event) {
       // Ordering: user afterWrite hooks run before observe-bus dispatch.
       if (hooksActive) await this.writeHooks!.runAfter(event)

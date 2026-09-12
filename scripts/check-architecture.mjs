@@ -1267,7 +1267,14 @@ const KERNEL_SURFACE_BUDGET = {
   // one per group barrel — plus the two-line note saying why a kernel file may
   // name Relate at all (it is type-only, so erased). No capability was added;
   // ratchet it back if the barrels ever re-merge.
-  'packages/hub/src/kernel/collection.ts': 4418,
+  // +8 on 2026-09-12 for #11: the pre-write gate phase moved INSIDE the write
+  // queue, so `writeQueue.pending` (the documented shutdown guard) is no longer
+  // false during the schema fence's per-write store read. The cost is a
+  // `trackGated` closure wrapper in `#putGated` and `#deleteGated` — 4 lines
+  // each. It cannot move to a service: the gates and the queue are both
+  // always-on kernel, and the whole point is that they share one span. The
+  // rationale lives in `kernel/write-queue.ts`'s `trackGated` doc, not here.
+  'packages/hub/src/kernel/collection.ts': 4426,
   // Lowered 4549→4548 (#826/#798/#812 deprecation cut, 2026-07-26): removed the #799 cover delegators + option key, the dead auth/autoSync/syncInterval options, and the /bundle retirement fallout. Ratchets the #799 bumps back down as their comments promised.
   // Bumped 3640→3700 (2026-06-08): deferred-numbering wiring — `sequence()`
   // routing + `runNumberingPass` + the cache-coherent `stamp` closure. The
