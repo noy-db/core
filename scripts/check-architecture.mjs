@@ -2005,6 +2005,15 @@ const HUB_SATELLITE_DEPS = new Map([
     // implements no hub contract, so no mirror is forced and none exists.
     mirrorCheck: null,
   }],
+  ['@noy-db/test-capsule-conformance', {
+    why: 'devDependency — the reference capsule (enclave-aes, which ships inside hub) must pass its own conformance suite. A suite the reference implementation does not run is measuring its own assumptions, and it would drift from the primitives it claims to describe without anyone noticing until a downstream capsule author hit it in their CI.',
+    // The suite is STRUCTURALLY typed (`CapsuleUnderTest` declares the slice it
+    // exercises) and imports hub nowhere, deliberately: a capsule package can
+    // then be tested without depending on the exact hub version that declared
+    // the contract. So no mirror is forced and none exists — the same shape as
+    // @noy-db/shamir below, for the same reason.
+    mirrorCheck: null,
+  }],
   ['@noy-db/shamir', {
     why: 'devDependency — six managed-mode / recovery test files exercise REAL k-of-n threshold behaviour through a four-line adapter over the shipped math (__tests__/support/shamir-provider.ts). A stub would leave them green while proving nothing about the property under test.',
     // Like attestation: implements no hub contract, imports hub nowhere, so no
