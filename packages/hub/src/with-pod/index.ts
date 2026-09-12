@@ -113,4 +113,4 @@ export { ManifestConflictError, MigrationRequiredError, PodHeaderVerificationErr
 export type { Noydb } from '../kernel/noydb.js'
 export type { Vault } from '../kernel/vault.js'
 export type { NoydbOptions, NoydbStore } from '../kernel/types.js'
-export type { EchoSecretParts } from '../kernel/enclave/index.js'
+export type { EchoSecretParts } from '../capsule/index.js'

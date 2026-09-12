@@ -8,7 +8,7 @@
  * Web Crypto SHA-256 — no extra deps. Mirrors the v1
  * `computeStrategyHash` pattern.
  */
-import { sha256Hex } from '../../kernel/enclave/index.js'
+import { sha256Hex } from '../../capsule/index.js'
 
 export async function computeQueryHash(
   mvName: string,

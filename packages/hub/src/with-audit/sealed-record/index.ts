@@ -14,7 +14,7 @@
  * @module
  */
 
-import { recordAadFor, decrypt, base64ToBuffer, importCek } from '../../kernel/enclave/index.js'
+import { recordAadFor, decrypt, base64ToBuffer, importCek } from '../../capsule/index.js'
 import {
   SealedRecordExpiredError,
   SealedRecordMismatchError,

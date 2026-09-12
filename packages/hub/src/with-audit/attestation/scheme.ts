@@ -1,4 +1,4 @@
-import { signBytes, verifyBytes } from '../../kernel/enclave/index.js'
+import { signBytes, verifyBytes } from '../../capsule/index.js'
 import type { SignatureScheme } from './types.js'
 
 /**

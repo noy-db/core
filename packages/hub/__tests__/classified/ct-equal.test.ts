@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ctEqualTags, blindedEqual } from '../../src/kernel/enclave/classify/compare.js'
+import { ctEqualTags, blindedEqual } from '../../src/capsule/enclave-aes/classify/compare.js'
 
 const bytes = (s: string) => new TextEncoder().encode(s)
 

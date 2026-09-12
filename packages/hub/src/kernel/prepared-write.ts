@@ -11,7 +11,7 @@
  * kernel-surface line budget.
  */
 import type { EncryptedEnvelope } from './types.js'
-import type { EnclaveKey } from './enclave/index.js'
+import type { EnclaveKey } from '../capsule/index.js'
 
 /** @internal Everything `_commitPut` needs after `_preparePut` produced the envelope. */
 export interface PreparedPut<T> {

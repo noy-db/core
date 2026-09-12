@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRecordAad, type RecordIdentity } from '../src/kernel/enclave/record-aad.js'
+import { buildRecordAad, type RecordIdentity } from '../src/capsule/enclave-aes/record-aad.js'
 
 const base: RecordIdentity = {
   collection: 'invoices',

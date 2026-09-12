@@ -1,6 +1,6 @@
 {
-  "subpath": "kernel/enclave (internal \u2014 not a @noy-db/hub/* subpath)",
-  "source": "src/kernel/enclave/index.ts",
+  "subpath": "capsule/enclave-aes (internal \u2014 not a @noy-db/hub/* subpath)",
+  "source": "src/capsule/enclave-aes/index.ts",
   "values": [
     "RecordCodec",
     "SEALED_CEK_NS",
@@ -12,6 +12,7 @@
     "buildRecordEnvelope",
     "buildSealedRecordEnvelope",
     "buildTombstone",
+    "capabilities",
     "checkCanary",
     "computeBidxTarget",
     "computeBrokerProof",

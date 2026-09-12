@@ -28,7 +28,7 @@ import { buildRecordAad,
   wrapCek,
   encrypt,
   type EnclaveKey,
-} from '../src/kernel/enclave/index.js'
+} from '../src/capsule/enclave-aes/index.js'
 import { canonicalJson, sha256Hex as entrySha256Hex } from '../src/with-commit/history/ledger/entry.js'
 import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope } from '../src/kernel/types.js'
 

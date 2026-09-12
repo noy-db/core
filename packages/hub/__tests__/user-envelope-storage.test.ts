@@ -10,7 +10,7 @@ import {
   USER_ENVELOPE_MAX_BYTES,
 } from '../src/kernel/constants.js'
 import { UserEnvelopeOversizedError, ConflictError } from '../src/kernel/errors.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore, EncryptedEnvelope } from '../src/kernel/types.js'
 
 function inlineMemory(): NoydbStore {

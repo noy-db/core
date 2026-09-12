@@ -19,7 +19,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { mintWrappedDeksBlob, unwrapDeksFromBlob, type WrappedDeksBlob } from '../src/with-party/team/wrapped-deks.js'
-import { generateDEK, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { generateDEK, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 import { InvalidKeyError, TamperedError } from '../src/kernel/errors.js'
 
 const subtle = globalThis.crypto.subtle

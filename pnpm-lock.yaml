@@ -395,6 +395,15 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@22.19.17)(happy-dom@18.0.1)(jiti@2.7.0)(terser@5.46.1)(tsx@4.22.3)(yaml@2.9.0)
 
+  packages/test-capsule-conformance:
+    devDependencies:
+      '@noy-db/hub':
+        specifier: workspace:*
+        version: link:../hub
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.17)(happy-dom@18.0.1)(jiti@2.7.0)(terser@5.46.1)(tsx@4.22.3)(yaml@2.9.0)
+
   packages/test-ceremony-conformance:
     devDependencies:
       '@noy-db/hub':
@@ -481,15 +490,6 @@ importers:
       '@noy-db/hub':
         specifier: workspace:*
         version: link:../../packages/hub
-
-  test-harnesses/enclave-conformance:
-    devDependencies:
-      '@noy-db/hub':
-        specifier: workspace:*
-        version: link:../../packages/hub
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.4(@types/node@22.19.17)(happy-dom@18.0.1)(jiti@2.7.0)(terser@5.46.1)(tsx@4.22.3)(yaml@2.9.0)
 
   test-harnesses/simulation-concurrent:
     devDependencies:

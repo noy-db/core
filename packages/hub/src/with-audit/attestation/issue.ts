@@ -1,5 +1,5 @@
 import type { NoydbStore } from '../../kernel/types.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, type EnclaveKey } from '../../capsule/index.js'
 import { AttestationError } from '../../kernel/errors.js'
 import { generateULID } from '../../with-pod/ulid.js'
 import { loadOrCreateSigner, ATTESTATIONS_COLLECTION } from './signer.js'

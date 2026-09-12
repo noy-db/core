@@ -27,8 +27,8 @@
  * remove.
  */
 import { describe, it, expect } from 'vitest'
-import { encrypt, decrypt, generateDEK } from '../src/kernel/enclave/crypto.js'
-import { buildRecordAad } from '../src/kernel/enclave/record-aad.js'
+import { encrypt, decrypt, generateDEK } from '../src/capsule/enclave-aes/crypto.js'
+import { buildRecordAad } from '../src/capsule/enclave-aes/record-aad.js'
 import { TamperedError, KeyringTamperedError } from '../src/kernel/errors.js'
 
 const BODY = JSON.stringify({ id: 'r1', amount: 4200 })

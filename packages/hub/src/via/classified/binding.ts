@@ -34,9 +34,9 @@ import type { ClassifiedFieldSpec } from './descriptor.js'
 
 /**
  * One classified per-slot shred/residue verdict — mirrors
- * `RecordCodec.SealedShredSlot` (`kernel/enclave/record-keys/record-codec.ts`)
+ * `RecordCodec.SealedShredSlot` (`capsule/enclave-aes/record-keys/record-codec.ts`)
  * byte-for-byte. Duplicated here (not imported) so this binding never
- * reaches into `kernel/enclave/` (`via-enclave-isolation`, #629) — the
+ * reaches into `capsule/enclave-aes/` (`via-enclave-isolation`, #629) — the
  * closure that PRODUCES real values of this shape is codec-owned and
  * injected via {@link ClassifiedViaConfig.classifySealedShred}.
  */

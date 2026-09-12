@@ -22,7 +22,7 @@
  * Internal service — not exported as a `@noy-db/hub/*` subpath.
  */
 import type { NoydbStore } from '../../kernel/types.js'
-import type { RecordCodec } from '../../kernel/enclave/index.js'
+import type { RecordCodec } from '../../capsule/index.js'
 import { stripI18nFilled, type I18nTextDescriptor } from '../../via/i18n/core.js'
 import { isStaticDictDescriptor, type DictKeyDescriptor, type StaticDictDescriptor, type DictionaryHandle } from '../../via/i18n/dictionary.js'
 import type { BlobSet } from '../../with-shape/blobs/blob-set.js'

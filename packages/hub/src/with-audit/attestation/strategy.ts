@@ -1,5 +1,5 @@
 import type { NoydbStore } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import type { RevocationList } from './types.js'
 import type { IssueContext, IssueArgs, IssueResult } from './issue.js'
 import type { RevokeContext } from './revoke.js'

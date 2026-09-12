@@ -12,8 +12,8 @@ import {
   deriveBrokerProofKey,
   issueChallenge,
   verifyBrokerProof,
-} from '../../src/kernel/enclave/broker/proof.js'
-import type { VerifyBrokerProofArgs } from '../../src/kernel/enclave/broker/proof.js'
+} from '../../src/capsule/enclave-aes/broker/proof.js'
+import type { VerifyBrokerProofArgs } from '../../src/capsule/enclave-aes/broker/proof.js'
 
 const subtle = globalThis.crypto.subtle
 
@@ -39,7 +39,7 @@ async function registerFor(seed: Uint8Array, vaultId: string, brokerId: string):
   return deriveBrokerProofBits(seed, vaultId, brokerId)
 }
 
-describe('kernel/enclave/broker/proof', () => {
+describe('capsule/enclave-aes/broker/proof', () => {
   it('pins the domain constants (HKDF salt/info tag and MAC version tag)', () => {
     expect(BROKER_PROOF_DOMAIN).toBe('noydb-broker-proof')
     expect(BROKER_PROOF_VERSION).toBe('noydb-broker-proof-v1')

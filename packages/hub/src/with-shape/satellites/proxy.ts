@@ -1,5 +1,5 @@
 import { SatelliteConfigError } from '../../kernel/errors.js'
-import { findByDet as detFindByDet, queryByDet as detQueryByDet } from '../../kernel/enclave/index.js'
+import { findByDet as detFindByDet, queryByDet as detQueryByDet } from '../../capsule/index.js'
 import { isBaseLive, liveBaseIdSet } from './existence.js'
 import { pairDelete } from './fanout.js'
 import { RAW_TARGET } from './raw-target.js'
@@ -177,7 +177,7 @@ export function makeSatelliteProxy(target: any, spec: SatelliteSpec, registry: S
       return filterLiveHits(hits, adapter, vaultName, spec.base)
     },
     // #591 Task 9 review fix: findByDet/queryByDet scan envelopes straight
-    // off the adapter (kernel/enclave/record-keys/deterministic.ts) and
+    // off the adapter (capsule/enclave-aes/record-keys/deterministic.ts) and
     // return BARE records (no id), so a post-filter can't correlate a match
     // back to its base row. Instead the scan itself is scoped: re-run the
     // same det functions over the collection's own DeterministicContext

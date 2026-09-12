@@ -22,7 +22,7 @@ import { ConflictError } from '../src/kernel/errors.js'
 import { withTiers } from '../src/with-audit/tiers/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
 import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope, type NoydbStore, type VaultSnapshot } from '../src/kernel/types.js'
-import { recordAadFor, unwrapCek, decrypt, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { recordAadFor, unwrapCek, decrypt, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 import { LEDGER_COLLECTION } from '../src/with-commit/history/ledger/constants.js'
 
 interface HistDoc { id: string; body: string }

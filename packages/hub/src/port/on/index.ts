@@ -51,4 +51,4 @@ export type {
 } from '../../with-party/team/index.js'
 export type { KeyringAuthenticator } from '../../kernel/types.js'
 export type { UnlockedKeyring } from '../../with-party/team/keyring.js'
-export type { EnclaveKey } from '../../kernel/enclave/index.js'
+export type { EnclaveKey } from '../../capsule/index.js'

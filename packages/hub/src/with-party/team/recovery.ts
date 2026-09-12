@@ -23,8 +23,8 @@
  * @module
  */
 import type { NoydbStore } from '../../kernel/types.js'
-import { buildRecordEnvelope, bufferToBase64, generateRecoverySecret } from '../../kernel/enclave/index.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope, bufferToBase64, generateRecoverySecret } from '../../capsule/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import {
   mintWrappedDeksBlob,
   unwrapDeksFromBlob,

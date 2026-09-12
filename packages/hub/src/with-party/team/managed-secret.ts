@@ -61,7 +61,7 @@ import {
   recipientWrap,
   recipientUnwrap,
   type EnclaveKeyPair,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import type { NoydbStore, RecipientSealer } from '../../kernel/types.js'
 
 /**

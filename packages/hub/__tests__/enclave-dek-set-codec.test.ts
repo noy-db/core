@@ -21,7 +21,7 @@ import {
   generateDEK,
   bufferToBase64,
   type EnclaveKey,
-} from '../src/kernel/enclave/index.js'
+} from '../src/capsule/enclave-aes/index.js'
 
 const subtle = globalThis.crypto.subtle
 

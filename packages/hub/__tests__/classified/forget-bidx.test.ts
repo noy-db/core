@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { RecordCodec, generateDEK, buildTombstone } from '../../src/kernel/enclave/index.js'
+import { RecordCodec, generateDEK, buildTombstone } from '../../src/capsule/enclave-aes/index.js'
 import { NO_CRDT } from '../../src/with-commit/crdt/strategy.js'
 import type { VdigFieldPolicy } from '../../src/kernel/types.js'
 

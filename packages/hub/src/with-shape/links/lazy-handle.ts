@@ -15,7 +15,7 @@ import { linkCollectionName, type LinkRow, type LinkSpec, type LinkSetHandle } f
 import type { LinkSet } from './link-set.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import type { NoydbEventEmitter } from '../../kernel/events.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 
 /** @internal The lazy handle: public surface + facade cascade internals. */
 export type LazyLinkSetHandle = LinkSetHandle & {

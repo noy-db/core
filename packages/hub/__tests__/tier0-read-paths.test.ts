@@ -18,7 +18,7 @@ import { withHistory } from '../src/with-commit/history/index.js'
 import { withCrdt } from '../src/with-commit/crdt/index.js'
 import { withI18n } from '../src/via/i18n/index.js'
 import { i18nText } from '../src/via/i18n/core.js'
-import { buildDeleteMarker } from '../src/kernel/enclave/index.js'
+import { buildDeleteMarker } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/index.js'
 import type { GatePutEvent } from '../src/port/with/service-bus.js'
 

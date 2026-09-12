@@ -45,7 +45,7 @@
 import type { Vault } from '../../kernel/vault.js'
 import type { FactorProofBundle, KeyringFile } from '../../kernel/types.js'
 import { PermissionDeniedError } from '../../kernel/errors.js'
-import { wrapKey } from '../../kernel/enclave/index.js'
+import { wrapKey } from '../../capsule/index.js'
 import { createOwnerKeyring, requireRosterKey } from '../team/keyring.js'
 import { mintRosterTag, assertRosterTagValid } from '../team/roster-tag.js'
 import { nextRosterEpoch } from '../team/roster-epoch.js'

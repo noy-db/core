@@ -14,7 +14,7 @@
  * No pod/vault imports here — this is a family-wide primitive.
  */
 import { canonicalJson, utf8 } from '@noy-db/attestation'
-import { signBytes, verifyBytes } from '../kernel/enclave/index.js'
+import { signBytes, verifyBytes } from '../capsule/index.js'
 
 export const POD_SIG_ALG = 'ed25519' as const
 

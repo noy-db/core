@@ -21,7 +21,7 @@
  * @module
  */
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 
 type GetDEK = (collectionName: string) => Promise<EnclaveKey>
 

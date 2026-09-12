@@ -45,7 +45,7 @@
  */
 
 import type { NoydbStore, EncryptedEnvelope } from '../../../kernel/types.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../../capsule/index.js'
 import type { ConflictError} from '../../../kernel/errors.js';
 import { isConflictError, LedgerContentionError } from '../../../kernel/errors.js'
 import {

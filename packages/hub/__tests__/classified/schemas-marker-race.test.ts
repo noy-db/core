@@ -29,7 +29,7 @@ import {
   persistClassifiedMarker,
 } from '../../src/with-shape/persisted-schemas/register.js'
 import { loadPersistedSchema } from '../../src/with-shape/persisted-schemas/storage.js'
-import { generateDEK } from '../../src/kernel/enclave/index.js'
+import { generateDEK } from '../../src/capsule/enclave-aes/index.js'
 import type { ClassifiedMarker } from '../../src/kernel/types.js'
 
 const VAULT = 'v1'

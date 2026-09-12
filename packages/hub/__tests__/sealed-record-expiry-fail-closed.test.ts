@@ -12,7 +12,7 @@ import { ConflictError, SealedRecordExpiredError, ValidationError } from '../src
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/kernel/types.js'
 import { MemoryRecipientSealer } from '../src/with-party/team/managed-secret.js'
 import { openSealedRecord, withSealedRecord } from '../src/with-audit/sealed-record/index.js'
-import { bufferToBase64 } from '../src/kernel/enclave/index.js'
+import { bufferToBase64 } from '../src/capsule/enclave-aes/index.js'
 import type { SealedCekDeliveryEnvelope, SealedCekBinding } from '../src/with-audit/sealed-record/types.js'
 
 function toMemory(): NoydbStore & { raw(c: string, col: string, id: string): EncryptedEnvelope | undefined } {

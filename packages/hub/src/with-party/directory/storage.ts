@@ -9,7 +9,7 @@
  *
  * @module
  */
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import type { DirectoryConfig } from './types.js'
 

@@ -1,8 +1,8 @@
 /**
- * Golden export-surface freeze for `kernel/enclave/index.ts` — the fork-swap
+ * Golden export-surface freeze for `capsule/enclave-aes/index.ts` — the fork-swap
  * contract (S5 family doors, Task 9).
  *
- * `kernel/enclave/` (crypto.ts + record-keys/**) is the hub's crypto
+ * `capsule/enclave-aes/` (crypto.ts + record-keys/**) is the hub's crypto
  * interior — the piece a forked sister project replaces wholesale, honoring
  * only this barrel's interface. This test freezes its export list against a
  * checked-in baseline (`enclave-surface.golden.json`) so drift fails CI —
@@ -19,9 +19,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import * as enclave from '../src/kernel/enclave/index.js'
-import type { DeterministicContext, EnclaveKey, EnclaveKeyPair, SecretKeyUsage, SealingContext } from '../src/kernel/enclave/index.js'
-import type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from '../src/kernel/enclave/index.js'
+import * as enclave from '../src/capsule/enclave-aes/index.js'
+import type { DeterministicContext, EnclaveKey, EnclaveKeyPair, SecretKeyUsage, SealingContext } from '../src/capsule/enclave-aes/index.js'
+import type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from '../src/capsule/enclave-aes/index.js'
 
 interface Surface {
   readonly values: readonly string[]
@@ -54,9 +54,9 @@ function parseExports(src: string): { values: string[]; types: string[] } {
 }
 
 const baseline: Surface = JSON.parse(read('./enclave-surface.golden.json')) as Surface
-const parsed = parseExports(read('../src/kernel/enclave/index.ts'))
+const parsed = parseExports(read('../src/capsule/enclave-aes/index.ts'))
 
-describe('kernel/enclave — golden export surface (fork-swap contract)', () => {
+describe('capsule/enclave-aes — golden export surface (fork-swap contract)', () => {
   it('value exports match the frozen baseline (runtime enumeration)', () => {
     const runtime = Object.keys(enclave)
       .filter((k) => (enclave as Record<string, unknown>)[k] !== undefined)

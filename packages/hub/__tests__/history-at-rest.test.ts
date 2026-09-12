@@ -22,7 +22,7 @@ import { withHistory } from '../src/with-commit/history/index.js'
 import { NO_HISTORY } from '../src/with-commit/history/strategy.js'
 import { rewrapHistory } from '../src/with-commit/history/history.js'
 import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope, type NoydbStore, type VaultSnapshot } from '../src/kernel/types.js'
-import { recordAadFor, buildRecordAad, generateDEK, wrapCek, unwrapCek, encrypt, decrypt, rewrapBodyToDek, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { recordAadFor, buildRecordAad, generateDEK, wrapCek, unwrapCek, encrypt, decrypt, rewrapBodyToDek, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 
 const HISTORY_COLLECTION = '_history'
 const VAULT = 'v'

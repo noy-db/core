@@ -10,7 +10,7 @@
 
 import type { EncryptedEnvelope } from '../../../kernel/types.js'
 import { sha256Hex } from './entry.js'
-import { envelopeBodyForHash } from '../../../kernel/enclave/index.js'
+import { envelopeBodyForHash } from '../../../capsule/index.js'
 
 /**
  * Compute the `payloadHash` value for an encrypted envelope. Used by

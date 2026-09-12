@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { encrypt, decrypt } from '../src/kernel/enclave/crypto.js'
-import { buildRecordAad, type RecordIdentity } from '../src/kernel/enclave/record-aad.js'
+import { encrypt, decrypt } from '../src/capsule/enclave-aes/crypto.js'
+import { buildRecordAad, type RecordIdentity } from '../src/capsule/enclave-aes/record-aad.js'
 import { TamperedError } from '../src/kernel/errors.js'
 
 const subtle = globalThis.crypto.subtle

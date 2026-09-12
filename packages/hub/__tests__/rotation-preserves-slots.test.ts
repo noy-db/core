@@ -16,10 +16,10 @@
  * fails for one reason.
  */
 import { describe, it, expect, beforeAll } from 'vitest'
-import { rekeyEnvelopeToDek } from '../src/kernel/enclave/record-keys/rekey.js'
-import { recordAadFor } from '../src/kernel/enclave/record-aad.js'
-import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek } from '../src/kernel/enclave/crypto.js'
-import type { EnclaveKey } from '../src/kernel/enclave/crypto.js'
+import { rekeyEnvelopeToDek } from '../src/capsule/enclave-aes/record-keys/rekey.js'
+import { recordAadFor } from '../src/capsule/enclave-aes/record-aad.js'
+import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek } from '../src/capsule/enclave-aes/crypto.js'
+import type { EnclaveKey } from '../src/capsule/enclave-aes/crypto.js'
 import type { EncryptedEnvelope } from '../src/kernel/types.js'
 import { NOYDB_FORMAT_VERSION } from '../src/kernel/types.js'
 

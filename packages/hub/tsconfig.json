@@ -2,7 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    // `#capsule` resolves to `./dist/...` via package.json's `imports` map,
+    // which is right for the PUBLISHED package and unresolvable while type-
+    // checking source. Point it at source here, exactly as vitest.config.ts
+    // aliases it — same reason: from source, `#capsule` must mean source, or
+    // the door types against the built copy and everything else against src.
+    "paths": {
+      "#capsule": ["./src/capsule/enclave-aes/index.ts"]
+    }
   },
   "include": ["src"]
 }

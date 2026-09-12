@@ -32,7 +32,7 @@
  *
  * @module
  */
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, hmacSha256Hex, sha256Hex, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, hmacSha256Hex, sha256Hex, type EnclaveKey } from '../../capsule/index.js'
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
 
 /** Reserved collection holding the encrypted subject → records index. */

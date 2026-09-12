@@ -1,7 +1,7 @@
 import { NoydbError } from '../../kernel/errors.js'
 import {
   generateEphemeralKey, encryptBytes, decryptBytes, bufferToBase64, base64ToBuffer, type EnclaveKey,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import type { NoydbDeviceSeal } from '../../port/with/device-seal-strategy.js'
 
 /**

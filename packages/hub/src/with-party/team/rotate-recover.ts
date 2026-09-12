@@ -29,7 +29,7 @@ import {
   base64ToBuffer,
   type EnclaveKey,
   type EchoSecretParts,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import { InvalidKeyError, NoAccessError, RecoveryProfileNotImplementedError } from '../../kernel/errors.js'
 import {
   loadPaperRecoveryEntries,

@@ -2,7 +2,7 @@
  * Configuration/write errors for classified fields. @module
  *
  * `ClassifiedConfigError` / `ClassifiedRevealError` moved to `kernel/errors.ts`
- * (stage 2) so `kernel/enclave/classify/*` can throw them without importing
+ * (stage 2) so `capsule/enclave-aes/classify/*` can throw them without importing
  * with-*. Re-exported here under the same names so existing import paths
  * keep working.
  */

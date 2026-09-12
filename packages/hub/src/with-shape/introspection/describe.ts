@@ -43,7 +43,7 @@ import { derivePersistedSchema, isZod4Schema } from '../persisted-schemas/derive
 import { loadPersistedSchema } from '../persisted-schemas/storage.js'
 import { jsonSchemaToFields } from './fields.js'
 import type { NoydbStore } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 
 // ─── Public types ──────────────────────────────────────────────────────────
 

@@ -33,7 +33,7 @@ import {
   removeAuthenticator,
   updateAuthenticator,
 } from '../src/with-party/team/authenticators.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import { ValidationError } from '../src/kernel/errors.js'
 
 function inlineMemory(): NoydbStore {

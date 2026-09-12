@@ -15,7 +15,7 @@
  */
 
 import type { NoydbOptions, NoydbStore } from './types.js'
-import type { EchoSecretParts } from './enclave/index.js'
+import type { EchoSecretParts } from '../capsule/index.js'
 import { ValidationError } from './errors.js'
 
 /**

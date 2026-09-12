@@ -21,7 +21,7 @@
  * Internal service — not exported as a `@noy-db/hub/*` subpath.
  */
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
-import type { RecordCodec } from '../../kernel/enclave/index.js'
+import type { RecordCodec } from '../../capsule/index.js'
 import type { NoydbEventEmitter } from '../../kernel/events.js'
 import { IndexWriteFailureError, UniqueConstraintError } from '../../kernel/errors.js'
 import { normalizeIndexDefs, type CollectionIndexes, type IndexDef } from './eager-indexes.js'

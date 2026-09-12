@@ -21,7 +21,7 @@
  * @module
  */
 
-import { buildSealedRecordEnvelope, openEnvelopeJson, writeEnvelopeBody, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildSealedRecordEnvelope, openEnvelopeJson, writeEnvelopeBody, type EnclaveKey } from '../../capsule/index.js'
 import { canonicalJson, sha256Hex } from '../../with-commit/history/ledger/index.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import { MANIFEST_COLLECTION } from './reserved-collections.js'

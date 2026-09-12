@@ -17,7 +17,7 @@
  * (`request-withdrawal.ts`).
  */
 import type { Vault } from '../../kernel/vault.js'
-import { buildRecordEnvelope, sha256Hex } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope, sha256Hex } from '../../capsule/index.js'
 import { ReadOnlyError } from '../../kernel/errors.js'
 import { resolveAccessibleCollections, buildAccessibleBundle } from './export-accessible.js'
 

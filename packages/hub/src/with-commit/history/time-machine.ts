@@ -63,7 +63,7 @@ interface ResolvedEnvelope {
   readonly envelope: EncryptedEnvelope
   readonly ref: { readonly collection: string; readonly id: string }
 }
-import { openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import { ReadOnlyAtInstantError } from '../../kernel/errors.js'
 import { liveRecordIsElevated } from '../../kernel/tier-visibility.js'
 

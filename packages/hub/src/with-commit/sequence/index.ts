@@ -19,9 +19,9 @@
  * to its record in the same operation.
  */
 
-import { buildRecordAad, buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope } from '../../capsule/index.js'
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
-import { encrypt, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import type { ConflictError} from '../../kernel/errors.js';
 import { isConflictError, SequenceContentionError, SequenceOfflineError, ValidationError } from '../../kernel/errors.js'
 

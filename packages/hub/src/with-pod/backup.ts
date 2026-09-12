@@ -39,7 +39,7 @@ import type {
   ExportChunk,
 } from '../kernel/types.js'
 import type { LedgerStore } from '../with-commit/history/ledger/store.js'
-import { buildRecordEnvelope } from '../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../capsule/index.js'
 
 /** Everything the moving backup methods touched on the vault's `this.*`. */
 export interface BackupContext {

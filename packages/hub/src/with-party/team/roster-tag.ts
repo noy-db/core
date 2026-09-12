@@ -39,8 +39,8 @@
  * PR) — it is not written there yet.
  */
 import type { KeyringFile } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
-import { encrypt, decrypt } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
+import { encrypt, decrypt } from '../../capsule/index.js'
 import { ROSTER_KEY_ID } from '../../kernel/constants.js'
 import { KeyringTamperedError } from '../../kernel/errors.js'
 import type { KeyringTamperedReason } from '../../kernel/errors.js'

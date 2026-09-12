@@ -38,7 +38,7 @@ import { createNoydb } from '../src/kernel/noydb.js'
 import { memoryStore } from '../src/index.js'
 import { withTeam } from '../src/with-party/team/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
-import { openEnvelopeJson, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { openEnvelopeJson, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore } from '../src/kernel/types.js'
 
 const VAULT = 'acme'

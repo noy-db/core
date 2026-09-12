@@ -63,7 +63,7 @@
  * @packageDocumentation
  */
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 
 /** Reserved collection the head's buckets live in. */
 export const VAULT_HEAD_COLLECTION = '_head' as const

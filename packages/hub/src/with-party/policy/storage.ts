@@ -8,7 +8,7 @@
  *
  * @module
  */
-import { buildRecordEnvelope } from '../../kernel/enclave/index.js'
+import { buildRecordEnvelope } from '../../capsule/index.js'
 import type { NoydbStore, VaultPolicy } from '../../kernel/types.js'
 
 /** Reserved collection name for vault-level metadata documents. */

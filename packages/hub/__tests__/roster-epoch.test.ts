@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { rosterCanonical, mintRosterTag, verifyRosterTag } from '../src/with-party/team/roster-tag.js'
 import { assertRosterEpochCurrent, nextRosterEpoch } from '../src/with-party/team/roster-epoch.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import { KeyringTamperedError } from '../src/kernel/errors.js'
 
 const base = {

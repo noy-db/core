@@ -24,7 +24,7 @@ import {
   mintPaperRecoveryEntry,
   loadPaperRecoveryEntries,
 } from '../src/with-party/team/recovery.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import { persistKeyring } from '../src/with-party/team/keyring.js'
 import { WeakSecretError } from '../src/kernel/validation.js'
 import { InvalidKeyError } from '../src/kernel/errors.js'

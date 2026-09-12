@@ -25,7 +25,7 @@ import { createNoydb } from '../src/kernel/noydb.js'
 import { memoryStore } from '../src/index.js'
 import { withTeam } from '../src/with-party/team/index.js'
 import { withTiers } from '../src/with-audit/tiers/index.js'
-import { openEnvelopeJson, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { openEnvelopeJson, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 import { parseDekKey, dekKey } from '../src/kernel/tier-visibility.js'
 import type { NoydbStore, EncryptedEnvelope } from '../src/kernel/types.js'
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createNoydb } from '../../src/kernel/noydb.js'
 import { inlineMemory } from './harness.js'
-import { buildTombstone } from '../../src/kernel/enclave/index.js'
+import { buildTombstone } from '../../src/capsule/enclave-aes/index.js'
 import type { ClassifiedFieldSpec } from '../../src/via/classified/descriptor.js'
 
 const passwordSpec: ClassifiedFieldSpec = {

@@ -43,7 +43,7 @@
  * @module
  */
 
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import { loadFence } from '../schema-update/fence.js'
 import { loadPersistedSchema, SCHEMAS_COLLECTION } from '../persisted-schemas/storage.js'
 import { computeAggregateHash } from './storage.js'

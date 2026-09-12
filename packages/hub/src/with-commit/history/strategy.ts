@@ -39,7 +39,7 @@ import type { LedgerStore } from './ledger/store.js'
 import type { JsonPatch } from './ledger/patch.js'
 import type { DiffEntry } from './diff.js'
 import type { VaultInstant, VaultEngine } from './time-machine.js'
-import type { EnclaveKey, RecordIdentity } from '../../kernel/enclave/index.js'
+import type { EnclaveKey, RecordIdentity } from '../../capsule/index.js'
 import { historyIdentity } from './history.js'
 
 /**

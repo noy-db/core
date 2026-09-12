@@ -17,7 +17,7 @@ import {
   rewrapBodyToDek,
   wrapCek,
   unwrapCek,
-} from '../../src/kernel/enclave/index.js'
+} from '../../src/capsule/enclave-aes/index.js'
 import { Lru } from '../../src/kernel/cache/index.js'
 import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope } from '../../src/kernel/types.js'
 

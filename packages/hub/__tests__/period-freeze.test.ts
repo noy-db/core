@@ -20,7 +20,7 @@ import { createNoydb } from '../src/kernel/noydb.js'
 import { withSync } from '../src/with-sync/index.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
-import { isDeleteMarker } from '../src/kernel/enclave/record-keys/tombstone.js'
+import { isDeleteMarker } from '../src/capsule/enclave-aes/record-keys/tombstone.js'
 
 /** In-memory store exposing raw stored envelopes for white-box assertions. */
 function toMemory(): NoydbStore & { raw(c: string, col: string, id: string): EncryptedEnvelope | undefined } {

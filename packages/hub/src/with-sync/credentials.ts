@@ -37,10 +37,10 @@
  * against the caller's keyring role at call time.
  */
 
-import { buildRecordAad, buildRecordEnvelope } from '../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope } from '../capsule/index.js'
 import type { NoydbStore, EncryptedEnvelope } from '../kernel/types.js'
 import type { UnlockedKeyring } from '../with-party/team/keyring.js'
-import { encrypt, openEnvelopeJson } from '../kernel/enclave/index.js'
+import { encrypt, openEnvelopeJson } from '../capsule/index.js'
 import { ensureCollectionDEK } from '../with-party/team/keyring.js'
 import { PermissionDeniedError } from '../kernel/errors.js'
 

@@ -7,7 +7,7 @@
  *
  * Web Crypto SHA-256 — no extra deps.
  */
-import { sha256Hex } from '../../kernel/enclave/index.js'
+import { sha256Hex } from '../../capsule/index.js'
 
 export async function computeStrategyHash(
   source: string,

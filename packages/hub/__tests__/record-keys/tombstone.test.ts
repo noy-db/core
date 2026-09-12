@@ -9,8 +9,8 @@
  * Also covers delete markers (#589) which are a distinct envelope predicate.
  */
 import { describe, it, expect } from 'vitest'
-import { isTombstone, buildTombstone } from '../../src/kernel/enclave/index.js'
-import { isDeleteMarker, buildDeleteMarker, isTombstoneShape } from '../../src/kernel/enclave/record-keys/tombstone.js'
+import { isTombstone, buildTombstone } from '../../src/capsule/enclave-aes/index.js'
+import { isDeleteMarker, buildDeleteMarker, isTombstoneShape } from '../../src/capsule/enclave-aes/record-keys/tombstone.js'
 import { NOYDB_FORMAT_VERSION, type EncryptedEnvelope } from '../../src/kernel/types.js'
 
 const live: EncryptedEnvelope = {

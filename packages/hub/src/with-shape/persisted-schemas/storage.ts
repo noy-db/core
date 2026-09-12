@@ -15,7 +15,7 @@
  * @module
  */
 
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../kernel/enclave/index.js'
+import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import type { NoydbStore } from '../../kernel/types.js'
 import type { PersistedSchemaEnvelope } from './types.js'
 

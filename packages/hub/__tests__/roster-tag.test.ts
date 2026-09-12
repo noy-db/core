@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { rosterCanonical, mintRosterTag, verifyRosterTag } from '../src/with-party/team/roster-tag.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 
 const base = {
   user_id: 'bob', role: 'viewer' as const,

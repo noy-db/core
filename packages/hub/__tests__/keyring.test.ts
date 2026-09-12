@@ -12,7 +12,7 @@ import {
   persistKeyring,
   buildRecipientKeyringFile,
 } from '../src/with-party/team/keyring.js'
-import { buildRecordAad, recordAadFor, encrypt, decrypt } from '../src/kernel/enclave/index.js'
+import { buildRecordAad, recordAadFor, encrypt, decrypt } from '../src/capsule/enclave-aes/index.js'
 
 function inlineMemory(): NoydbStore {
   const store = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()

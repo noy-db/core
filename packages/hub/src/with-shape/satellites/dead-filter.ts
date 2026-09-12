@@ -1,5 +1,5 @@
 import type { NoydbStore } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import { liveBaseIdSet } from './existence.js'
 
 /**

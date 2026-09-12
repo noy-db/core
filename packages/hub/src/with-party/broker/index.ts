@@ -24,15 +24,15 @@ export {
 export { BrokerNotEnabledError, BrokerEnrolmentError, BrokerProofError } from '../../kernel/errors.js'
 
 // ─── Host helpers (verify side — for a reference broker host) ───
-import { issueChallenge as issueChallengeRaw, verifyBrokerProof } from '../../kernel/enclave/index.js'
-import type { IssuedChallenge, VerifyBrokerProofArgs } from '../../kernel/enclave/index.js'
+import { issueChallenge as issueChallengeRaw, verifyBrokerProof } from '../../capsule/index.js'
+import type { IssuedChallenge, VerifyBrokerProofArgs } from '../../capsule/index.js'
 
 /**
  * Floor — a challenge TTL must survive network latency + clock drift
  * between host and client. The enclave's `issueChallenge` is deliberately
  * unclamped (a mechanical primitive, not a policy); this floor is host
  * POLICY, so it lives here in the party layer, not
- * `kernel/enclave/broker/proof.ts` (carried forward from Task 2's review,
+ * `capsule/enclave-aes/broker/proof.ts` (carried forward from Task 2's review,
  * I6b).
  */
 const MIN_CHALLENGE_TTL_MS = 10_000
@@ -53,4 +53,4 @@ export { verifyBrokerProof }
 export type { VerifyBrokerProofArgs }
 
 // #837 — issueChallenge's return type must be nameable from this entry.
-export type { IssuedChallenge } from '../../kernel/enclave/index.js'
+export type { IssuedChallenge } from '../../capsule/index.js'

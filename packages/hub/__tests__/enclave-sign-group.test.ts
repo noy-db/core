@@ -4,9 +4,9 @@
  * package verifies what hub signs, and hub verifies what it signs.
  */
 import { describe, it, expect } from 'vitest'
-import { generateSigningKeyPair, signBytes, verifyBytes } from '../src/kernel/enclave/index.js'
+import { generateSigningKeyPair, signBytes, verifyBytes } from '../src/capsule/enclave-aes/index.js'
 import { ed25519Sign, ed25519Verify, generateDocSigningKeyPair, keyIdFor } from '@noy-db/attestation'
-import { sha256Hex } from '../src/kernel/enclave/index.js'
+import { sha256Hex } from '../src/capsule/enclave-aes/index.js'
 import { signRecord, verifyRecord, signedBytes } from '../src/with-pod/signature.js'
 import { ENCLAVE_SCHEME } from '../src/with-audit/attestation/scheme.js'
 

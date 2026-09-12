@@ -9,7 +9,7 @@
  * @packageDocumentation
  */
 import type { NoydbStore } from '../../kernel/types.js'
-import type { EnclaveKey } from '../../kernel/enclave/index.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import type { VaultHeadStrategy } from './strategy.js'
 
 /** One record the store is not serving faithfully. */

@@ -1,6 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // `rootDir` is REQUIRED, not tidiness: this package includes two top-level
+    // directories, so TypeScript cannot infer a project root, and it needs one
+    // to resolve a dependency's package.json `imports` map. Without it the dts
+    // build fails `TS2210: The project root is ambiguous` the moment any
+    // dependency declares `imports` — which @noy-db/hub now does, for the
+    // capsule seam. Every sibling with a single root was unaffected.
+    "rootDir": ".",
     "outDir": "dist"
   },
   "include": [

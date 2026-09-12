@@ -10,8 +10,8 @@
  * crypto itself, only of the DEK resolver plumbing.
  */
 import { describe, it, expect } from 'vitest'
-import { generateDEK } from '../../src/kernel/enclave/index.js'
-import { makeSealedSlotCapability, makeReservedEnvelopes } from '../../src/kernel/enclave/record-keys/sealed-slots.js'
+import { generateDEK } from '../../src/capsule/enclave-aes/index.js'
+import { makeSealedSlotCapability, makeReservedEnvelopes } from '../../src/capsule/enclave-aes/record-keys/sealed-slots.js'
 import { ValidationError } from '../../src/kernel/errors.js'
 
 describe('makeSealedSlotCapability', () => {

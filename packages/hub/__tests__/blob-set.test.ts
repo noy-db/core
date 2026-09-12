@@ -4,7 +4,7 @@ import { ConflictError, PodVersionConflictError, ValidationError, TamperedError 
 import { createNoydb } from '../src/kernel/noydb.js'
 import { withBlobs } from '../src/via/blob/index.js'
 import { withTeam } from '../src/with-party/team/index.js'
-import { encryptBytesWithAAD, type EnclaveKey } from '../src/kernel/enclave/index.js'
+import { encryptBytesWithAAD, type EnclaveKey } from '../src/capsule/enclave-aes/index.js'
 import {
   BLOB_INDEX_COLLECTION,
   BLOB_CHUNKS_COLLECTION,

@@ -2,7 +2,7 @@ import type { NoydbStore } from '../../kernel/types.js'
 import {
   buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson,
   generateSigningKeyPair, sha256Hex, type EnclaveKey,
-} from '../../kernel/enclave/index.js'
+} from '../../capsule/index.js'
 import { ConflictError } from '../../kernel/errors.js'
 
 export const ATTESTATIONS_COLLECTION = '_attestations'

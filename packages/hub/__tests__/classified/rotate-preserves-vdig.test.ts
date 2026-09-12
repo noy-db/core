@@ -11,11 +11,11 @@
  * @module
  */
 import { describe, it, expect } from 'vitest'
-import { buildRecordAad, generateDEK, wrapCek, unwrapCek, encrypt, type EnclaveKey } from '../../src/kernel/enclave/index.js'
-import { sealVdigPayload, openVdigPayload, type VdigPayload } from '../../src/kernel/enclave/classify/vdig.js'
+import { buildRecordAad, generateDEK, wrapCek, unwrapCek, encrypt, type EnclaveKey } from '../../src/capsule/enclave-aes/index.js'
+import { sealVdigPayload, openVdigPayload, type VdigPayload } from '../../src/capsule/enclave-aes/classify/vdig.js'
 import {
   rotateRecordCek, revokeSealedRecord, type SealingContext,
-} from '../../src/kernel/enclave/record-keys/sealing.js'
+} from '../../src/capsule/enclave-aes/record-keys/sealing.js'
 import { inlineMemory, type InlineMemoryStore } from './harness.js'
 import type { EncryptedEnvelope } from '../../src/kernel/types.js'
 

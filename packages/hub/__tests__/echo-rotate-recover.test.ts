@@ -50,7 +50,7 @@ import {
   savePaperRecoveryEntries,
   mintPaperRecoveryEntry,
 } from '../src/with-party/team/recovery.js'
-import { generateDEK } from '../src/kernel/enclave/index.js'
+import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import { shamirRecoveryProvider } from './support/shamir-provider.js'
 
 // Same inline in-memory store pattern as __tests__/keyring.test.ts:17-42.
