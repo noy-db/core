@@ -74,6 +74,7 @@ import { ViaPipeline } from './via/pipeline.js'
 import { viaBinder, type NoydbVia, type ViaDescriptor } from './via/index.js'
 import { validateFieldMetaAtRegistration } from '../with-shape/introspection/field-meta.js'
 import { mergeViaFields, guardCrossBindingFieldCollisions, type ViaFieldSpec } from './via/compose.js'
+import { assertFieldPath } from './paths.js'
 
 /**
  * Raw options handed to the {@link Collection} constructor by the Vault.
@@ -665,6 +666,15 @@ export function compileVias<T>(
     const virtualMoney = resolveVirtualMoneyFields(Object.keys(moneyFields), (f) => virtualFields.has(f))
     bindings.push(viaBinder('money')({ moneyFields, ...(virtualMoney.size > 0 ? { virtualMoneyFields: virtualMoney } : {}) }))
   }
+  // #19-class guard: `i18nFields` and `lookupFields` resolve nested paths
+  // through `getAtPath`, which validates nothing — a malformed declaration is
+  // indistinguishable from an absent value and is silently inert for the life
+  // of the collection. Refuse it here, where the declaration is first seen.
+  // `dictKeyFields` is NOT validated: it is a flat-key family (see the test
+  // that records which families take paths and which do not).
+  if (i18nFields) {
+    for (const field of Object.keys(i18nFields)) assertFieldPath(field, 'i18nFields')
+  }
   if (i18nFields || dictKeyFields) {
     // Densify-enabled subset (fields opting into `densifyOnWrite: true`) —
     // undefined when none opt in, so the write path skips densify work
@@ -695,6 +705,7 @@ export function compileVias<T>(
   // must move together with via/reconcile.ts's lookup binder-config block (reconcileLookupFields,
   // the `viaBinder('lookup')({...})` call) (#664) — same option-shape contract.
   if (lookupFields !== undefined) {
+    for (const field of Object.keys(lookupFields)) assertFieldPath(field, 'lookupFields')
     bindings.push(viaBinder('lookup')({
       lookupFields,
       ...(opts.lookupLabelResolver !== undefined ? { lookupLabelResolver: opts.lookupLabelResolver } : {}),
