@@ -17,6 +17,30 @@ export function resolveClassifiedFields(
 ): ResolvedClassified {
   const byField: Record<string, ClassifiedFieldSpec> = {}
   const claim = (field: string, spec: ClassifiedFieldSpec): void => {
+    // ⛔ #19 — REFUSE A NESTED PATH. Declaring `'account.password'` used to
+    // register cleanly and seal NOTHING: the write succeeded and the secret
+    // came back in full plaintext from `get()` and `list()`, with the only
+    // signal being a `reveal()` that a developer who believes the field is
+    // sealed has no reason to call. "Misconfigured" and "not classified at
+    // all" were observationally identical, which is the wrong way round for a
+    // security primitive — a misunderstood declaration must fail closed.
+    //
+    // Guarded HERE rather than at the two call sites below because `claim` is
+    // the one chokepoint both the flat form and a group's members pass
+    // through; a guard on the flat key alone would leave the leak reachable
+    // behind one extra level of syntax.
+    //
+    // ⭐ `via/money/paths.ts` already carries this lesson for `moneyFields`
+    // ("a declared-but-unreachable path that was silently ignored ... a latent
+    // 100× bug"). Same class, different family — and here the cost is the
+    // secret rather than the precision.
+    if (field.includes('.') || field.includes('[')) {
+      throw new ClassifiedConfigError(collection,
+        `field "${field}" is a nested path, which classifiedFields does not support — ` +
+        `it would register without error and seal nothing, returning the value in plaintext. ` +
+        `Promote it to a top-level field on this collection (or its own document) and declare that instead. ` +
+        `(Dotted paths ARE supported by moneyFields and i18nFields, which is why this is an easy mistake.)`)
+    }
     if (byField[field] !== undefined) {
       throw new ClassifiedConfigError(collection,
         `field "${field}" is claimed twice — storage forms are mutually exclusive per field (R5): ` +
