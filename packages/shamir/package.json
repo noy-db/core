@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/shamir",
-  "version": "0.8.0-pre.0",
+  "version": "0.8.0",
   "description": "Shamir Secret Sharing over GF(2^8), byte-wise, plus the share codecs (bytes / base32 / JSON). Pure math, zero dependencies, no hub contract — the primitive @noy-db/on-shamir builds its unlock method on.",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",

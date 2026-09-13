@@ -1,5 +1,55 @@
 # Changelog — hub
 
+## 0.8.0
+
+**The capsule seam** (#4). Hub's crypto interior is now one contract behind one door, and an application can replace it at build time without forking hub.
+
+`enclave-aes` — PBKDF2 → AES-KW → AES-256-GCM, exactly what shipped before — stays inside hub and remains the default, so `npm install @noy-db/hub` is unchanged and needs no configuration. An alternative binds through hub's `imports` map with a build condition (`resolve.conditions` in Vite/esbuild/webpack, `--conditions` for Node). Deliberately not a runtime option: a `createNoydb({ capsule })` switch would be a hot-swap surface, whereas a build condition lives in build config and `npm ls` tells an auditor which capsule a build actually contains.
+
+`@noy-db/hub/capsule` is the published contract — `CapsuleKey`, `CapsuleGroup`, `CapsulePrimitives`, `capabilities()`, `makeCapsule()`, and `CapsuleNotSupportedError`. A service that needs a capability asserts it at `createNoydb()` and refuses there by name, never on first write: a capability discovered mid-write is a half-built vault.
+
+Three things made this real rather than nominal. Every `crypto.subtle` call outside the capsule is gone — 38 of them across 10 files — and the ratchet that tracked them is now a flat ban, so hub ships with no runtime dependencies at all. The shared envelope machinery (~3,000 lines of AAD construction, tombstones, sealed slots, the record codec, rekeying) lives once and is bound to a capsule's 15 primitives by `makeCapsule()`, so two capsules cannot drift into writing rows the other cannot read. And `@noy-db/test-capsule-conformance` is the suite both implementations run, asserting the `enclave-`/`exclave-` prefix rule **from the package name** — which is what makes the prefix a trust posture rather than a naming convention.
+
+`@noy-db/exclave-plain` is the first alternative: a plaintext capsule for the case the seam was built for — a table whose rows other tools read and write, where access control already lives in IAM.
+
+⛔ **It turns off encryption.** Rows are stored readable; noy-db stops being zero-knowledge and the security boundary moves out of the library and into your store. Its `_mac` integrity stamp detects corruption, foreign writes, and rows moved between collections — it is **not** a defence against a malicious store, because there is no secret in exclave mode and anyone who can write a row can compute a valid stamp for it. Read its README before installing it.
+
+**`EncryptedEnvelope` is now `Envelope`, with `_iv`/`_data` optional** (#15). The old name remains an exact alias for the whole 0.8 line, and both are exported from the root barrel and from `@noy-db/hub/to`.
+
+⚠️ **If you are already on `0.8.0-pre.0`, this reaches you as a breaking change.** That release declared `readonly _data: string` and exported no `Envelope`. Code that reads `envelope._data` as a `string` now sees `string | undefined` and stops compiling. There is no runtime behaviour change and no wire-format change — `NOYDB_FORMAT_VERSION` does not move and every envelope already written reads back identically — but the type genuinely narrowed under you, and a type error with no explanation is a poor way to learn that.
+
+The fields are optional because an **exclave** capsule stores a plaintext row and has no ciphertext body at all. Absence and `''` mean the same thing: no sealed body. That equivalence is not new — a tombstone, a `_del` marker and a plaintext collection have carried `_iv: ''` since the format's first version, and `hasSealedBody()` has always been the question to ask. Widening only lets a capsule omit the keys instead of emptying them.
+
+`EncryptedEnvelope` is an **alias, not a narrower subtype**. Declaring it as body-required was considered and rejected: every existing reader would have kept compiling untouched, which is precisely the bug — a store handing back an exclave row would then fail at runtime in code the compiler had just declared safe.
+
+If you implement `NoydbStore`, nothing is required of you: a store that honours "dumb ciphertext store" never reads these fields for meaning. If you *do* read them, treat absent exactly as empty.
+
+**A declaration that cannot resolve is now refused at registration, instead of silently doing nothing** (#19, #25).
+
+⛔ **The security fix first.** `classifiedFields` accepted a **dotted path** — `classifiedFields: { 'account.password': spec }` — and sealed nothing. Registration succeeded, the write succeeded, and the secret came back **in full plaintext** from `get()` and `list()`. The only signal was `reveal()` throwing, which a developer who believes the field is sealed has no reason to call, because they can already read the value.
+
+So "misconfigured" and "not classified at all" were observationally identical while the developer's belief was that the secret was protected. Nested paths are not supported by `classifiedFields` and a dotted key is now a `ClassifiedConfigError` naming the workaround (promote the field to the top level). **If you declared a nested classified field, values written under it are plaintext at rest and this fix does not reach them** — treat them as exposed and rotate.
+
+Found and reported by a consumer while validating a design, before shipping.
+
+Two further guards close the same class:
+
+- **A malformed field path is refused.** `i18nFields` and `lookupFields` resolve nested paths through a helper that validates nothing — by design, since "nothing is at this path" is a legitimate answer for an optional field. The consequence was that `'contacts[.name'` was indistinguishable from an absent value: the declaration did nothing, forever. Measured: an `i18nFields` declaration with `required: 'all'` and a malformed path accepted a record missing every required language, while the same spec on a well-formed path refused it. The guarantee was not weakened — it was never installed.
+- **An `i18nFields` declaration naming a field the collection does not have is refused** when the schema is readable. `titel` for `title` is valid syntax and equally inert.
+
+Both stay **silent when they cannot know**: a schema-less or TS-generic collection has real fields that simply are not enumerable, and refusing them would break working collections to fix a silent one. `lookupFields` is deliberately exempt from the existence check — its keys *declare* fields rather than referencing them.
+
+`moneyFields` already guarded its own grammar and explained why in its header. These are the same lesson reaching the families next door.
+
+**Two correctness fixes on the write path.**
+
+`writeQueue.pending` now covers the **pre-write gate phase** (#11). A write waits on the schema-update gate and the schema fence before it reaches the store, and that window was outside the queue's accounting — so `pending` read `0` and `onFlush()` resolved while a write was still in flight, gated but not yet committed. A caller using `onFlush()` to know "everything is written" could act on a vault that was not yet consistent. The queue now brackets the gate phase too, and a write refused by a gate — before it commits — still settles the queue without reporting a spurious error, because a refusal at the gate is a legitimate outcome rather than a failure to flush.
+
+**Pod flush retries now re-encode at the version they observed** (#12). On a conflict, the retry loop re-fetched the remote pod and merged, but the encoded bytes and the expected version were computed **once, before the loop** — so every retry re-sent the *original* bytes against the *original* version. The merge was performed and then discarded, and the retry could only fail the same way or, worse, overwrite the concurrent write it had just merged with. Encoding now happens inside the loop, so a retry sends the merged bytes at the version it actually read.
+
+The regression test records that the interleaving is load-bearing: it requires the remote to move between the read and the write, because a naively ordered test passes against the broken code.
+
+
 ## 0.8.0-pre.0
 
 Relicensed from MIT to Apache-2.0 from this version on. Earlier versions remain MIT.

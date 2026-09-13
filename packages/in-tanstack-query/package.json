@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/in-tanstack-query",
-  "version": "0.8.0-pre.0",
+  "version": "0.8.0",
   "description": "TanStack Query adapter for noy-db — queryFn + mutationFn helpers that speak the Collection API, plus automatic invalidation from noy-db change events. Framework-agnostic (React / Vue / Solid / Svelte).",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",

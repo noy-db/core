@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/test-capsule-conformance",
-  "version": "0.8.0-pre.0",
+  "version": "0.8.0",
   "description": "Parameterized contract tests for noy-db capsules — the conformance suite every capsule implementation must pass",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
