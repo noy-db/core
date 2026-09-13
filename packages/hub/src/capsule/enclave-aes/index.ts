@@ -71,10 +71,6 @@ export {
   decryptBytesWithAAD,
   encryptDeterministic,
   decryptDeterministic,
-  sha256Hex,
-  sha256Bytes,
-  hmacSha256Hex,
-  deriveBlobAddressKey, // #1126
 } from './crypto.js'
 
 // ─── key lifecycle ─────────────────────────────────────────────────
@@ -86,30 +82,19 @@ export {
   importTransferKey,
   exportDekSet,
   importDekSet,
-  generateSalt,
-  generateRecoverySecret,
-  generateIV,
   wrapKey,
   unwrapKey,
   mintCanary,
   checkCanary,
-  bufferToBase64,
-  base64ToBuffer,
-  derivePresenceKey,
-  derivePresenceTagKey,
-  hmacSignHex,
-  hkdfAesGcmKey,
   deriveDeterministicKey,
   deriveSealedFieldKey,
   deriveSealedFieldKeyFromCek,
   wrapCek,
   unwrapCek,
   importCek,
-  encodeEchoParts,
   deriveEchoKey,
 } from './crypto.js'
 export type { SecretKeyUsage } from './crypto.js'
-export type { EchoSecretParts } from './crypto.js'
 // ─── shared plumbing ───────────────────────────────────────────────
 //
 // Everything from here to the end of this block used to be twelve modules
@@ -138,6 +123,26 @@ export {
   envelopeBodyForHash,
   hasSealedBody,
 } from '../plumbing/index.js'
+// ─── digest group ──────────────────────────────────────────────────
+// Shared, not AES-specific: the seam design marks `digest` "as today" for every
+// capsule. Re-exported here so the barrel's surface is unchanged.
+export {
+  sha256Hex,
+  sha256Bytes,
+  hmacSha256Hex,
+  hmacSignHex,
+  hkdfAesGcmKey,
+  deriveBlobAddressKey,
+  derivePresenceKey,
+  derivePresenceTagKey,
+  generateIV,
+  generateSalt,
+  generateRecoverySecret,
+  bufferToBase64,
+  base64ToBuffer,
+  encodeEchoParts,
+} from '../plumbing/digest.js'
+export type { EchoSecretParts } from '../plumbing/digest.js'
 export type { RecordIdentity, RecordRef } from '../plumbing/index.js'
 import type { RecordCodecBase } from '../plumbing/record-codec.js'
 /**
@@ -195,8 +200,8 @@ export const {
 // with-shape dynamic-import seam and is not part of the fork contract.
 export { deriveVdigSlotKey } from './classify/vdig.js'
 export { pbkdf2VerifyDigest } from './classify/digest.js'
-export { ctEqualTags } from './classify/compare.js'
-export { evaluateKofN } from './classify/kofn.js'
+export { ctEqualTags } from '../plumbing/ct-equal.js'
+export { evaluateKofN } from '../plumbing/kofn.js'
 
 // ─── classify (slice-2b equatable blind index) ──────────────────────
 // ADDITIVE per Enclave Contract v1. A fork must provide these four; the
@@ -219,7 +224,7 @@ export {
 export type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from './broker/proof.js'
 
 // ─── sign ─────────────────────────────────────────────────────────────
-export { generateSigningKeyPair, signBytes, verifyBytes } from './sign.js'
+export { generateSigningKeyPair, signBytes, verifyBytes } from '../plumbing/sign.js'
 
 // ─── recipient sealing ────────────────────────────────────────────────
 export type { EnclaveKeyPair } from './crypto.js'

@@ -9,8 +9,16 @@
  *
  * Encoding is base64url without padding — the same bytes-to-string mapping
  * attestation uses, so a key or signature is one string in both places.
+ *
+ * ⚠️ SHARED, with a known limit. Ed25519 is the `sign` group for BOTH
+ * `enclave-aes` and `exclave-plain` — the seam design's group table says so —
+ * which is why this lives in the plumbing rather than in a capsule. It is NOT
+ * shared with a future `enclave-pqc`, whose whole point is swapping Ed25519
+ * for ML-DSA. When that capsule arrives, `sign` becomes a parameterised group
+ * like `cipher`; it is not one today because there is no second implementation
+ * to parameterise against, and a seam with one implementation is a guess.
  */
-import { bufferToBase64, base64ToBuffer } from './crypto.js'
+import { bufferToBase64, base64ToBuffer } from './digest.js'
 
 const ALG = 'Ed25519'
 const subtle = globalThis.crypto.subtle

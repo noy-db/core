@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { ctEqualTags, blindedEqual } from '../../src/capsule/enclave-aes/classify/compare.js'
+// #4 Stage C: `ctEqualTags` is pure and moved to the shared plumbing, so
+// `@noy-db/hub/capsule` can offer it to every capsule without dragging the AES
+// classify module along. `blindedEqual` stays capsule-side — it uses WebCrypto.
+import { ctEqualTags } from '../../src/capsule/plumbing/ct-equal.js'
+import { blindedEqual } from '../../src/capsule/enclave-aes/classify/compare.js'
 
 const bytes = (s: string) => new TextEncoder().encode(s)
 

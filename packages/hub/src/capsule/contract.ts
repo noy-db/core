@@ -181,3 +181,55 @@ export interface VdigPayload {
   readonly cur: VdigDigestEntry & { readonly at: string }
   readonly ring?: readonly VdigDigestEntry[]
 }
+
+
+// ─── what an alternative capsule builds on ─────────────────────────
+//
+// `@noy-db/hub/capsule` is the subpath an out-of-tree capsule installs, so the
+// shared halves have to be reachable from it: `makeCapsule()` binds hub's
+// envelope plumbing to a cipher, and the `digest` group is identical for every
+// capsule by design. Without these, an alternative capsule would have to
+// re-implement ~3,400 lines it does not own — and drift from them silently.
+export { makeCapsule } from './plumbing/index.js'
+export type { Capsule, RecordCodec } from './plumbing/index.js'
+export {
+  sha256Hex,
+  sha256Bytes,
+  hmacSha256Hex,
+  hmacSignHex,
+  hkdfAesGcmKey,
+  deriveBlobAddressKey,
+  derivePresenceKey,
+  derivePresenceTagKey,
+  generateIV,
+  generateSalt,
+  generateRecoverySecret,
+  bufferToBase64,
+  base64ToBuffer,
+  encodeEchoParts,
+  KEY_BITS,
+} from './plumbing/digest.js'
+export type { EchoSecretParts } from './plumbing/digest.js'
+export {
+  buildRecordAad,
+  recordAadFor,
+  buildRecordEnvelope,
+  buildTombstone,
+  isTombstone,
+  isTombstoneShape,
+  buildDeleteMarker,
+  isDeleteMarker,
+  requireSealedBody,
+  sealedBodyArgs,
+  envelopeBodySize,
+  hasPerRecordKey,
+  envelopeBodyForHash,
+  hasSealedBody,
+  normalizeForVerify,
+  parseSealedSlot,
+} from './plumbing/index.js'
+export type { RecordIdentity, RecordRef } from './plumbing/index.js'
+export { buildSealedRecordEnvelope } from './plumbing/record-envelope.js'
+export { generateSigningKeyPair, signBytes, verifyBytes } from './plumbing/sign.js'
+export { ctEqualTags } from './plumbing/ct-equal.js'
+export { evaluateKofN } from './plumbing/kofn.js'

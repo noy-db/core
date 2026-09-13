@@ -14,7 +14,8 @@
  * record's `_cek` (forget() shreds it totally; no vdig-dekResidue class).
  * @module
  */
-import { encryptBytesWithAAD, decryptBytesWithAAD, base64ToBuffer, type EnclaveKey } from '../crypto.js'
+import { encryptBytesWithAAD, decryptBytesWithAAD, type EnclaveKey } from '../crypto.js'
+import { base64ToBuffer } from '../../plumbing/digest.js'
 import { TamperedError } from '../../../kernel/errors.js'
 
 const subtle = globalThis.crypto.subtle

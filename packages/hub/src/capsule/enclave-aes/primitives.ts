@@ -26,20 +26,8 @@
  * is necessary, not sufficient.
  */
 import type { CapsulePrimitives } from '../contract.js'
-import {
-  encrypt,
-  decrypt,
-  encryptBytesWithAAD,
-  decryptBytesWithAAD,
-  encryptDeterministic,
-  deriveDeterministicKey,
-  deriveSealedFieldKey,
-  deriveSealedFieldKeyFromCek,
-  generateDEK,
-  wrapCek,
-  unwrapCek,
-  bufferToBase64,
-} from './crypto.js'
+import { encrypt, decrypt, encryptBytesWithAAD, decryptBytesWithAAD, encryptDeterministic, deriveDeterministicKey, deriveSealedFieldKey, deriveSealedFieldKeyFromCek, generateDEK, wrapCek, unwrapCek } from './crypto.js'
+import { bufferToBase64 } from '../plumbing/digest.js'
 import { mintVdigSlot } from './classify/write.js'
 import { mintBidxTag } from './classify/bidx.js'
 import { openVdigPayload, sealVdigPayload } from './classify/vdig.js'
