@@ -48,6 +48,7 @@
 
 import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { assertNoMajorWhilePre1 } from './release/no-major-pre1.mjs'
 import { readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -105,6 +106,17 @@ if (RESUME) {
     `\n[release] Baseline read from git HEAD: hub was ${canonicalVersionBefore}.\n`,
   )
 } else {
+// Runs BEFORE `changeset version`, because that command consumes and deletes
+// every changeset file — after it, the evidence this guard reads is gone.
+try {
+  assertNoMajorWhilePre1(
+    JSON.parse(readFileSync(join(ROOT, 'packages', 'hub', 'package.json'), 'utf8')).version,
+    join(ROOT, '.changeset'),
+  )
+} catch (err) {
+  console.error(`\n${err.message}\n`)
+  process.exit(1)
+}
 console.log('\n[release] Running pnpm changeset version...\n')
 try {
   execSync('pnpm changeset version', { cwd: ROOT, stdio: 'inherit' })
