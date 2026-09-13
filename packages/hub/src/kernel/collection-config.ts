@@ -75,6 +75,7 @@ import { viaBinder, type NoydbVia, type ViaDescriptor } from './via/index.js'
 import { validateFieldMetaAtRegistration } from '../with-shape/introspection/field-meta.js'
 import { mergeViaFields, guardCrossBindingFieldCollisions, type ViaFieldSpec } from './via/compose.js'
 import { assertFieldPath } from './paths.js'
+import { schemaFieldKeys } from '../with-shape/introspection/field-meta.js'
 
 /**
  * Raw options handed to the {@link Collection} constructor by the Vault.
@@ -633,6 +634,97 @@ function unifyComputedFields<T>(opts: CollectionOpts<T>, viaComputedFields: Reco
  * `this.codec` exists. Additive — every existing caller omits it and keeps
  * getting a plain `NoydbVia[]`.
  */
+/**
+ * The field names a declaration may legitimately reference, or `undefined`
+ * when that cannot be determined.
+ *
+ * ⚠️ `undefined` MEANS "DO NOT CHECK", and is the common case rather than an
+ * edge: a collection with no schema, or a TS-generic one whose validator this
+ * build cannot read, has real fields that are simply not enumerable. The same
+ * rule already governs `validateFieldsFor` in the derivation registry, where
+ * the header says a false "unknown field" on a TS-generic collection would be
+ * worse than no check. That judgement is not re-litigated here.
+ *
+ * The allow-list is deliberately wider than the schema. A declaration may name
+ * a field the STORED SHAPE does not contain and still be correct:
+ *   - `computed` fields are produced, not stored — virtual ones never touch an
+ *     envelope at all;
+ *   - rider companions (`<field>_<rider>`) are synthesised by the classified
+ *     resolver from a declaration, so they exist without being declared;
+ *   - the other via families' own keys are themselves declarations of fields.
+ * Anything narrower would refuse working collections, which is a worse failure
+ * than the silent one being fixed.
+ */
+function declaredFieldAllowList<T>(
+  opts: CollectionOpts<T>,
+  allComputedFields: Readonly<Record<string, unknown>>,
+  exclude: 'i18nFields',
+): ReadonlySet<string> | undefined {
+  const shape = schemaFieldKeys(opts.schema)
+  if (shape === undefined) return undefined
+  const allow = new Set<string>(shape)
+  for (const name of Object.keys(allComputedFields)) allow.add(name)
+  // ⛔ `exclude` is load-bearing: a family must NOT allow-list its own keys, or
+  // every declaration trivially permits itself and the check is vacuous. That
+  // was the first version, and it "passed" — `titel` allowed `titel`. The
+  // nested case failed only because the raw key `contakts[].name` never equals
+  // the root `contakts`, which is the accident that exposed it.
+  const others = { fieldMeta: opts.fieldMeta, moneyFields: opts.moneyFields,
+    dictKeyFields: opts.dictKeyFields, blobFields: opts.blobFields,
+    classifiedFields: opts.classifiedFields,
+    i18nFields: opts.i18nFields, lookupFields: opts.lookupFields }
+  for (const [family, map] of Object.entries(others)) {
+    if (family === exclude || map === undefined) continue
+    // Other families declare PATHS too, so allow-list their roots, not their
+    // raw keys — `contacts[].name` declares the field `contacts`.
+    for (const name of Object.keys(map)) allow.add(name.split('.')[0]!.replace(/\[\]$/, ''))
+  }
+  return allow
+}
+
+/**
+ * Refuse a declaration naming a field the collection does not have (#25).
+ *
+ * The failure this closes is the same one as #19 and the malformed-path guard,
+ * one step further in: `titel` for `title` is valid syntax, resolves to
+ * nothing, and the declared rule — a required language, a lookup binding —
+ * never applies. "Misconfigured" and "not declared" stay observationally
+ * identical, which is the whole class.
+ *
+ * ⛔ APPLIED TO `i18nFields` ONLY, and the restriction is measured rather than
+ * cautious. `lookupFields` DECLARES fields — `composite-triggerby.test.ts:448`
+ * exists precisely to pin that a match field "declared only via lookupFields"
+ * must not false-positive, with `clientTag` absent from the schema on purpose.
+ * Extending this check there broke that test, which is the suite doing its
+ * job. The general lesson is that a via family's key can be a DECLARATION
+ * rather than a REFERENCE, so existence-checking is per-family and must be
+ * justified per family, never rolled out across the set.
+ *
+ * `i18nFields` is a reference: the field holds a translations map the caller
+ * writes, so on a collection with a readable schema that field must be in the
+ * schema or the write would not validate.
+ *
+ * ⚠️ ONLY THE ROOT SEGMENT IS CHECKED. `schemaFieldKeys` enumerates top-level
+ * keys; a schema's nested shape is not reachable through it, so
+ * `contacts[].name` is checked as `contacts` and the leaf is not verified. A
+ * typo in the LEAF of a nested path is still silent, and that is a known
+ * remaining gap rather than an oversight.
+ */
+function assertDeclaredField(
+  path: string,
+  family: string,
+  collection: string,
+  allow: ReadonlySet<string> | undefined,
+): void {
+  if (allow === undefined) return
+  const root = path.split('.')[0]!.replace(/\[\]$/, '')
+  if (allow.has(root)) return
+  throw new ValidationError(
+    `${family} on collection "${collection}" declares "${path}", but "${root}" is not a field ` +
+    `of this collection. A declaration that resolves to nothing is not an error at read time — ` +
+    `it simply never applies, so the rule you declared would be silently absent.`)
+}
+
 export function compileVias<T>(
   opts: CollectionOpts<T>,
   classifiedGuardCtx: ClassifiedGuardCtx,
@@ -672,8 +764,16 @@ export function compileVias<T>(
   // of the collection. Refuse it here, where the declaration is first seen.
   // `dictKeyFields` is NOT validated: it is a flat-key family (see the test
   // that records which families take paths and which do not).
+  //
+  // #25 is the other half: a WELL-FORMED path naming a field that does not
+  // exist (`titel` for `title`) is equally inert and cannot be caught by
+  // syntax. The allow-list is `undefined` when the schema is unreadable, which
+  // means "do not check" — see `assertDeclaredField`.
   if (i18nFields) {
-    for (const field of Object.keys(i18nFields)) assertFieldPath(field, 'i18nFields')
+    for (const field of Object.keys(i18nFields)) {
+      assertFieldPath(field, 'i18nFields')
+      assertDeclaredField(field, 'i18nFields', opts.name, declaredFieldAllowList(opts, allComputedFields, 'i18nFields'))
+    }
   }
   if (i18nFields || dictKeyFields) {
     // Densify-enabled subset (fields opting into `densifyOnWrite: true`) —
@@ -705,6 +805,9 @@ export function compileVias<T>(
   // must move together with via/reconcile.ts's lookup binder-config block (reconcileLookupFields,
   // the `viaBinder('lookup')({...})` call) (#664) — same option-shape contract.
   if (lookupFields !== undefined) {
+    // ⛔ `lookupFields` is deliberately NOT existence-checked — see
+    // `assertDeclaredField`. Its keys DECLARE fields; they do not reference
+    // them. Only the path syntax is guarded.
     for (const field of Object.keys(lookupFields)) assertFieldPath(field, 'lookupFields')
     bindings.push(viaBinder('lookup')({
       lookupFields,
