@@ -13,10 +13,10 @@
  * per-function doc for its oracle call site) — this file introduces no new
  * crypto or semantics, only a narrower door onto what already runs.
  */
-import { buildRecordAad, recordAadFor, type RecordIdentity, type RecordRef } from '../record-aad.js'
-import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek, type EnclaveKey } from '../crypto.js'
-import type { EncryptedEnvelope } from '../../../kernel/types.js'
-import { MissingEnvelopeBodyError } from '../../../kernel/errors.js'
+import { buildRecordAad, recordAadFor, type RecordIdentity, type RecordRef } from './record-aad.js'
+import type { CapsuleKey, CapsulePrimitives } from '../contract.js'
+import type { EncryptedEnvelope } from '../../kernel/types.js'
+import { MissingEnvelopeBodyError } from '../../kernel/errors.js'
 
 /**
  * The sealed body, or a typed refusal (#15).
@@ -58,75 +58,6 @@ export function sealedBodyArgs(
 ): [string, string] {
   const { iv, data } = requireSealedBody(env, where)
   return [iv, data]
-}
-
-/**
- * Open an envelope's protected body to its JSON text.
- *
- * Mirrors the dominant direct-decrypt call-site shape (e.g.
- * `with-audit/consent/consent.ts`'s `decryptEntry`):
- *  - `opts.encrypted === false` (default `true`) → plaintext collection;
- *    returns `env._data` as-is, `key` untouched.
- *  - `env._cek` present → per-record-key envelope (mirrors
- *    `record-codec.ts`'s `resolveEnvelopeCek`): unwrap the CEK under `key`
- *    (the collection DEK), decrypt the body under the unwrapped CEK.
- *  - `env._cek` absent → legacy path, decrypt the body directly under `key`.
- */
-export async function openEnvelopeJson(
-  ref: RecordRef,
-  env: EncryptedEnvelope,
-  key: EnclaveKey,
-  opts?: { encrypted?: boolean },
-): Promise<string> {
-  // A plaintext collection has no AEAD, so there is nothing to authenticate —
-  // `_data` is returned as-is and identity binding does not apply to it.
-  // Absent `_data` reads as `''` here, exactly as an emptied one always has:
-  // a plaintext collection with nothing in it is not an error.
-  if (opts?.encrypted === false) return env._data ?? ''
-  // Recomputed from the ADDRESS this was fetched from plus `_tier`/`_by` read
-  // off the envelope. A store that edited either one changes this value, and
-  // AES-GCM then refuses the body (#1041).
-  const aad = recordAadFor(ref, env)
-  const { iv, data } = requireSealedBody(env, 'openEnvelopeJson')
-  if (env._cek !== undefined) {
-    const cek = await unwrapCek(env._cek, key)
-    return decrypt(iv, data, cek, aad)
-  }
-  return decrypt(iv, data, key, aad)
-}
-
-/**
- * Produce the protected-body fields (`_iv`/`_data`/`_cek`) for an envelope a
- * caller is assembling.
- *
- *  - `opts.encrypted === false` (default `true`) → plaintext collection;
- *    emits `{ _iv: '', _data: json }` (today's `buildPlaintextEnvelope`
- *    shape), `key` untouched.
- *  - `opts.perRecordKey === true` → mints a fresh per-record CEK, encrypts
- *    the body under it, and AES-KW-wraps the CEK under `key` (mirrors
- *    `encryptJsonString`'s `cek !== undefined` branch, except the CEK is
- *    generated here rather than supplied by the caller).
- *  - otherwise → legacy path, body encrypted directly under `key`.
- */
-export async function writeEnvelopeBody(
-  identity: RecordIdentity,
-  json: string,
-  key: EnclaveKey,
-  opts?: { encrypted?: boolean; perRecordKey?: boolean },
-): Promise<Pick<EncryptedEnvelope, '_iv' | '_data' | '_cek'>> {
-  if (opts?.encrypted === false) return { _iv: '', _data: json }
-
-  const aad = buildRecordAad(identity)
-
-  if (opts?.perRecordKey === true) {
-    const cek = await generateDEK()
-    const { iv, data } = await encrypt(json, cek, aad)
-    const wrapped = await wrapCek(cek, key)
-    return { _iv: iv, _data: data, _cek: wrapped }
-  }
-
-  const { iv, data } = await encrypt(json, key, aad)
-  return { _iv: iv, _data: data }
 }
 
 /**
@@ -223,33 +154,114 @@ export function hasSealedBody(env: Pick<EncryptedEnvelope, '_iv'>): boolean {
 }
 
 /**
- * Does `env` authenticate at the identity `ref` claims, under `key`? (#1042)
- *
- * The merge's fail-closed check, living here because it is envelope surgery:
- * deciding "is there a sealed body at all" reads `_iv`, which
- * `enclave-body-only` reserves to this folder. An earlier draft did that test
- * in `kernel/noydb.ts` and the guard refused it — correctly, since a caller
- * outside the enclave inspecting protected fields is how envelope knowledge
- * leaks back out.
- *
- * Returns a boolean rather than throwing: `applyRemote` must be able to reject
- * one poisoned record without halting an entire sync, and a hostile store
- * would very much like the opposite.
- *
- * **A record with no sealed body is vacuously authentic** — a tombstone carries
- * none, and a plaintext collection has no AEAD to verify. Those are pass-through
- * by construction, not by omission.
+ * The cipher-dependent half: the three doors that actually reach the capsule's
+ * `encrypt`/`decrypt`. Everything above this line is cipher-FREE — it inspects
+ * envelope fields or derives hash input, so it stays a plain module export that
+ * both capsules share with nothing to bind.
  */
-export async function verifyRecordIdentity(
-  ref: RecordRef,
-  env: EncryptedEnvelope,
-  key: EnclaveKey,
-): Promise<boolean> {
-  if (!hasSealedBody(env)) return true
-  try {
-    await openEnvelopeJson(ref, env, key)
-    return true
-  } catch {
-    return false
+export function makeEnvelopeBody(p: CapsulePrimitives) {
+  const { encrypt, decrypt, generateDEK, wrapCek, unwrapCek } = p
+
+  /**
+   * Open an envelope's protected body to its JSON text.
+   *
+   * Mirrors the dominant direct-decrypt call-site shape (e.g.
+   * `with-audit/consent/consent.ts`'s `decryptEntry`):
+   *  - `opts.encrypted === false` (default `true`) → plaintext collection;
+   *    returns `env._data` as-is, `key` untouched.
+   *  - `env._cek` present → per-record-key envelope (mirrors
+   *    `record-codec.ts`'s `resolveEnvelopeCek`): unwrap the CEK under `key`
+   *    (the collection DEK), decrypt the body under the unwrapped CEK.
+   *  - `env._cek` absent → legacy path, decrypt the body directly under `key`.
+   */
+  async function openEnvelopeJson(
+    ref: RecordRef,
+    env: EncryptedEnvelope,
+    key: CapsuleKey,
+    opts?: { encrypted?: boolean },
+  ): Promise<string> {
+    // A plaintext collection has no AEAD, so there is nothing to authenticate —
+    // `_data` is returned as-is and identity binding does not apply to it.
+    // Absent `_data` reads as `''` here, exactly as an emptied one always has:
+    // a plaintext collection with nothing in it is not an error.
+    if (opts?.encrypted === false) return env._data ?? ''
+    // Recomputed from the ADDRESS this was fetched from plus `_tier`/`_by` read
+    // off the envelope. A store that edited either one changes this value, and
+    // AES-GCM then refuses the body (#1041).
+    const aad = recordAadFor(ref, env)
+    const { iv, data } = requireSealedBody(env, 'openEnvelopeJson')
+    if (env._cek !== undefined) {
+      const cek = await unwrapCek(env._cek, key)
+      return decrypt(iv, data, cek, aad)
+    }
+    return decrypt(iv, data, key, aad)
   }
+
+  /**
+   * Produce the protected-body fields (`_iv`/`_data`/`_cek`) for an envelope a
+   * caller is assembling.
+   *
+   *  - `opts.encrypted === false` (default `true`) → plaintext collection;
+   *    emits `{ _iv: '', _data: json }` (today's `buildPlaintextEnvelope`
+   *    shape), `key` untouched.
+   *  - `opts.perRecordKey === true` → mints a fresh per-record CEK, encrypts
+   *    the body under it, and AES-KW-wraps the CEK under `key` (mirrors
+   *    `encryptJsonString`'s `cek !== undefined` branch, except the CEK is
+   *    generated here rather than supplied by the caller).
+   *  - otherwise → legacy path, body encrypted directly under `key`.
+   */
+  async function writeEnvelopeBody(
+    identity: RecordIdentity,
+    json: string,
+    key: CapsuleKey,
+    opts?: { encrypted?: boolean; perRecordKey?: boolean },
+  ): Promise<Pick<EncryptedEnvelope, '_iv' | '_data' | '_cek'>> {
+    if (opts?.encrypted === false) return { _iv: '', _data: json }
+
+    const aad = buildRecordAad(identity)
+
+    if (opts?.perRecordKey === true) {
+      const cek = await generateDEK()
+      const { iv, data } = await encrypt(json, cek, aad)
+      const wrapped = await wrapCek(cek, key)
+      return { _iv: iv, _data: data, _cek: wrapped }
+    }
+
+    const { iv, data } = await encrypt(json, key, aad)
+    return { _iv: iv, _data: data }
+  }
+
+  /**
+   * Does `env` authenticate at the identity `ref` claims, under `key`? (#1042)
+   *
+   * The merge's fail-closed check, living here because it is envelope surgery:
+   * deciding "is there a sealed body at all" reads `_iv`, which
+   * `enclave-body-only` reserves to this folder. An earlier draft did that test
+   * in `kernel/noydb.ts` and the guard refused it — correctly, since a caller
+   * outside the enclave inspecting protected fields is how envelope knowledge
+   * leaks back out.
+   *
+   * Returns a boolean rather than throwing: `applyRemote` must be able to reject
+   * one poisoned record without halting an entire sync, and a hostile store
+   * would very much like the opposite.
+   *
+   * **A record with no sealed body is vacuously authentic** — a tombstone carries
+   * none, and a plaintext collection has no AEAD to verify. Those are pass-through
+   * by construction, not by omission.
+   */
+  async function verifyRecordIdentity(
+    ref: RecordRef,
+    env: EncryptedEnvelope,
+    key: CapsuleKey,
+  ): Promise<boolean> {
+    if (!hasSealedBody(env)) return true
+    try {
+      await openEnvelopeJson(ref, env, key)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  return { openEnvelopeJson, writeEnvelopeBody, verifyRecordIdentity }
 }

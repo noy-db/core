@@ -3,9 +3,10 @@
  * Called ONLY by RecordCodec.encryptRecord — both live inside the enclave.
  * @module
  */
-import { generateSalt, bufferToBase64, base64ToBuffer, type EnclaveKey } from '../crypto.js'
+import { type EnclaveKey } from '../crypto.js'
+import { generateSalt, bufferToBase64, base64ToBuffer } from '../../plumbing/digest.js'
 import { pbkdf2VerifyDigest, VDIG_ITERATIONS } from './digest.js'
-import { normalizeForVerify } from './normalize.js'
+import { normalizeForVerify } from '../../plumbing/normalize.js'
 import { blindedEqual } from './compare.js'
 import { sealVdigPayload, openVdigPayload, type VdigPayload, type VdigDigestEntry } from './vdig.js'
 import { ClassifiedRotationError, TamperedError } from '../../../kernel/errors.js'

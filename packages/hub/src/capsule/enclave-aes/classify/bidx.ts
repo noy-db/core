@@ -34,7 +34,7 @@
  * @module
  */
 import type { EnclaveKey } from '../crypto.js'
-import { bufferToBase64 } from '../crypto.js'
+import { bufferToBase64 } from '../../plumbing/digest.js'
 import { pbkdf2VerifyDigest, VDIG_ITERATIONS } from './digest.js'
 
 const subtle = globalThis.crypto.subtle

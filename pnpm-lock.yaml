@@ -114,6 +114,18 @@ importers:
         specifier: ^22.0.0
         version: 22.19.17
 
+  packages/exclave-plain:
+    devDependencies:
+      '@noy-db/hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@noy-db/test-capsule-conformance':
+        specifier: workspace:*
+        version: link:../test-capsule-conformance
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.17)(happy-dom@18.0.1)(jiti@2.7.0)(terser@5.46.1)(tsx@4.22.3)(yaml@2.9.0)
+
   packages/hub:
     devDependencies:
       '@noy-db/attestation':

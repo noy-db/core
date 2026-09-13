@@ -26,7 +26,7 @@
  */
 import type { EnclaveKey } from '../crypto.js'
 import { mintAt, iterationsForCostByte, CURRENT_COST_BYTE } from './bidx.js'
-import { normalizeForVerify, type VerifyNormalizeMode } from './normalize.js'
+import { normalizeForVerify, type VerifyNormalizeMode } from '../../plumbing/normalize.js'
 
 /**
  * Normalize `candidate` and mint it into a blind-index target tag at

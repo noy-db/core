@@ -991,7 +991,7 @@ export class BlobSet {
    *     covered by rotation.
    *
    * This also makes one ordering rule true across the blob subsystem rather
-   * than two opposite ones: `capsule/enclave-aes/record-keys/rekey-blob.ts` already
+   * than two opposite ones: `capsule/plumbing/rekey-blob.ts` already
    * re-encrypts chunks before re-sealing their index entry, and documents that
    * order as its resume property.
    *

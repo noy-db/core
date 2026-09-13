@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { pbkdf2VerifyDigest, VDIG_ITERATIONS } from '../../src/capsule/enclave-aes/classify/digest.js'
-import { normalizeForVerify } from '../../src/capsule/enclave-aes/classify/normalize.js'
+import { normalizeForVerify } from '../../src/capsule/plumbing/normalize.js'
 
 // Low iteration count for speed in structural tests; determinism is
 // iteration-count independent. One test pins the 600K family constant.

@@ -16,8 +16,8 @@
  * fails for one reason.
  */
 import { describe, it, expect, beforeAll } from 'vitest'
-import { rekeyEnvelopeToDek } from '../src/capsule/enclave-aes/record-keys/rekey.js'
-import { recordAadFor } from '../src/capsule/enclave-aes/record-aad.js'
+import { rekeyEnvelopeToDek } from '../src/capsule/enclave-aes/index.js'
+import { recordAadFor } from '../src/capsule/plumbing/record-aad.js'
 import { encrypt, decrypt, generateDEK, wrapCek, unwrapCek } from '../src/capsule/enclave-aes/crypto.js'
 import type { EnclaveKey } from '../src/capsule/enclave-aes/crypto.js'
 import type { EncryptedEnvelope } from '../src/kernel/types.js'

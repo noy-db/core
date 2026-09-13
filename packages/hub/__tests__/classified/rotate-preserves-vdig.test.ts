@@ -15,7 +15,7 @@ import { buildRecordAad, generateDEK, wrapCek, unwrapCek, encrypt, type EnclaveK
 import { sealVdigPayload, openVdigPayload, type VdigPayload } from '../../src/capsule/enclave-aes/classify/vdig.js'
 import {
   rotateRecordCek, revokeSealedRecord, type SealingContext,
-} from '../../src/capsule/enclave-aes/record-keys/sealing.js'
+} from '../../src/capsule/enclave-aes/index.js'
 import { inlineMemory, type InlineMemoryStore } from './harness.js'
 import type { EncryptedEnvelope } from '../../src/kernel/types.js'
 

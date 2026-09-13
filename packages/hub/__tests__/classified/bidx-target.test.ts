@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { generateDEK } from '../../src/capsule/enclave-aes/index.js'
-import { normalizeForVerify } from '../../src/capsule/enclave-aes/classify/normalize.js'
+import { normalizeForVerify } from '../../src/capsule/plumbing/normalize.js'
 import { mintBidxTag, CURRENT_COST_BYTE } from '../../src/capsule/enclave-aes/classify/bidx.js'
 import { computeBidxTarget } from '../../src/capsule/enclave-aes/classify/find.js'
 

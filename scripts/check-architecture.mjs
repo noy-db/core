@@ -45,7 +45,12 @@
  *   11. enclave-body-only — non-enclave `packages/hub/src/**` may not read
  *                       or construct the envelope's protected-body fields
  *                       (`_iv`/`_data`/`_cek`/`_det`/`_sealed`) directly;
- *                       only `capsule/enclave-aes/**` may. A per-file grandfather
+ *                       only `capsule/**` may. ⚠️ The exemption has ALWAYS been
+ *                       the whole `capsule/` directory in code; it read as
+ *                       `enclave-aes/**` only because that was the sole thing
+ *                       in it. Stage C added `capsule/plumbing/**` — the shared
+ *                       envelope machinery every capsule binds — which reads
+ *                       these fields by definition. A per-file grandfather
  *                       map (PRE_EXISTING_BODY_ACCESS) ratchets the count
  *                       down as call-sites migrate onto the barrel helpers —
  *                       stored count must always equal actual, in both
@@ -3001,13 +3006,13 @@ function checkEnclaveBodyOnly() {
     if (stored === undefined) {
       fail(
         'capsule-body-only',
-        `${rel} has ${actual} protected-body field access(es) (_iv/_data/_cek/_det/_sealed) but is not in PRE_EXISTING_BODY_ACCESS — only capsule/enclave-aes/** may read or construct these fields directly. Go through the enclave barrel helpers (openEnvelopeJson/writeEnvelopeBody/hasPerRecordKey/envelopeBodyForHash), or if this is a deliberate grandfathered exception add an entry to PRE_EXISTING_BODY_ACCESS in scripts/check-architecture.mjs.`,
+        `${rel} has ${actual} protected-body field access(es) (_iv/_data/_cek/_det/_sealed) but is not in PRE_EXISTING_BODY_ACCESS — only capsule/** may read or construct these fields directly. Go through the enclave barrel helpers (openEnvelopeJson/writeEnvelopeBody/hasPerRecordKey/envelopeBodyForHash), or if this is a deliberate grandfathered exception add an entry to PRE_EXISTING_BODY_ACCESS in scripts/check-architecture.mjs.`,
         file,
       )
     } else if (actual > stored) {
       fail(
         'capsule-body-only',
-        `${rel} has ${actual} protected-body field access(es), up from the grandfathered ${stored} — new direct _iv/_data/_cek/_det/_sealed access outside capsule/enclave-aes/** is not allowed. Go through the enclave barrel helpers instead of adding to the grandfathered count.`,
+        `${rel} has ${actual} protected-body field access(es), up from the grandfathered ${stored} — new direct _iv/_data/_cek/_det/_sealed access outside capsule/** is not allowed. Go through the enclave barrel helpers instead of adding to the grandfathered count.`,
         file,
       )
     } else if (actual < stored) {

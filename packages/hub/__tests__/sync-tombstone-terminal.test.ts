@@ -5,7 +5,7 @@ import { createNoydb } from '../src/kernel/noydb.js'
 import { withSync } from '../src/with-sync/index.js'
 import { withForget } from '../src/with-audit/forget/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
-import { isTombstoneShape } from '../src/capsule/enclave-aes/record-keys/tombstone.js'
+import { isTombstoneShape } from '../src/capsule/enclave-aes/index.js'
 
 /** In-memory store (mirrors the harness in sync.test.ts). */
 function inlineMemory(): NoydbStore {

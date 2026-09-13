@@ -213,7 +213,7 @@ describe('Task 7 review — KNOWN LIMIT: a computed dep naming a real-but-wrong 
  * (`vault.ts`'s `applyTaintOverlay(coll, this.graph, collectionName)` inside
  * the `if (reconcilePlan)` branch) flips a collection's codec from the
  * INLINE `sensitiveFields` seal path to the via-hook path MID-COLLECTION-LIFE
- * via `RecordCodec.setVia` (`capsule/enclave-aes/record-keys/record-codec.ts`).
+ * via `RecordCodec.setVia` (`capsule/plumbing/record-codec.ts`).
  * Every other test above exercises only the fresh-construction call site
  * (`registerCollectionGraphSources` + `applyTaintOverlay` inside the `!coll`
  * branch) — this suite was structural-only for the reconcile call site (no

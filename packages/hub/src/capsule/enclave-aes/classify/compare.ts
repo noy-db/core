@@ -10,20 +10,10 @@
  *     unequal tags — never an early return.
  * @module
  */
+
+import { ctEqualTags } from '../../plumbing/ct-equal.js'
 const subtle = globalThis.crypto.subtle
 
-/** Compare exactly-32-byte tags. XOR-accumulate over all 32 bytes, no early exit. */
-export function ctEqualTags(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== 32 || b.length !== 32) {
-    throw new Error(
-      `ctEqualTags: tags must be exactly 32 bytes (got ${a.length}/${b.length}) — caller bug; ` +
-      `reduce comparands with blindedEqual first`,
-    )
-  }
-  let diff = 0
-  for (let i = 0; i < 32; i++) diff |= (a[i]! ^ b[i]!)
-  return diff === 0
-}
 
 /**
  * Blinded equality of arbitrary-length byte strings: fresh K_e per

@@ -67,7 +67,7 @@
  * @module
  */
 import type { EnclaveKey } from '../crypto.js'
-import { base64ToBuffer, bufferToBase64 } from '../crypto.js'
+import { base64ToBuffer, bufferToBase64 } from '../../plumbing/digest.js'
 import { ValidationError } from '../../../kernel/errors.js'
 
 const subtle = globalThis.crypto.subtle

@@ -29,7 +29,7 @@ import {
 
 /**
  * Delete-marker predicate, duplicated (not imported) from
- * `capsule/enclave-aes/record-keys/tombstone.ts`'s `isDeleteMarker` (#647 fix wave 1).
+ * `capsule/plumbing/tombstone.ts`'s `isDeleteMarker` (#647 fix wave 1).
  * `via/lookup/**` may not statically import `capsule/enclave-aes/` — not even the barrel
  * (Check 15, `via-enclave-isolation`) — and this predicate carries zero crypto/protected-body
  * surface (just the `_del` protocol-header field, not `_iv`/`_data`), so duplicating it here

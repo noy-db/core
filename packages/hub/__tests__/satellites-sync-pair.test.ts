@@ -17,7 +17,7 @@ import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/kernel
 import { ConflictError } from '../src/kernel/errors.js'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { withSync } from '../src/with-sync/index.js'
-import { isDeleteMarker } from '../src/capsule/enclave-aes/record-keys/tombstone.js'
+import { isDeleteMarker } from '../src/capsule/enclave-aes/index.js'
 
 function inlineMemory(): NoydbStore {
   const store = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()

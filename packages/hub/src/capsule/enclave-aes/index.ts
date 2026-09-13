@@ -38,7 +38,7 @@
  *                       sanctioned door onto
  *                       `_iv`/`_data`/`_cek`/`_sealed` for everyone outside
  *                       this folder.
- *   - reserved envelopes — `record-keys/sealed-slots.ts`: `makeReservedEnvelopes`,
+ *   - reserved envelopes — `plumbing/sealed-slots.ts`: `makeReservedEnvelopes`,
  *                       the whole-envelope encrypt/decrypt door scoped to a
  *                       declared collection-name prefix (e.g. `_dict_`) —
  *                       `kernel/vault.ts` binds it for `DictionaryHandle`
@@ -56,6 +56,8 @@
  * enclave supports every group, so it never throws this error.
  */
 
+import { aesCapsule } from './bound.js'
+
 // ─── key type ──────────────────────────────────────────────────────
 export type { EnclaveKey, EncryptResult } from './crypto.js'
 
@@ -69,10 +71,6 @@ export {
   decryptBytesWithAAD,
   encryptDeterministic,
   decryptDeterministic,
-  sha256Hex,
-  sha256Bytes,
-  hmacSha256Hex,
-  deriveBlobAddressKey, // #1126
 } from './crypto.js'
 
 // ─── key lifecycle ─────────────────────────────────────────────────
@@ -84,61 +82,117 @@ export {
   importTransferKey,
   exportDekSet,
   importDekSet,
-  generateSalt,
-  generateRecoverySecret,
-  generateIV,
   wrapKey,
   unwrapKey,
   mintCanary,
   checkCanary,
-  bufferToBase64,
-  base64ToBuffer,
-  derivePresenceKey,
-  derivePresenceTagKey,
-  hmacSignHex,
-  hkdfAesGcmKey,
   deriveDeterministicKey,
   deriveSealedFieldKey,
   deriveSealedFieldKeyFromCek,
   wrapCek,
   unwrapCek,
   importCek,
-  encodeEchoParts,
   deriveEchoKey,
 } from './crypto.js'
 export type { SecretKeyUsage } from './crypto.js'
-export type { EchoSecretParts } from './crypto.js'
-export { resolveStableCek, rewrapBodyToDek, rewrapEnvelope, applyRewrappedBody, isRewrappedUnder } from './record-keys/lifecycle.js'
-export type { RewrappedBody } from './record-keys/lifecycle.js'
+// ─── shared plumbing ───────────────────────────────────────────────
+//
+// Everything from here to the end of this block used to be twelve modules
+// under `./record-keys/`. They now live once in `../plumbing/`, and this
+// capsule is one of two callers of `makeCapsule()`.
+//
+// The split below is not cosmetic. The cipher-FREE half is re-exported
+// straight from its module: it inspects envelope fields and derives hash
+// input, so there is nothing to bind and every capsule gets the identical
+// function. The cipher-BOUND half is destructured off `aesCapsule`, which is
+// `makeCapsule(aesPrimitives)` — one binding for the whole capsule, so a value
+// exported here and a value used inside `classify/**` are the SAME object.
+export {
+  buildRecordAad,
+  recordAadFor,
+  buildRecordEnvelope,
+  isTombstone,
+  isTombstoneShape,
+  buildTombstone,
+  isDeleteMarker,
+  buildDeleteMarker,
+  requireSealedBody,
+  sealedBodyArgs,
+  envelopeBodySize,
+  hasPerRecordKey,
+  envelopeBodyForHash,
+  hasSealedBody,
+} from '../plumbing/index.js'
+// ─── digest group ──────────────────────────────────────────────────
+// Shared, not AES-specific: the seam design marks `digest` "as today" for every
+// capsule. Re-exported here so the barrel's surface is unchanged.
+export {
+  sha256Hex,
+  sha256Bytes,
+  hmacSha256Hex,
+  hmacSignHex,
+  hkdfAesGcmKey,
+  deriveBlobAddressKey,
+  derivePresenceKey,
+  derivePresenceTagKey,
+  generateIV,
+  generateSalt,
+  generateRecoverySecret,
+  bufferToBase64,
+  base64ToBuffer,
+  encodeEchoParts,
+} from '../plumbing/digest.js'
+export type { EchoSecretParts } from '../plumbing/digest.js'
+export type { RecordIdentity, RecordRef } from '../plumbing/index.js'
+import type { RecordCodecBase } from '../plumbing/record-codec.js'
+/**
+ * `RecordCodec` is a VALUE (the capsule-bound subclass, destructured below) and
+ * a TYPE (the module-level generic base). A type ALIAS can coexist with a value
+ * of the same name; a `export type { RecordCodec }` RE-EXPORT cannot, which is
+ * what `TS2323: Cannot redeclare exported variable` was saying.
+ */
+export type RecordCodec<T = Record<string, unknown>> = RecordCodecBase<T>
+export { buildSealedRecordEnvelope } from '../plumbing/record-envelope.js'
+export type { RecordEnvelopeBody } from '../plumbing/record-envelope.js'
+export type { RewrappedBody } from '../plumbing/lifecycle.js'
+export type { SealedShredSlot } from '../plumbing/record-codec.js'
+export type { SealingContext } from '../plumbing/sealing.js'
+export type { DeterministicContext } from '../plumbing/deterministic.js'
 
-// ─── record codec ──────────────────────────────────────────────────
-// #1041 — record-identity AAD. Internal: the sweep binding each encrypt/decrypt
-// pair uses it; it is not part of the published surface.
-export { rekeyEnvelopeToDek, rekeyEnvelopeIfNeeded, envelopeOpensUnderAny } from './record-keys/rekey.js'
-export { rekeyBlobSet } from './record-keys/rekey-blob.js'
-export { buildRecordEnvelope, buildSealedRecordEnvelope } from './record-envelope.js'
-export type { RecordEnvelopeBody } from './record-envelope.js'
-export { buildRecordAad, recordAadFor } from './record-aad.js'
-export type { RecordIdentity, RecordRef } from './record-aad.js'
-export { RecordCodec } from './record-keys/record-codec.js'
-export type { SealedShredSlot } from './record-keys/record-codec.js'
-
-// ─── sealing ───────────────────────────────────────────────────────
-export { SEALED_CEK_NS, sealRecordToHost, revokeSealedRecord, rotateRecordCek } from './record-keys/sealing.js'
-export type { SealingContext } from './record-keys/sealing.js'
-
-// ─── deterministic ─────────────────────────────────────────────────
-export { findByDet, queryByDet } from './record-keys/deterministic.js'
-export type { DeterministicContext } from './record-keys/deterministic.js'
-
-// ─── tombstone ─────────────────────────────────────────────────────
-export { isTombstone, isTombstoneShape, buildTombstone, isDeleteMarker, buildDeleteMarker } from './record-keys/tombstone.js'
-
-// ─── envelope body (C1 protected-body access contract) ──────────────
-export { openEnvelopeJson, writeEnvelopeBody, hasPerRecordKey, hasSealedBody, requireSealedBody, sealedBodyArgs, envelopeBodyForHash, envelopeBodySize, verifyRecordIdentity } from './record-keys/envelope-body.js'
+export const {
+  // envelope body
+  openEnvelopeJson,
+  writeEnvelopeBody,
+  verifyRecordIdentity,
+  // key lifecycle
+  resolveStableCek,
+  rewrapBodyToDek,
+  rewrapEnvelope,
+  applyRewrappedBody,
+  isRewrappedUnder,
+  // rekey
+  rekeyEnvelopeToDek,
+  rekeyEnvelopeIfNeeded,
+  envelopeOpensUnderAny,
+  rekeyBlobSet,
+  // record codec
+  RecordCodec,
+  // sealed slots — ONLY `makeReservedEnvelopes` is part of the frozen surface.
+  // The other seven are capsule-internal; destructuring the whole capsule here
+  // leaked them and widened the golden by 8 names. A surface is a contract, so
+  // the fix is to narrow the barrel, not to re-baseline the golden.
+  makeReservedEnvelopes,
+  // sealing
+  SEALED_CEK_NS,
+  sealRecordToHost,
+  revokeSealedRecord,
+  rotateRecordCek,
+  // deterministic
+  findByDet,
+  queryByDet,
+} = aesCapsule
 
 // ─── reserved envelopes (ViaCryptoCtx.reservedEnvelopes capability) ──
-export { makeReservedEnvelopes } from './record-keys/sealed-slots.js'
 
 // ─── classify (stage-2 verify oracle primitives) ────────────────────
 // ADDITIVE per Enclave Contract v1. A fork must provide these four; the
@@ -146,8 +200,8 @@ export { makeReservedEnvelopes } from './record-keys/sealed-slots.js'
 // with-shape dynamic-import seam and is not part of the fork contract.
 export { deriveVdigSlotKey } from './classify/vdig.js'
 export { pbkdf2VerifyDigest } from './classify/digest.js'
-export { ctEqualTags } from './classify/compare.js'
-export { evaluateKofN } from './classify/kofn.js'
+export { ctEqualTags } from '../plumbing/ct-equal.js'
+export { evaluateKofN } from '../plumbing/kofn.js'
 
 // ─── classify (slice-2b equatable blind index) ──────────────────────
 // ADDITIVE per Enclave Contract v1. A fork must provide these four; the
@@ -170,7 +224,7 @@ export {
 export type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from './broker/proof.js'
 
 // ─── sign ─────────────────────────────────────────────────────────────
-export { generateSigningKeyPair, signBytes, verifyBytes } from './sign.js'
+export { generateSigningKeyPair, signBytes, verifyBytes } from '../plumbing/sign.js'
 
 // ─── recipient sealing ────────────────────────────────────────────────
 export type { EnclaveKeyPair } from './crypto.js'

@@ -177,7 +177,7 @@ export function makeSatelliteProxy(target: any, spec: SatelliteSpec, registry: S
       return filterLiveHits(hits, adapter, vaultName, spec.base)
     },
     // #591 Task 9 review fix: findByDet/queryByDet scan envelopes straight
-    // off the adapter (capsule/enclave-aes/record-keys/deterministic.ts) and
+    // off the adapter (capsule/plumbing/deterministic.ts) and
     // return BARE records (no id), so a post-filter can't correlate a match
     // back to its base row. Instead the scan itself is scoped: re-run the
     // same det functions over the collection's own DeterministicContext
