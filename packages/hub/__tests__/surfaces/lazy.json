@@ -1,0 +1,8 @@
+{
+  "subpath": "@noy-db/hub/lazy",
+  "entry": "./dist/lazy/index.js",
+  "values": [
+    "IMPLICIT_LAZY",
+    "withLazy"
+  ]
+}

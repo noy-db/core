@@ -1,0 +1,9 @@
+{
+  "subpath": "@noy-db/hub/share-link",
+  "entry": "./dist/share-link/index.js",
+  "values": [
+    "ShareLinkParseError",
+    "buildShareLink",
+    "parseShareLink"
+  ]
+}

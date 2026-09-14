@@ -1,0 +1,9 @@
+{
+  "subpath": "@noy-db/hub/snapshots",
+  "entry": "./dist/snapshots/index.js",
+  "values": [
+    "NO_SNAPSHOTS",
+    "SnapshotNotFoundError",
+    "withSnapshots"
+  ]
+}

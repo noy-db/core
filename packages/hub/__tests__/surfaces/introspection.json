@@ -1,0 +1,9 @@
+{
+  "subpath": "@noy-db/hub/introspection",
+  "entry": "./dist/introspection/index.js",
+  "values": [
+    "applyListProjection",
+    "dumpVaultSchema",
+    "jsonSchemaToFields"
+  ]
+}

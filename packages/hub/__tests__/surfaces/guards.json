@@ -1,0 +1,17 @@
+{
+  "subpath": "@noy-db/hub/guards",
+  "entry": "./dist/guards/index.js",
+  "values": [
+    "AmendmentForbiddenError",
+    "FieldFrozenError",
+    "GuardExecutor",
+    "GuardRegistry",
+    "IllegalTransitionError",
+    "InvariantError",
+    "ReadOnlyVaultFacade",
+    "RecordLockedError",
+    "immutableGuard",
+    "transitionGuard",
+    "withGuard"
+  ]
+}

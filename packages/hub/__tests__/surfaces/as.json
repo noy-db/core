@@ -1,0 +1,7 @@
+{
+  "subpath": "@noy-db/hub/as",
+  "entry": "./dist/as/index.js",
+  "values": [
+    "withFormats"
+  ]
+}

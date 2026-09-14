@@ -1,0 +1,11 @@
+{
+  "subpath": "@noy-db/hub/vault-head",
+  "entry": "./dist/vault-head/index.js",
+  "values": [
+    "DEFAULT_HEAD_BUCKETS",
+    "NO_VAULT_HEAD",
+    "VAULT_HEAD_COLLECTION",
+    "verifyVaultHead",
+    "withVaultHead"
+  ]
+}

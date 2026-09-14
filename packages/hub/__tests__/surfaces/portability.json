@@ -1,0 +1,9 @@
+{
+  "subpath": "@noy-db/hub/portability",
+  "entry": "./dist/portability/index.js",
+  "values": [
+    "NO_PORTABILITY",
+    "PortabilityNotEnabledError",
+    "withPortability"
+  ]
+}

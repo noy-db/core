@@ -1,0 +1,17 @@
+{
+  "subpath": "@noy-db/hub/indexing",
+  "entry": "./dist/indexing/index.js",
+  "values": [
+    "COMPOSITE_DELIMITER",
+    "CollectionIndexes",
+    "IDX_PREFIX",
+    "LazyQuery",
+    "NO_INDEXING",
+    "PersistedCollectionIndex",
+    "compositeKey",
+    "decodeIdxId",
+    "encodeIdxId",
+    "isIdxId",
+    "withIndexing"
+  ]
+}

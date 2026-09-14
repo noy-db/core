@@ -1,0 +1,13 @@
+{
+  "subpath": "@noy-db/hub/schema-update",
+  "entry": "./dist/schema-update/index.js",
+  "values": [
+    "SchemaUpdateGate",
+    "additiveOnly",
+    "blindUpdate",
+    "computeSchemaDelta",
+    "coordinatedCutover",
+    "evaluateStrategies",
+    "lockSchema"
+  ]
+}

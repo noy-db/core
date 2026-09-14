@@ -1,0 +1,24 @@
+{
+  "subpath": "@noy-db/hub/periods",
+  "entry": "./dist/periods/index.js",
+  "values": [
+    "NO_PERIODS",
+    "PERIODS_COLLECTION",
+    "PERIOD_ARCHIVES_COLLECTION",
+    "PERIOD_FREEZES_COLLECTION",
+    "PERIOD_REOPENS_COLLECTION",
+    "PERIOD_TARGET_PURGES_COLLECTION",
+    "appendPeriodLedgerEntry",
+    "assertTsWritable",
+    "chainAnchor",
+    "isEffectivelyReopened",
+    "loadPeriods",
+    "periodExclusiveUpperBound",
+    "purgeMarkersOn",
+    "resolvePeriodKey",
+    "resolveReopenState",
+    "samePartition",
+    "validatePeriodName",
+    "withPeriods"
+  ]
+}

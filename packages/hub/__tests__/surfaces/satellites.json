@@ -1,0 +1,7 @@
+{
+  "subpath": "@noy-db/hub/satellites",
+  "entry": "./dist/satellites/index.js",
+  "values": [
+    "SatelliteConfigError"
+  ]
+}

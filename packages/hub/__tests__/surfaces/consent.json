@@ -1,0 +1,11 @@
+{
+  "subpath": "@noy-db/hub/consent",
+  "entry": "./dist/consent/index.js",
+  "values": [
+    "CONSENT_AUDIT_COLLECTION",
+    "NO_CONSENT",
+    "loadConsentEntries",
+    "withConsent",
+    "writeConsentEntry"
+  ]
+}

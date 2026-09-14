@@ -1,0 +1,12 @@
+{
+  "subpath": "@noy-db/hub/crdt",
+  "entry": "./dist/crdt/index.js",
+  "values": [
+    "NO_CRDT",
+    "buildLwwMapState",
+    "buildRgaState",
+    "mergeCrdtStates",
+    "resolveCrdtSnapshot",
+    "withCrdt"
+  ]
+}

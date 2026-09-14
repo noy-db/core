@@ -9,15 +9,20 @@
  * the version line was silently redefined and the question reached a human as
  * "should we ship 1.0.0?" — the wrong question, from a premise nobody checked.
  *
- * ⛔ `.changeset/` IS GITIGNORED (`.gitignore:182`). A CI job scanning it finds
- * an empty directory and passes, forever, while reporting that it checked —
- * the exact shape of a guard that cannot fail. That is why this is wired into
- * `release.mjs` ahead of `changeset version`, and why the fixture tests below
- * supply their own directory rather than relying on the repo's.
+ * ⭐ `.changeset/` WAS GITIGNORED until 2026-09-14, and that is why this began
+ * as a release pre-flight only: a CI job scanning it found an empty directory
+ * and passed, forever, while reporting that it checked — the exact shape of a
+ * guard that cannot fail. The directory is tracked now, so the repo's OWN
+ * pending changesets are asserted below and CI finally sees them.
+ *
+ * The fixture tests still supply their own directory, deliberately: they must
+ * exercise the refusal, and the repo's real changesets must never contain a
+ * `major` for them to exercise it against.
  */
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { assertNoMajorWhilePre1, findMajorEntries } from '../release/no-major-pre1.mjs'
 
@@ -82,6 +87,20 @@ describe('assertNoMajorWhilePre1', () => {
     const empty = fixture({})
     expect(() => assertNoMajorWhilePre1('0.8.0', empty)).not.toThrow()
     rmSync(empty, { recursive: true, force: true })
+  })
+})
+
+describe("this repo's own pending changesets", () => {
+  it('contain no `major` entry while the line is 0.x', () => {
+    // ⭐ Only possible since `.changeset/` became tracked (2026-09-14). While
+    // it was gitignored this assertion ran against an empty directory in CI
+    // and passed unconditionally — a check that cannot fail, guarding the
+    // exact mistake that produced 1.0.0 for 32 of 36 packages.
+    const dir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.changeset')
+    const hub = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'packages', 'hub', 'package.json'), 'utf8'),
+    ) as { version: string }
+    expect(() => assertNoMajorWhilePre1(hub.version, dir)).not.toThrow()
   })
 })
 

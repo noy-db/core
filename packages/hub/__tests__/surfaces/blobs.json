@@ -1,0 +1,29 @@
+{
+  "subpath": "@noy-db/hub/blobs",
+  "entry": "./dist/blobs/index.js",
+  "values": [
+    "BLOB_CHUNKS_COLLECTION",
+    "BLOB_COLLECTION",
+    "BLOB_EVICTION_AUDIT_COLLECTION",
+    "BLOB_INDEX_COLLECTION",
+    "BLOB_SLOTS_PREFIX",
+    "BLOB_VERSIONS_PREFIX",
+    "BlobOfflineError",
+    "BlobSet",
+    "DEFAULT_CHUNK_SIZE",
+    "EXPORT_AUDIT_COLLECTION",
+    "ExportBlobsAbortedError",
+    "NO_BLOBS",
+    "blobPinKey",
+    "createExportBlobsHandle",
+    "detectMagic",
+    "detectMimeType",
+    "importExternalObjects",
+    "isPreCompressed",
+    "memoryBlobPinStore",
+    "memoryObjectProjection",
+    "reportOrphanBlobChunks",
+    "runCompaction",
+    "withBlobs"
+  ]
+}

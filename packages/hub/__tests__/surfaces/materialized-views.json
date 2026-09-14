@@ -1,0 +1,21 @@
+{
+  "subpath": "@noy-db/hub/materialized-views",
+  "entry": "./dist/materialized-views/index.js",
+  "values": [
+    "MaterializedViewConfigError",
+    "MaterializedViewCycleError",
+    "MaterializedViewExecutor",
+    "MaterializedViewRegistry",
+    "MaterializedViewSourceUnknownError",
+    "MaterializedViewTooLargeError",
+    "analyzeDependencies",
+    "canonicalizeQueryPlan",
+    "clearMVStale",
+    "computeQueryHash",
+    "isMVStale",
+    "markMVStale",
+    "resolveStaleMVOnRead",
+    "summarizeQueryPlan",
+    "withMaterializedView"
+  ]
+}

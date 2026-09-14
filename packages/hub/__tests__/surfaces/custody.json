@@ -1,0 +1,10 @@
+{
+  "subpath": "@noy-db/hub/custody",
+  "entry": "./dist/custody/index.js",
+  "values": [
+    "CustodyApi",
+    "CustodyNotEnabledError",
+    "NO_CUSTODY",
+    "withCustody"
+  ]
+}

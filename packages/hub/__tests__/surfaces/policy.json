@@ -1,0 +1,21 @@
+{
+  "subpath": "@noy-db/hub/policy",
+  "entry": "./dist/policy/index.js",
+  "values": [
+    "DEFAULT_FRESHNESS_MS",
+    "META_COLLECTION",
+    "ManagedRecoveryNotEnrolledError",
+    "PERSONAL_POLICY",
+    "POLICY_RECORD_ID",
+    "PolicyDeniedError",
+    "RecoveryNotEnrolledError",
+    "RecoveryProfileNotImplementedError",
+    "STRICT_POLICY",
+    "checkGate",
+    "createNoydbPolicy",
+    "describeGate",
+    "loadVaultPolicy",
+    "mergePolicy",
+    "saveVaultPolicy"
+  ]
+}

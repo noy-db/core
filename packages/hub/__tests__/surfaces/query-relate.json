@@ -1,0 +1,22 @@
+{
+  "subpath": "@noy-db/hub/query/relate",
+  "entry": "./dist/query/relate/index.js",
+  "values": [
+    "ALL_PARTITIONS",
+    "CrossJoinSourceUnknownError",
+    "CrossJoinTooLargeError",
+    "DEFAULT_CROSS_JOIN_MAX_ROWS",
+    "DEFAULT_JOIN_MAX_ROWS",
+    "DanglingReferenceError",
+    "JoinTooLargeError",
+    "TraversalCycleError",
+    "applyJoins",
+    "describePartitionScope",
+    "explainPlan",
+    "partitionsInScope",
+    "renderExplainText",
+    "resetJoinWarnings",
+    "resolvePartitionScope",
+    "runTraversal"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "subpath": "@noy-db/hub/on",
+  "entry": "./dist/on/index.js",
+  "values": []
+}

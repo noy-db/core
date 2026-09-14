@@ -201,6 +201,29 @@ export type Permissions = Record<string, Permission>
  * does not move. What changed is that every READER must now cope with absence
  * — which is the whole point, since the store contract at `@noy-db/hub/to` is
  * what an exclave's rows travel through.
+ *
+ * ⛔⛔ THERE ARE TWO KINDS OF BODY, AND CONFLATING THEM IS A REAL BUG. This
+ * cost a downstream package real time in 0.8.0, so it is written here rather
+ * than left to be rediscovered:
+ *
+ *   - **A SEALED body** — `_iv` is a real IV and `_data` is ciphertext. Ask
+ *     {@link hasSealedBody}, which tests `_iv`.
+ *   - **A PLAINTEXT body** — `_data` holds readable JSON and `_iv` is `''`.
+ *     Reserved collections (`_keyring`, `_meta`) and any collection opened
+ *     with `encrypt: false` are this shape, by a convention that predates the
+ *     widening.
+ *
+ * ⛔ So a record can HAVE a body while having NO SEALED body, and
+ * `hasSealedBody` returns **false** for it. Guarding a `_data` read with
+ * `hasSealedBody` therefore rejects every valid record on those collections —
+ * measured: it would reject every enrolled user of a password unlock. To ask
+ * "is there a body to read as text", test `_data` itself (`if (!env._data)`),
+ * which is exactly what the optional type is for.
+ *
+ * ⚠️ And `_iv === ''` is NOT a safe hand-rolled substitute for
+ * `hasSealedBody`. The comparison stays well-typed when `_iv` is absent and
+ * silently answers `false` — four sites inside hub were wrong that way before
+ * the widening landed.
  */
 export interface Envelope {
   readonly _noydb: typeof NOYDB_FORMAT_VERSION

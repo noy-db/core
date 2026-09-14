@@ -1,0 +1,9 @@
+{
+  "subpath": "@noy-db/hub/query/all",
+  "entry": "./dist/query/all/index.js",
+  "values": [
+    "Query",
+    "ScanBuilder",
+    "executePlan"
+  ]
+}
