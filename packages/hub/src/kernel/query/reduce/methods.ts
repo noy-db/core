@@ -458,6 +458,21 @@ export class ReduceMethods<
     // bucket semantics, live re-grouping — keeps working unchanged.
     const derived = keys.filter(isDateTruncKey)
     const fields: readonly string[] = keys.map(groupKeyName)
+    // #29 — the same posture gate `.where()` / `.orderBy()` / `.distinct()`
+    // apply. A `queryable: 'none'` field (a virtual computed field, a blob
+    // handle) is absent from the stored record the reducer walks, so grouping
+    // on it keys every row on `undefined` and folds the whole collection into
+    // one well-formed bucket with no error anywhere. Refusing here is what a
+    // caller can catch; a silently-undefined key is not detectable downstream.
+    //
+    // ⚠️ Gated on the RESOLVED names, so a `dateTrunc` key over a virtual
+    // field is refused too — `groupKeyName` returns the underlying field.
+    const groupVia = this.source.via
+    if (groupVia) {
+      for (const f of fields) {
+        if (groupVia.postureFor(f)?.queryable === 'none') throw new FieldNotQueryableError(f)
+      }
+    }
     // #1338 — a group key addressing an alias used to be refused. It now
     // decides the shape of the whole grouped pipeline: the legs run, and the
     // reducers are wrapped through the right side's pipeline.
