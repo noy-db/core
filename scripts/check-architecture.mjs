@@ -1624,7 +1624,18 @@ const KERNEL_SURFACE_BUDGET = {
   // ⛔ Not precedent for a new subsystem: the test is whether the capability
   // was ALREADY in this file. Reporting an existing fact better is not the
   // accretion this ceiling exists to refuse; a new erasure feature would be.
-  'packages/hub/src/kernel/vault.ts': 3758,
+  // Bumped 3758→3760 (noy-db/core#28, 2026-09-14): TWO more lines — a `Set`
+  // declaration and one returned field, for `ForgetResult.blobResidueETags`.
+  // Same test as the bump above: the capability was already here (`forget()`
+  // already computed this residue and already discarded the eTag); this reports
+  // it at the grain that makes it actionable. The collecting loop was folded
+  // into the existing `if` rather than costing a third line.
+  // ⛔ THIRD BUMP IN THREE PRs — 4426→4427 (collection.ts), 3756→3758, now
+  // →3760. Each is individually justified and all three are comments or
+  // finer reporting of existing facts, but the PATTERN is the thing this table
+  // is meant to make visible. If a fourth arrives, the right response is to ask
+  // whether `forget()` should move out of the kernel, not to raise again.
+  'packages/hub/src/kernel/vault.ts': 3760,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and

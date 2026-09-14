@@ -1110,6 +1110,8 @@ export class BlobSet {
     shredded: string[]
     retainedShared: string[]
     residue: string[]
+    /** #28 — the eTag half of `residue` alone: the join key to `compact()`'s sweep. */
+    residueETags: string[]
   }> {
     // #808: device-local hygiene — the record's registry rows (pins, access
     // stamps, cached external copies) die with it. Best-effort and FIRST: a
@@ -1201,20 +1203,31 @@ export class BlobSet {
     shredded: string[]
     retainedShared: string[]
     residue: string[]
+    residueETags: string[]
   }> {
     const shredded: string[] = []
     const retainedShared: string[] = []
+    // #28 — `residue` mixes TWO identifier schemes: a bare eTag (the CONTENT
+    // survived) and a `collection:id:slot` string (the slot row was
+    // undecodable). Both mean "not erased" but they answer different questions
+    // and join to different things, and a caller cannot tell them apart — an
+    // eTag is a hex digest and a slot key is arbitrary consumer text that may
+    // also be hex. `residueETags` carries the eTag half ALONE, because it is
+    // the only one that joins to `compact({ reclaimLegacyBlobs })`'s sweep,
+    // which walks `_blob_index` by eTag. `residue` is unchanged for its
+    // existing readers.
+    const residueETags: string[] = []
     const collected = await this.collectShredHolds(tier)
     const residue: string[] = [...collected.residue, `${this.collection}:${this.recordId}:_blob_intent`]
     for (const hold of collected.holds) {
       const outcome = await this.releaseRef(hold.eTag, hold.n, true, tier)
       if (outcome === 'shredded') shredded.push(hold.eTag)
       else if (outcome === 'retainedShared') retainedShared.push(hold.eTag)
-      else residue.push(hold.eTag)
+      else { residue.push(hold.eTag); residueETags.push(hold.eTag) }
     }
     if (collected.slotsPresent) await this.store.delete(this.vault, this.slotsCollection, this.recordId)
     for (const key of collected.versionKeysToDelete) await this.store.delete(this.vault, this.versionsCollection, key)
-    return { shredded, retainedShared, residue }
+    return { shredded, retainedShared, residue, residueETags }
   }
 
   /**
@@ -1310,10 +1323,11 @@ export class BlobSet {
     intent: BlobIntent,
     tier: number,
     collected: { slotsPresent: boolean; versionKeysToDelete: string[]; residue: string[] },
-  ): Promise<{ shredded: string[]; retainedShared: string[]; residue: string[] }> {
+  ): Promise<{ shredded: string[]; retainedShared: string[]; residue: string[]; residueETags: string[] }> {
     const shredded: string[] = []
     const retainedShared: string[] = []
     const residue: string[] = [...collected.residue]
+    const residueETags: string[] = [] // #28 — see unmarkedShred
     let allApplied = true
 
     for (const hold of intent.holds ?? []) {
@@ -1321,9 +1335,9 @@ export class BlobSet {
         const outcome = await this.releaseRef(hold.eTag, hold.n, true, tier, intent.opId, hold.chunkCount)
         if (outcome === 'shredded') shredded.push(hold.eTag)
         else if (outcome === 'retainedShared') retainedShared.push(hold.eTag)
-        else residue.push(hold.eTag)
+        else { residue.push(hold.eTag); residueETags.push(hold.eTag) }
       } catch {
-        residue.push(hold.eTag)
+        residue.push(hold.eTag); residueETags.push(hold.eTag)
         allApplied = false
       }
     }
@@ -1333,7 +1347,7 @@ export class BlobSet {
       for (const key of collected.versionKeysToDelete) await this.store.delete(this.vault, this.versionsCollection, key)
       await deleteIntent(this.store, this.vault, this.collection, this.recordId)
     }
-    return { shredded, retainedShared, residue }
+    return { shredded, retainedShared, residue, residueETags }
   }
 
   /**
