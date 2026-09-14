@@ -29,6 +29,22 @@ export interface UnreferencedLegacyBlobReport {
   readonly chunks: number
   /** How many of those blobs this run deleted (chunks first, then the index row). */
   readonly reclaimed: number
+  /**
+   * #28 — the eTags this run actually deleted, so a deferred erasure set can be
+   * reconciled against the reclaim that finished it:
+   *
+   * ```ts
+   * const still = before.blobResidueETags.filter((e) => !report.reclaimedETags.includes(e))
+   * ```
+   *
+   * ⛔ DO NOT PERSIST. An eTag is a content hash — see
+   * `ForgetResult.blobResidueETags` for why a stored receipt of them is a
+   * re-identification oracle. Reconcile in memory, persist the verdict.
+   *
+   * Empty on a `dryRun` (nothing was deleted), even though `blobs`/`chunks`
+   * still count what WOULD be.
+   */
+  readonly reclaimedETags: readonly string[]
 }
 
 export async function sweepUnreferencedLegacyBlobs(
@@ -36,6 +52,7 @@ export async function sweepUnreferencedLegacyBlobs(
   reclaim: boolean,
 ): Promise<UnreferencedLegacyBlobReport> {
   let blobs = 0, chunks = 0, reclaimed = 0
+  const reclaimedETags: string[] = []
   const eTags = await ctx.adapter.list(ctx.vault, BLOB_INDEX_COLLECTION)
   const dek = ctx.encrypted ? await ctx.getDEK(BLOB_COLLECTION) : null
   for (const eTag of eTags) {
@@ -63,6 +80,7 @@ export async function sweepUnreferencedLegacyBlobs(
     }
     await ctx.adapter.delete(ctx.vault, BLOB_INDEX_COLLECTION, eTag)
     reclaimed += 1
+    reclaimedETags.push(eTag)
   }
-  return { blobs, chunks, reclaimed }
+  return { blobs, chunks, reclaimed, reclaimedETags }
 }

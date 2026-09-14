@@ -2079,6 +2079,7 @@ export class Vault {
     const collections = new Set<string>(); const unmigratedRecords: string[] = []
     const blobResidueCollections = new Set<string>()
     const blobResidueRecords = new Set<string>() // #28 — record-grained sibling; see ForgetResult.blobResidueRecords
+    const blobResidueETags = new Set<string>() // #28 — join key to compact(); see ForgetResult.blobResidueETags
     let blobsShredded = 0; let blobsRetainedShared = 0; let indexPostingsPurged = 0
     let sealedFieldsShredded = 0; let sealedCekEnvelopesPurged = 0; let ledgerDeltasPurged = 0
     const sealedCekResidue: string[] = []; const sealedResidue: string[] = []; const indexResidue: string[] = []; const ledgerDeltaResidue: string[] = []
@@ -2210,7 +2211,7 @@ export class Vault {
           .shredAllForRecord(live?._tier ?? 0) // #724 C3: pre-tombstone tier — the tombstone this loop already wrote drops `_tier`
         blobsShredded += r.shredded.length
         blobsRetainedShared += r.retainedShared.length
-        if (r.residue.length > 0) { blobResidueCollections.add(ref.collection); blobResidueRecords.add(`${ref.collection}:${ref.id}`) }
+        if (r.residue.length > 0) { blobResidueCollections.add(ref.collection); blobResidueRecords.add(`${ref.collection}:${ref.id}`); for (const e of r.residueETags) blobResidueETags.add(e) }
       } else {
         try {
           const [slotIds, verKeys] = await Promise.all([this.adapter.list(this.name, `_blob_slots_${ref.collection}`), this.adapter.list(this.name, `_blob_versions_${ref.collection}`)]) // #750: version rows are residue too when the blob service is off
@@ -2274,6 +2275,7 @@ export class Vault {
       blobsRetainedShared,
       blobResidueCollections: [...blobResidueCollections],
       blobResidueRecords: [...blobResidueRecords],
+      blobResidueETags: [...blobResidueETags],
       indexPostingsPurged,
       indexResidue,
       sealedFieldsShredded,

@@ -44,13 +44,13 @@ describe('#1453 — compact() sees unreferenced legacy blobs', () => {
 
     const report = await vault.compact()
     expect(report.orphanBlobChunks.chunks).toBe(0)
-    expect(report.unreferencedLegacyBlobs).toEqual({ blobs: 1, chunks: chunksBefore, reclaimed: 0 })
+    expect(report.unreferencedLegacyBlobs).toEqual({ blobs: 1, chunks: chunksBefore, reclaimed: 0, reclaimedETags: [] })
   })
 
   it('a clean vault reports zero', async () => {
     const { vault, docs } = await legacyVault()
     await docs.blob('d1').put('f', bytes(1_000))
-    expect((await vault.compact()).unreferencedLegacyBlobs).toEqual({ blobs: 0, chunks: 0, reclaimed: 0 })
+    expect((await vault.compact()).unreferencedLegacyBlobs).toEqual({ blobs: 0, chunks: 0, reclaimed: 0, reclaimedETags: [] })
   })
 })
 
@@ -64,12 +64,14 @@ describe('#1453 — the reclaim verb', () => {
     const r = await vault.compact({ reclaimLegacyBlobs: true })
     expect(r.unreferencedLegacyBlobs.blobs).toBe(1)
     expect(r.unreferencedLegacyBlobs.reclaimed).toBe(1)
+    // #28 — the reclaim now NAMES what it deleted, not just how many.
+    expect(r.unreferencedLegacyBlobs.reclaimedETags).toHaveLength(1)
 
     expect((await store.list('V', BLOB_INDEX_COLLECTION)).length).toBe(2) // f(v2), g
     expect((await store.list('V', BLOB_CHUNKS_COLLECTION)).length).toBe(2) // one chunk each
     expect(await docs.blob('d1').get('f')).toEqual(bytes(10_000, 2))
     expect(await docs.blob('d1').get('g')).toEqual(bytes(20_000, 3))
-    expect((await vault.compact()).unreferencedLegacyBlobs).toEqual({ blobs: 0, chunks: 0, reclaimed: 0 })
+    expect((await vault.compact()).unreferencedLegacyBlobs).toEqual({ blobs: 0, chunks: 0, reclaimed: 0, reclaimedETags: [] })
   })
 
   it('dryRun counts but reclaims nothing', async () => {
@@ -77,7 +79,7 @@ describe('#1453 — the reclaim verb', () => {
     await docs.blob('d1').put('f', bytes(1_000, 1))
     await docs.blob('d1').put('f', bytes(1_000, 2))
     const r = await vault.compact({ reclaimLegacyBlobs: true, dryRun: true })
-    expect(r.unreferencedLegacyBlobs).toEqual({ blobs: 1, chunks: 1, reclaimed: 0 })
+    expect(r.unreferencedLegacyBlobs).toEqual({ blobs: 1, chunks: 1, reclaimed: 0, reclaimedETags: [] })
     expect((await store.list('V', BLOB_INDEX_COLLECTION)).length).toBe(2)
   })
 
@@ -89,7 +91,7 @@ describe('#1453 — the reclaim verb', () => {
     await docs.put('d1', { id: 'd1' })
     await docs.blob('d1').put('f', bytes(1_000, 1))
     await docs.blob('d1').put('f', bytes(1_000, 2))
-    expect((await vault.compact({ reclaimLegacyBlobs: true })).unreferencedLegacyBlobs).toEqual({ blobs: 0, chunks: 0, reclaimed: 0 })
+    expect((await vault.compact({ reclaimLegacyBlobs: true })).unreferencedLegacyBlobs).toEqual({ blobs: 0, chunks: 0, reclaimed: 0, reclaimedETags: [] })
   })
 })
 

@@ -108,7 +108,8 @@ describe('#34 — erasureCompleteness()', () => {
       r.sealedResidue.length === 0 && r.ledgerDeltaResidue.length === 0 &&
       r.derivedResidueFrozen.length === 0 && r.lookupReferencesResidue.length === 0 &&
       r.scopedPurgeResidue.length === 0 && r.derivedResidueUndecodable.length === 0 &&
-      r.derivedResidueDeclined.length === 0 && r.blobResidueRecords.length === 0
+      r.derivedResidueDeclined.length === 0 && r.blobResidueRecords.length === 0 &&
+      r.blobResidueETags.length === 0
 
     expect(erasureCompleteness(r).complete).toBe(byHand)
   })
@@ -129,14 +130,14 @@ describe('#34 — erasureCompleteness()', () => {
 
     const arrayFields = Object.entries(r).filter(([, v]) => Array.isArray(v)).map(([k]) => k).sort()
     const RESIDUE = [
-      'blobResidueCollections', 'blobResidueRecords', 'derivedResidueDeclined', 'derivedResidueFrozen',
+      'blobResidueCollections', 'blobResidueETags', 'blobResidueRecords', 'derivedResidueDeclined', 'derivedResidueFrozen',
       'derivedResidueUndecodable', 'indexResidue', 'ledgerDeltaResidue',
       'lookupReferencesResidue', 'scopedPurgeResidue', 'sealedCekResidue',
       'sealedResidue', 'unmigratedRecords',
     ]
     const EXEMPT = ['collections'] // not a failure channel: the collections touched
     expect(arrayFields).toEqual([...RESIDUE, ...EXEMPT].sort())
-    expect(RESIDUE).toHaveLength(12)
+    expect(RESIDUE).toHaveLength(13)
   })
 
   it('the instrument would fail on a fabricated residue — the control', () => {

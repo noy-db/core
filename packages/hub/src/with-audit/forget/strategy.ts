@@ -115,12 +115,15 @@ export interface ForgetResult {
   readonly blobResidueCollections: readonly string[]
   /**
    * #28 — the same residue as {@link blobResidueCollections}, at `collection:id`
-   * grain: which RECORDS still hold blob bytes that could not be shredded.
+   * grain: which RECORDS held blob content that could not be crypto-shredded.
    *
    * ⭐ Prefer this one. `blobResidueCollections` answers "some blobs in
-   * `invoices` did not shred"; a specific erasure request asks "was THIS
-   * subject's data reclaimed", and only a record-grained answer can be
-   * reconciled against a later reclaim pass.
+   * `invoices` did not shred"; a specific erasure request asks "which of THIS
+   * subject's records are affected", and only a record-grained answer can say.
+   *
+   * ⚠️ "Could not be shredded" does NOT mean the bytes are still in the live
+   * store — `forget()` deletes legacy chunks, it just cannot crypto-shred them.
+   * See {@link blobResidueETags} for what the exposure actually is.
    *
    * ⚠️ `blobResidueCollections` is kept, unchanged, because it is published —
    * widening it in place would silently change what every existing reader sees,
@@ -134,6 +137,47 @@ export interface ForgetResult {
    * the line that recorded only the collection.
    */
   readonly blobResidueRecords: readonly string[]
+  /**
+   * #28 — the eTags of blob content this erasure could not CRYPTO-SHRED.
+   *
+   * ⛔ READ THE MEANING CAREFULLY; it is not what the name suggests on first
+   * reading, and the obvious reading is wrong in a way that matters.
+   *
+   * On a LEGACY blob (no per-blob `_cek`) `forget()` still DELETES the chunks
+   * and the index row — it passes `reclaimLegacy: true`. What it cannot do is
+   * make them cryptographically unreadable, because there is no per-blob key to
+   * destroy; the bytes were removed rather than shredded. So:
+   *
+   * - the live store IS clean — do not expect these chunks to still be there;
+   * - but any pre-existing BACKUP, replica or snapshot taken before the erasure
+   *   remains decryptable under the retained collection DEK, and that is the
+   *   exposure this field is telling you about.
+   *
+   * ⚠️ THIS CANNOT BE RECONCILED AGAINST `compact({ reclaimLegacyBlobs })`.
+   * That sweep reclaims refCount-0 legacy index rows that still EXIST; these no
+   * longer do. An intersection of the two sets is empty by construction and
+   * means nothing — measured, not assumed (2026-09-14). The reclaim path
+   * belongs to ordinary `collection.delete()`, which passes
+   * `reclaimLegacy: false` and genuinely defers.
+   *
+   * ⭐ What to DO with a non-empty value: treat the subject's data as erased
+   * from the live vault but potentially present in backups, and handle it under
+   * whatever backup-retention policy you operate. Migrating the collection to
+   * per-record keys before the erasure (`blob(id).migrate()`) is what makes a
+   * future erasure a true crypto-shred.
+   *
+   * ⛔ DO NOT PERSIST THESE. An eTag is a CONTENT HASH, so a stored erasure
+   * receipt listing them lets anyone holding a candidate file confirm the vault
+   * once held it — a residual disclosure created by the very artefact meant to
+   * prove the data is gone. `ledgerEntry` records residue COUNTS, never values,
+   * for exactly this reason.
+   *
+   * ⚠️ Narrower than {@link blobResidueRecords}: this is the eTag half only. A
+   * record whose SLOT ROW was undecodable appears there and not here, because
+   * there is no content identity to name. {@link erasureCompleteness} counts
+   * both.
+   */
+  readonly blobResidueETags: readonly string[]
   /**
    * Count of persisted `_idx/<field>/<recordId>` index side-cars hard-deleted
    * across the shredded records. These live under the retained
