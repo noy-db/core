@@ -114,6 +114,27 @@ export interface ForgetResult {
   /** Collections with blobs that could NOT be crypto-shredded — legacy (no `_cek`) or blobs disabled (see type docs). */
   readonly blobResidueCollections: readonly string[]
   /**
+   * #28 — the same residue as {@link blobResidueCollections}, at `collection:id`
+   * grain: which RECORDS still hold blob bytes that could not be shredded.
+   *
+   * ⭐ Prefer this one. `blobResidueCollections` answers "some blobs in
+   * `invoices` did not shred"; a specific erasure request asks "was THIS
+   * subject's data reclaimed", and only a record-grained answer can be
+   * reconciled against a later reclaim pass.
+   *
+   * ⚠️ `blobResidueCollections` is kept, unchanged, because it is published —
+   * widening it in place would silently change what every existing reader sees,
+   * with no type error (`string[]` either way). Both are populated from the
+   * same sites; this is the finer of the two.
+   *
+   * Reported by pilot-1, who noticed that this result type carries residue at
+   * `collection:id` (`unmigratedRecords`) and `collection:id:field`
+   * (`indexResidue`, `sealedResidue`) elsewhere, so the coarse one read as a
+   * defect rather than a design choice. It was: the record id was in scope on
+   * the line that recorded only the collection.
+   */
+  readonly blobResidueRecords: readonly string[]
+  /**
    * Count of persisted `_idx/<field>/<recordId>` index side-cars hard-deleted
    * across the shredded records. These live under the retained
    * collection DEK, so crypto-shred alone would leave the indexed field VALUES

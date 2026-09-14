@@ -108,7 +108,7 @@ describe('#34 — erasureCompleteness()', () => {
       r.sealedResidue.length === 0 && r.ledgerDeltaResidue.length === 0 &&
       r.derivedResidueFrozen.length === 0 && r.lookupReferencesResidue.length === 0 &&
       r.scopedPurgeResidue.length === 0 && r.derivedResidueUndecodable.length === 0 &&
-      r.derivedResidueDeclined.length === 0
+      r.derivedResidueDeclined.length === 0 && r.blobResidueRecords.length === 0
 
     expect(erasureCompleteness(r).complete).toBe(byHand)
   })
@@ -118,20 +118,25 @@ describe('#34 — erasureCompleteness()', () => {
     // "more coverage": it is the mechanism. Add a twelfth residue channel and
     // it is picked up automatically; add a non-residue array and this fails,
     // forcing the exemption to be written down rather than assumed.
+    //
+    // ⭐ THIS ALREADY EARNED ITS PLACE. #28's `blobResidueRecords` was added in
+    // the very next commit after this file landed: `erasureCompleteness()`
+    // picked it up with no change at all, and THIS test went red until the new
+    // channel was classified — which is exactly the split the design wants.
     const { vault, invoices } = await setup(true)
     await invoices.put('i-1', { id: 'i-1', buyerId: 'buyer-1' })
     const r = await vault.forget('buyer-1') as unknown as Record<string, unknown>
 
     const arrayFields = Object.entries(r).filter(([, v]) => Array.isArray(v)).map(([k]) => k).sort()
     const RESIDUE = [
-      'blobResidueCollections', 'derivedResidueDeclined', 'derivedResidueFrozen',
+      'blobResidueCollections', 'blobResidueRecords', 'derivedResidueDeclined', 'derivedResidueFrozen',
       'derivedResidueUndecodable', 'indexResidue', 'ledgerDeltaResidue',
       'lookupReferencesResidue', 'scopedPurgeResidue', 'sealedCekResidue',
       'sealedResidue', 'unmigratedRecords',
     ]
     const EXEMPT = ['collections'] // not a failure channel: the collections touched
     expect(arrayFields).toEqual([...RESIDUE, ...EXEMPT].sort())
-    expect(RESIDUE).toHaveLength(11)
+    expect(RESIDUE).toHaveLength(12)
   })
 
   it('the instrument would fail on a fabricated residue — the control', () => {
@@ -141,5 +146,46 @@ describe('#34 — erasureCompleteness()', () => {
     const c = erasureCompleteness(fake)
     expect(c.complete).toBe(false)
     expect(c.channels).toEqual(['indexResidue'])
+  })
+
+  /**
+   * #28 — the residue names the RECORD, not just the collection.
+   *
+   * ⛔ Why it matters: "some blobs in `invoices` did not shred" cannot be
+   * reconciled against a later reclaim pass, and a specific erasure request
+   * asks "was THIS subject's data reclaimed". The record id was in scope on the
+   * line that recorded only the collection — `ref.id` is used one line earlier
+   * to open the blob set.
+   *
+   * ⚠️ Both fields are asserted together, on purpose. `blobResidueCollections`
+   * is published, so it must keep reporting exactly what it always did; this
+   * pins that the new channel is ADDITIVE rather than a widening.
+   */
+  it('#28 — blobResidueRecords carries collection:id, and the published field is unchanged', async () => {
+    const { store, vault, invoices } = await setupNoBlobs()
+    await invoices.put('i-1', { id: 'i-1', buyerId: 'buyer-1' })
+    await invoices.put('i-2', { id: 'i-2', buyerId: 'buyer-1' })
+    for (const id of ['i-1', 'i-2']) {
+      await store.put('V', '_blob_slots_invoices', id, {
+        _noydb: 1, _v: 1, _ts: new Date().toISOString(), _iv: 'x', _data: 'y',
+      } as EncryptedEnvelope)
+    }
+
+    const r = await vault.forget('buyer-1')
+
+    // The coarse field: unchanged, one entry however many records are affected.
+    expect(r.blobResidueCollections).toEqual(['invoices'])
+    // The new one: every affected record, which is what a proof needs.
+    expect([...r.blobResidueRecords].sort()).toEqual(['invoices:i-1', 'invoices:i-2'])
+  })
+
+  it('#28 — a clean erasure reports NO blob residue in either channel — the control', async () => {
+    // Without this, the assertions above would pass equally against a channel
+    // that reported every record unconditionally.
+    const { vault, invoices } = await setupNoBlobs()
+    await invoices.put('i-1', { id: 'i-1', buyerId: 'buyer-1' })
+    const r = await vault.forget('buyer-1')
+    expect(r.blobResidueCollections).toEqual([])
+    expect(r.blobResidueRecords).toEqual([])
   })
 })

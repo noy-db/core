@@ -1612,7 +1612,19 @@ const KERNEL_SURFACE_BUDGET = {
   // Bumped 3750→3756 (2026-09-06): #1454. The collection() door refuses the
   // periods family (`_periods`, `_period_reopens`, …) — one predicate call and
   // its four-line reason. The set lives in `with-audit/periods/reserved-collections.ts`.
-  'packages/hub/src/kernel/vault.ts': 3756,
+  // Bumped 3756→3758 (noy-db/core#28, 2026-09-14): TWO LINES — one `Set`
+  // declaration and one entry in `forget()`'s returned object, for
+  // `ForgetResult.blobResidueRecords`. Not new capability: `forget()` already
+  // computed this residue and already lived here; it recorded only the
+  // COLLECTION while holding the record id (`ref.id`, used one line earlier to
+  // open the blob set), so an erasure proof could not be reconciled against a
+  // later reclaim. This reports the same fact at the grain its nine sibling
+  // residue channels already use. The rationale lives on the field's own doc,
+  // not here — hence one trailing comment rather than a block.
+  // ⛔ Not precedent for a new subsystem: the test is whether the capability
+  // was ALREADY in this file. Reporting an existing fact better is not the
+  // accretion this ceiling exists to refuse; a new erasure feature would be.
+  'packages/hub/src/kernel/vault.ts': 3758,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
