@@ -4,6 +4,7 @@
   "values": [
     "NO_FORGET",
     "SUBJECT_INDEX_COLLECTION",
+    "erasureCompleteness",
     "withForget"
   ]
 }

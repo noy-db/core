@@ -1,0 +1,15 @@
+---
+'@noy-db/hub': minor
+---
+
+Three fixes for one defect class: **information that was present and correct, where the reader had to already know what to watch.** None of the three was a wrong value, which is why no test on either side of the seam caught any of them. All three were found with pilot-1.
+
+**A `via()`-spelled computed field is no longer silently discarded on a reconcile call** (#33). `reconcileViaAttach` built the union of the `computed:` sugar key and `viaFields: { f: via(computed(...)) }` for its collision guard, then used the *raw* sugar key for validation and apply — and gated validation on that raw key, so a call carrying only `viaFields` ran no validation at all. The field then did not exist, and every downstream reader degraded quietly: `get()` omitted it, `groupBy` folded every row into one bucket keyed `undefined`, and the `queryable: 'none'` gate could not fire because there was no posture to consult.
+
+⚠️ **This can now throw where it previously did nothing.** A virtual computed field is refused on a late-attach call in *either* spelling, matching the message the `computed:` key already produced; a materialized one attaches in either spelling. If this throws for you, declare the field on the collection's first `vault.collection()` call — and note that registering a query-form materialized view opens its source collection, which makes your own declaration the late call.
+
+**`erasureCompleteness(result)`** (#34), new at `@noy-db/hub/forget` — the answer to the only question a caller of `vault.forget()` actually has. `ForgetResult` carries twelve independent residue channels; none throws, and only two document that a non-empty value means the erasure was incomplete. "Erasure succeeded" is not `recordsShredded > 0` — it is every channel empty — and the result's shape suggests otherwise, because the counts read like a success report and the residues read like diagnostics.
+
+The accessor is **default-deny**: every array field counts as residue unless explicitly exempted, so a channel added later joins the check by construction. Enumerating the names would have reproduced the defect one level up, silently turning a correct caller into an incorrect one on the next additive release. `derivedResidueFrozen` counts as incomplete deliberately — a frozen period keeps the subject's contribution permanently, the erasure genuinely is not total, and a caller answering a data subject needs to know. Scope is the mechanism only: hub reports what it did, never whether a retention was lawful.
+
+**`ForgetResult.blobResidueRecords`** (#28) — the same blob residue as `blobResidueCollections`, at `collection:id` grain. The coarse field answers "some blobs in `invoices` did not shred"; a specific erasure request asks "was *this* record's data reclaimed", and only the finer answer can be reconciled against a later reclaim pass. The record id was in scope on the line that recorded only the collection. `blobResidueCollections` is unchanged — this is an additive sibling, because widening a published `string[]` in place would silently change every existing reader with no type error.

@@ -295,10 +295,12 @@ describe('forget() fanout to derived residue (#622)', () => {
     // #650 Task 5 — lookupReferencesCascaded/lookupReferencesNullified are new,
     // additive fields (see lookup-forget-ref.test.ts); lookupReferencesResidue is
     // additive too (#650 Task 5 review, Important fix); derivedResidueUndecodable
-    // is additive too (#776); derivedResidueDeclined is additive too (#785); every
-    // pre-existing key below is unchanged.
+    // is additive too (#776); derivedResidueDeclined is additive too (#785);
+    // blobResidueRecords is additive too (#28 — the record-grained sibling of
+    // blobResidueCollections, which is unchanged); every pre-existing key below
+    // is unchanged.
     expect(Object.keys(result).sort()).toEqual([
-      'blobResidueCollections', 'blobsRetainedShared', 'blobsShredded', 'collections',
+      'blobResidueCollections', 'blobResidueRecords', 'blobsRetainedShared', 'blobsShredded', 'collections',
       'derivedAggregatesRecomputed', 'derivedRecordsErased', 'derivedResidueDeclined', 'derivedResidueFrozen', 'derivedResidueUndecodable',
       'historyVersionsShredded', 'indexPostingsPurged', 'indexResidue', 'ledgerDeltaResidue',
       'ledgerDeltasPurged', 'ledgerEntry',

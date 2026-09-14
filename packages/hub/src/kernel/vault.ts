@@ -2078,6 +2078,7 @@ export class Vault {
     let recordsShredded = 0; let historyVersionsShredded = 0
     const collections = new Set<string>(); const unmigratedRecords: string[] = []
     const blobResidueCollections = new Set<string>()
+    const blobResidueRecords = new Set<string>() // #28 — record-grained sibling; see ForgetResult.blobResidueRecords
     let blobsShredded = 0; let blobsRetainedShared = 0; let indexPostingsPurged = 0
     let sealedFieldsShredded = 0; let sealedCekEnvelopesPurged = 0; let ledgerDeltasPurged = 0
     const sealedCekResidue: string[] = []; const sealedResidue: string[] = []; const indexResidue: string[] = []; const ledgerDeltaResidue: string[] = []
@@ -2155,7 +2156,7 @@ export class Vault {
       } catch {
         sealedCekResidue.push(`${ref.collection}:${ref.id}`)
       }
-      if (blobsEnabled && !shouldSkipBlobScan(scopedPurge, this.blobFieldsRegistry.has(ref.collection))) { try { await coll.blob(ref.id).mintShredIntent(live?._tier ?? 0) } catch { blobResidueCollections.add(ref.collection) } } // #753 C5 marker PRE-tombstone: crash-safety ENHANCEMENT, not an erasure precondition — mint failure degrades to residue, never blocks the shred below (whole-branch review)
+      if (blobsEnabled && !shouldSkipBlobScan(scopedPurge, this.blobFieldsRegistry.has(ref.collection))) { try { await coll.blob(ref.id).mintShredIntent(live?._tier ?? 0) } catch { blobResidueCollections.add(ref.collection); blobResidueRecords.add(`${ref.collection}:${ref.id}`) } } // #753 C5 marker PRE-tombstone: crash-safety ENHANCEMENT, not an erasure precondition — mint failure degrades to residue, never blocks the shred below (whole-branch review)
       let shred: { previousVersion: number } | null
       try {
         shred = await coll._writeTombstone(ref.id, actor)
@@ -2209,11 +2210,11 @@ export class Vault {
           .shredAllForRecord(live?._tier ?? 0) // #724 C3: pre-tombstone tier — the tombstone this loop already wrote drops `_tier`
         blobsShredded += r.shredded.length
         blobsRetainedShared += r.retainedShared.length
-        if (r.residue.length > 0) blobResidueCollections.add(ref.collection)
+        if (r.residue.length > 0) { blobResidueCollections.add(ref.collection); blobResidueRecords.add(`${ref.collection}:${ref.id}`) }
       } else {
         try {
           const [slotIds, verKeys] = await Promise.all([this.adapter.list(this.name, `_blob_slots_${ref.collection}`), this.adapter.list(this.name, `_blob_versions_${ref.collection}`)]) // #750: version rows are residue too when the blob service is off
-          if (slotIds.includes(ref.id) || verKeys.some((k) => k.startsWith(`${ref.id}::`))) blobResidueCollections.add(ref.collection)
+          if (slotIds.includes(ref.id) || verKeys.some((k) => k.startsWith(`${ref.id}::`))) { blobResidueCollections.add(ref.collection); blobResidueRecords.add(`${ref.collection}:${ref.id}`) }
         } catch {
           // No blob-slots collection for this collection — nothing to report.
         }
@@ -2272,6 +2273,7 @@ export class Vault {
       blobsShredded,
       blobsRetainedShared,
       blobResidueCollections: [...blobResidueCollections],
+      blobResidueRecords: [...blobResidueRecords],
       indexPostingsPurged,
       indexResidue,
       sealedFieldsShredded,

@@ -465,6 +465,26 @@ export function reconcileViaAttach(
   coll: ReconcilableCollection, graph: ViaGraph, name: string,
   vaultCtx: ViaReconcileVaultCtx, plan: ReconcileLateAttachPlan,
 ): void {
+  // #33 — the UNION of both spellings of a computed field: the `computed:` sugar
+  // key and `viaFields: { f: via(computed(...)) }`. Hoisted out of the collision
+  // guard below, which used to be the ONLY place the merged view existed.
+  //
+  // ⛔ That was the defect. The guard saw both spellings; validation and apply
+  // further down read the RAW `plan.computed`, so a via()-spelled entry was
+  // collision-checked and then silently dropped — and because the validation
+  // gate itself tested `plan.computed`, a call carrying ONLY `viaFields` ran no
+  // validation at all. The field simply never existed, so every downstream
+  // reader degraded quietly rather than failing: `get()` omitted it, `groupBy`
+  // folded every row into one bucket keyed `undefined`, and #29's posture gate
+  // could not fire because there was no posture to consult.
+  //
+  // ⚠️ The two spellings must stay indistinguishable here. `mergeViaFields`
+  // already unifies them on the CONSTRUCTION path (`collection-config.ts`'s
+  // `unifyComputedFields`); this is the same unification on the late-attach
+  // path, which is the one place it had been missed.
+  const allComputed = { ...(plan.computed ?? {}), ...(plan.effectiveViaFields.computedFields ?? {}) }
+  const hasComputed = Object.keys(allComputed).length > 0
+
   guardReconcileCollisions(coll._via, {
     moneyFields: plan.effectiveViaFields.moneyFields,
     i18nFields: plan.effectiveViaFields.i18nFields,
@@ -472,7 +492,7 @@ export function reconcileViaAttach(
     lookupFields: plan.effectiveViaFields.lookupFields,
     classifiedFields: plan.classifiedFields !== undefined ? resolveClassifiedFields(name, plan.classifiedFields).byField : undefined,
     blobFields: plan.blobFields,
-    computed: { ...(plan.computed ?? {}), ...(plan.effectiveViaFields.computedFields ?? {}) },
+    computed: allComputed,
   })
   // #664 Part 2b — the matrix-tier lookup gate must run here, BEFORE money/computed/classified
   // apply below (Finding-M2 ordering law — see `refuseUnattachableMatrixLookupFields`'s own doc
@@ -483,7 +503,7 @@ export function reconcileViaAttach(
     refuseUnattachableMatrixLookupFields(vaultCtx, plan.effectiveViaFields.lookupFields)
   }
 
-  const reconcilePlan = (plan.computed || plan.classifiedFields)
+  const reconcilePlan = (hasComputed || plan.classifiedFields)
     ? validateReconcileGraphEdges(graph, name, {
         // `moneyFields` here is the MERGED view (`plan.effectiveViaFields.moneyFields`), not the
         // raw incoming `moneyFields` option — intentional (controller ruling, #664a review): a
@@ -491,7 +511,7 @@ export function reconcileViaAttach(
         // validation exactly like a sugar-keyed one does, the #627-consistent semantics. Pre-#664
         // this reconciled via a blind `options as unknown as ReconcileGraphOptions` cast, which
         // silently read the RAW option instead — never intentional, just uncovered before now.
-        moneyFields: plan.effectiveViaFields.moneyFields, classifiedFields: plan.classifiedFields, computed: plan.computed,
+        moneyFields: plan.effectiveViaFields.moneyFields, classifiedFields: plan.classifiedFields, computed: allComputed,
       } as ReconcileGraphOptions)
     : undefined
 
@@ -505,7 +525,10 @@ export function reconcileViaAttach(
     coll._attachDeclaredRefs(vaultCtx.refRegistry.getOutbound(name))
   }
   if (plan.effectiveViaFields.moneyFields) coll._applyMoneyFields(plan.effectiveViaFields.moneyFields)
-  if (plan.computed) coll._applyComputed(plan.computed)
+  // #33 — the merged view, not `plan.computed`. A virtual entry in either
+  // spelling has already been refused by `validateReconcileGraphEdges` above,
+  // so everything reaching here is materialized and safe to attach.
+  if (hasComputed) coll._applyComputed(allComputed)
   if (plan.fieldMeta) coll._applyFieldMeta(plan.fieldMeta)
   if (plan.meta) coll._applyMeta(plan.meta)
   if (plan.classifiedFields) coll._applyClassifiedFields(plan.classifiedFields)
