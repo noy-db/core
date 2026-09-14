@@ -2884,6 +2884,27 @@ export class BlobSet {
    * and "its attachments are released" are one operation. Ungated: the record
    * delete itself already passed the gate bus. Ref-counted like any release —
    * content another record still holds survives.
+   *
+   * ⛔ RELEASE IS NOT ERASURE, AND THE API CANNOT TELL YOU WHICH YOU GOT
+   * (noy-db/core#28). Releasing the slot is unconditional; when the BYTES
+   * leave the store depends on the collection's key mode:
+   *
+   * - `perRecordKeys: true` — crypto-shredded on the spot at refCount 0.
+   * - legacy (shared DEK) — chunks RETAINED under the collection DEK until
+   *   `vault.compact({ reclaimLegacyBlobs: true })` runs (#1453).
+   *
+   * Both give the caller the same `null` from `blob(id).get(slot)`, and the
+   * record, the slot list and the store listing all agree it is gone — so
+   * every signal a consumer has says "erased" while the ciphertext is still
+   * on disk, recoverable by anyone holding the DEK. pilot-1 measured exactly
+   * this (chunks 2 → 2 on delete) and reasonably read the deferral as a
+   * broken cascade.
+   *
+   * ⭐ So: if a delete is meant to ERASE — a subject-access request, a
+   * retention policy — either put the blobs on a `perRecordKeys` collection
+   * or run the reclaim pass, and assert on `compact()`'s
+   * `unreferencedLegacyBlobs.reclaimed`, never on the null read. The seam is
+   * pinned in `__tests__/1451-delete-releases-blobs.test.ts`.
    */
   async releaseAll(): Promise<void> {
     const { slots } = await this.loadSlots()

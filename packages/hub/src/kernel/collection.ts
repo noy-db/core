@@ -2385,6 +2385,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
   /**
    * Delete a record by ID. Runs inside the hub's write-queue tracker
    * so `hub.writeQueue.pending` reflects this write.
+   * ⚠️ Blobs are released (#1451) but a legacy collection defers the erase — a `null` blob read is NOT proof the bytes are gone; see {@link BlobSet.releaseAll} (noy-db/core#28).
    */
   async delete(id: string): Promise<void> {
     return trackKeyedWrite(this.adapter, this.vault, this.name, id, () => this.#deleteGated(id)) // #1420 — see put()

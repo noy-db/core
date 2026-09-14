@@ -1285,7 +1285,18 @@ const KERNEL_SURFACE_BUDGET = {
   // each. It cannot move to a service: the gates and the queue are both
   // always-on kernel, and the whole point is that they share one span. The
   // rationale lives in `kernel/write-queue.ts`'s `trackGated` doc, not here.
-  'packages/hub/src/kernel/collection.ts': 4426,
+  // Bumped 4426→4427 (noy-db/core#28, 2026-09-14): ONE LINE, AND IT IS A
+  // COMMENT. `delete()`'s doc now warns that a `null` blob read is not proof
+  // of erasure on a legacy collection. The mechanism and the full explanation
+  // live in `with-shape/blobs/blob-set.ts` (`releaseAll`), outside the kernel
+  // and outside this ceiling — only the pointer is here, because the verb a
+  // consumer calls is where they look, and the consumer who filed #28 looked
+  // exactly there and found nothing.
+  // ⛔ This is NOT precedent for code: the ceiling exists to stop capability
+  // accreting in the always-on kernel, and a stripped comment adds no runtime
+  // and no bundle bytes. A bump justified by "it's only a few lines" of
+  // behaviour is the thing this table is here to refuse.
+  'packages/hub/src/kernel/collection.ts': 4427,
   // Lowered 4549→4548 (#826/#798/#812 deprecation cut, 2026-07-26): removed the #799 cover delegators + option key, the dead auth/autoSync/syncInterval options, and the /bundle retirement fallout. Ratchets the #799 bumps back down as their comments promised.
   // Bumped 3640→3700 (2026-06-08): deferred-numbering wiring — `sequence()`
   // routing + `runNumberingPass` + the cache-coherent `stamp` closure. The

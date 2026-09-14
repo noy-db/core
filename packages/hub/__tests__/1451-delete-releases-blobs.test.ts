@@ -80,4 +80,44 @@ describe('#1451 — legacy collection (no perRecordKeys)', () => {
     expect(await workers.blob('w1').list()).toEqual([])
     expect(await workers.blob('w1').get('idCard')).toBeNull()
   })
+
+  /**
+   * #29 (noy-db/core) — the SEAM between this issue and #1453, and the reason
+   * it is pinned here rather than left to the header prose above.
+   *
+   * ⛔ pilot-1 measured exactly this and read it as data loss deferred into a
+   * worse state: chunks 2 → 2 on delete, while `blob().get()` returns `null`.
+   * Every signal the API gives says "erased" and the bytes are still on disk
+   * under the collection DEK. They concluded the #1451 fix was conditional and
+   * the legacy half broken.
+   *
+   * ⭐ It is not broken — it is DEFERRED, and `compact({ reclaimLegacyBlobs })`
+   * is the pass that finishes it. But nothing executable said so: #1451 tested
+   * the delete and stopped at the null read, #1453 tested reclaim after an
+   * OVERWRITE, and no test joined "record deleted" to "chunks reclaimed". A
+   * consumer counting chunks saw a number neither suite mentioned.
+   *
+   * So the two-mode difference is asserted as a DIFFERENCE, both halves in one
+   * test: eager shred where the collection can afford it, deferred GC where it
+   * cannot. A future change making legacy eager should fail here and be read
+   * as a deliberate posture change, not a silent one.
+   */
+  it('the chunks are RETAINED until a reclaim pass, and compact() then frees them', async () => {
+    const { store, vault, workers } = await vaultWith(false)
+    await workers.put('w1', { id: 'w1', name: 'A' })
+    await workers.blob('w1').put('idCard', bytes(300_000))
+    const held = (await store.list('V', BLOB_CHUNKS_COLLECTION)).length
+    expect(held).toBeGreaterThan(0)
+
+    await workers.delete('w1')
+
+    // The honest count: unreachable through the API, still present on disk.
+    expect(await workers.blob('w1').get('idCard')).toBeNull()
+    expect((await store.list('V', BLOB_CHUNKS_COLLECTION)).length).toBe(held)
+
+    const r = await vault.compact({ reclaimLegacyBlobs: true })
+    expect(r.unreferencedLegacyBlobs.reclaimed).toBeGreaterThan(0)
+    expect(await store.list('V', BLOB_CHUNKS_COLLECTION)).toEqual([])
+    expect(await store.list('V', BLOB_INDEX_COLLECTION)).toEqual([])
+  })
 })
