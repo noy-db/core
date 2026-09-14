@@ -24,6 +24,9 @@
  */
 export { withForget } from './active.js'
 export { NO_FORGET } from './strategy.js'
+// #34 — "was the erasure complete?", default-deny over every residue channel.
+export { erasureCompleteness } from './completeness.js'
+export type { ErasureCompleteness } from './completeness.js'
 export type {
   SubjectDeclaration,
   ForgetStrategy,
