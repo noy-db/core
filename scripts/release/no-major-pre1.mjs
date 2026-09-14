@@ -1,11 +1,17 @@
 /**
  * Refuse a `major` changeset while the version line is 0.x.
  *
- * ⛔ WHY THIS IS A RELEASE PRE-FLIGHT AND NOT A CI CHECK. `.changeset/` is
- * gitignored (`.gitignore:182` — "kept local; release notes come through the
- * workflow"), so a CI job scanning `.changeset/*.md` finds an EMPTY DIRECTORY
- * and passes. Forever, on every branch, while reporting that it checked. The
- * only machine where those files exist is the one about to cut the release.
+ * ⭐ RUNS IN BOTH PLACES SINCE 2026-09-14. It began as a release pre-flight
+ * only, because `.changeset/` was gitignored — a CI job scanning
+ * `.changeset/*.md` found an EMPTY DIRECTORY and passed, forever, while
+ * reporting that it checked. That is now fixed at the root: the directory is
+ * tracked, so CI receives the files and `scripts/__tests__/no-major-pre1.test.ts`
+ * asserts the repo's own pending changesets directly.
+ *
+ * ⚠️ The pre-flight in `release.mjs` STAYS, and is not redundant. CI checks
+ * what was committed; the pre-flight checks what is on the release machine at
+ * the moment of the cut, which is the only state that can actually produce a
+ * wrong version.
  *
  * ⭐ WHAT IT CATCHES. In a 0.x line `major` does not mean "1.0.0" — it means
  * "breaking", which this repo already treats as ordinary (`CLAUDE.md`:

@@ -1,0 +1,10 @@
+{
+  "subpath": "@noy-db/hub/query/reduce",
+  "entry": "./dist/query/reduce/index.js",
+  "values": [
+    "GroupCardinalityError",
+    "dateTrunc",
+    "isDateTruncKey",
+    "truncateDate"
+  ]
+}

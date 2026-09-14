@@ -1,0 +1,20 @@
+{
+  "subpath": "@noy-db/hub/search",
+  "entry": "./dist/search/index.js",
+  "values": [
+    "DEFAULT_INDEX_MIN_VECTORS",
+    "InvertedIndex",
+    "MemoryIndexStore",
+    "NO_SEARCH",
+    "SearchNotEnabledError",
+    "buildStringFieldEntries",
+    "extractSnippet",
+    "fuseRetrieval",
+    "searchScan",
+    "segmentTokenizer",
+    "segmentTokens",
+    "tokenize",
+    "withSearch",
+    "withVectorIndex"
+  ]
+}

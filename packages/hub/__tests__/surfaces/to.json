@@ -1,0 +1,16 @@
+{
+  "subpath": "@noy-db/hub/to",
+  "entry": "./dist/to/index.js",
+  "values": [
+    "ConflictError",
+    "DuplicateStoreKindError",
+    "NOYDB_ENVELOPE_GENERATION",
+    "NetworkError",
+    "PodVersionConflictError",
+    "StoreCapabilityError",
+    "UnknownStoreKindError",
+    "createStoreLocator",
+    "isConflictError",
+    "isPodStore"
+  ]
+}

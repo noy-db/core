@@ -1,0 +1,9 @@
+{
+  "subpath": "@noy-db/hub/forget",
+  "entry": "./dist/forget/index.js",
+  "values": [
+    "NO_FORGET",
+    "SUBJECT_INDEX_COLLECTION",
+    "withForget"
+  ]
+}

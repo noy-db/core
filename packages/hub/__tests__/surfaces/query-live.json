@@ -1,0 +1,7 @@
+{
+  "subpath": "@noy-db/hub/query/live",
+  "entry": "./dist/query/live/index.js",
+  "values": [
+    "buildLiveQuery"
+  ]
+}

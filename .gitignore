@@ -115,7 +115,13 @@ private/
 
 # ─── Session / cookies / local state ───────────────────────────────────
 cookies.txt
-session.json
+# ⚠️ ANCHORED (2026-09-14). A bare `session.json` matches at ANY depth, and it
+# silently swallowed `packages/hub/__tests__/surfaces/session.json` — a frozen
+# surface for the `/session` subpath, which would have existed locally, been
+# absent from the pushed tree, and made every local gate pass while CI failed
+# on something unrelated. `sources-tracked` caught it. These rules are for
+# local state at the repo root; `*.session` still covers the general shape.
+/session.json
 *.session
 *.lockfile.local
 .firebaserc.local
@@ -175,11 +181,17 @@ backup/
 
 # ─── Project metadata ──────────────────────────────────────────────────
 # `.npmrc` is a common accidental-token surface (_authToken=...).
-# `.changeset/` is kept local; release notes come through the workflow.
+# `.changeset/` IS TRACKED (changed 2026-09-14). It was ignored so "release
+# notes come through the workflow" — but the cost was measured twice in two
+# days: a `changeset version` run deleted 8 pending changesets and `git
+# restore` could not recover them, because git had never seen them; and the
+# 0.x `major` guard in scripts/release/no-major-pre1.mjs cannot run in CI over
+# files CI never receives. Tracking them makes release notes reviewable in the
+# PR that earns them, recoverable like any other file, and visible to CI.
+# `.npmrc` stays ignored — it is a real token surface, which `.changeset/` is not.
 # `.github/` is ignored by default, but workflows are needed for CI —
 # selectively allow `.github/workflows/`.
 .npmrc
-.changeset/
 .github/*
 !.github/workflows/
 !.github/workflows/**

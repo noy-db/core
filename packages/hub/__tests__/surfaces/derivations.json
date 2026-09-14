@@ -1,0 +1,15 @@
+{
+  "subpath": "@noy-db/hub/derivations",
+  "entry": "./dist/derivations/index.js",
+  "values": [
+    "DerivationCapExceededError",
+    "DerivationCycleError",
+    "DerivationDepthError",
+    "DerivationExecutor",
+    "DerivationOutputShapeError",
+    "DerivationOutputUnknownError",
+    "DerivationRegistry",
+    "withDerivation",
+    "withRollup"
+  ]
+}

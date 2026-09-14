@@ -1,0 +1,10 @@
+{
+  "subpath": "@noy-db/hub/shadow",
+  "entry": "./dist/shadow/index.js",
+  "values": [
+    "CollectionFrame",
+    "NO_SHADOW",
+    "VaultFrame",
+    "withShadow"
+  ]
+}

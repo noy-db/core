@@ -1,0 +1,12 @@
+{
+  "subpath": "@noy-db/hub/sealed-record",
+  "entry": "./dist/sealed-record/index.js",
+  "values": [
+    "NO_SEALED_RECORD",
+    "SealedRecordExpiredError",
+    "SealedRecordMismatchError",
+    "SealedRecordNotEnabledError",
+    "openSealedRecord",
+    "withSealedRecord"
+  ]
+}

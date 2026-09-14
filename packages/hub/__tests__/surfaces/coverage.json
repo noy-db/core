@@ -1,0 +1,11 @@
+{
+  "subpath": "@noy-db/hub/coverage",
+  "entry": "./dist/coverage/index.js",
+  "values": [
+    "BloomFilter",
+    "CoverageRegistry",
+    "HyperLogLog",
+    "NO_COVERAGE",
+    "withCoverage"
+  ]
+}

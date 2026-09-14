@@ -1,0 +1,18 @@
+{
+  "subpath": "@noy-db/hub/money",
+  "entry": "./dist/money/index.js",
+  "values": [
+    "MoneyCurrencyError",
+    "MoneyPrecisionError",
+    "MoneyUnsupportedError",
+    "allocate",
+    "asMoney",
+    "exactMath",
+    "isMoneyDescriptor",
+    "isMoneyString",
+    "money",
+    "moneyNumber",
+    "mulRate",
+    "scaleForCurrency"
+  ]
+}

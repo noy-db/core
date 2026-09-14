@@ -1,0 +1,8 @@
+{
+  "subpath": "@noy-db/hub/sync",
+  "entry": "./dist/sync/index.js",
+  "values": [
+    "NO_SYNC",
+    "withSync"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "subpath": "@noy-db/hub/overlay-views",
+  "entry": "./dist/overlay-views/index.js",
+  "values": [
+    "OverlayBaseIsVirtualError",
+    "OverlayCollectionUnavailableError",
+    "OverlayIdMismatchError",
+    "OverlayNameCollisionError",
+    "OverlayedCollection",
+    "OverlayedViewRegistry",
+    "withOverlayedView"
+  ]
+}

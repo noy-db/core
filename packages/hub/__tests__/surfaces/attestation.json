@@ -1,0 +1,21 @@
+{
+  "subpath": "@noy-db/hub/attestation",
+  "entry": "./dist/attestation/index.js",
+  "values": [
+    "ATTESTATIONS_COLLECTION",
+    "AttestationError",
+    "AttestationNotEnabledError",
+    "NO_ATTESTATION",
+    "decodeQr",
+    "getRevokedDocIdsCore",
+    "isRevoked",
+    "issueAttestationCore",
+    "publishRevocationListCore",
+    "revokeDocCore",
+    "signRevocationList",
+    "unrevokeDocCore",
+    "verifyAttestation",
+    "verifyRevocationList",
+    "withAttestation"
+  ]
+}

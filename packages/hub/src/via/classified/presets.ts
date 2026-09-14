@@ -40,6 +40,44 @@ export const classified = {
     return { _noydbClassifiedGroup: true, _viaBrand: 'classified', preset: 'creditCard', members }
   },
 
+  /**
+   * A checksummed government or institutional identifier — a national ID, a
+   * tax number, an employer registration.
+   *
+   * ⭐ The preset exists for the FOUR SECURITY-RELEVANT DEFAULTS, not to save
+   * typing (#26). Hand-rolling a `ClassifiedFieldSpec` means choosing
+   * `storage`, `list`, `sensitivity` and `verifyNormalize` yourself, and
+   * getting `sensitivity` or `list` wrong on a national ID is not cosmetic.
+   * Supply the checksum; the posture is decided here.
+   *
+   * Defaults to `recoverable` + a masked list, which is the shape that lets an
+   * advisor open a list screen without reading every identifier in full while
+   * still allowing an authorised `reveal()`.
+   *
+   * ⛔ IT CANNOT BE UNIQUELY INDEXED, and that is by design rather than a gap
+   * (core#20). A recoverable classified field is sealed, sealed fields are
+   * excluded from the deterministic index, and unique constraints read the
+   * DECRYPTED record — where the value is a `Sealed` handle, not a string. If
+   * you need exact-equality dedup on this identifier, it must stay a plain
+   * field with `unique: true`; the two properties are mutually exclusive.
+   *
+   * @param validate returns `null` when the value passes, or a message. Use
+   *   {@link luhnCheck} for Luhn; supply your own for mod-11 and friends.
+   */
+  checksummed(options: {
+    validate: (value: unknown) => string | null
+    sensitivity?: ClassifiedFieldSpec['sensitivity']
+    list?: ClassifiedFieldSpec['list']
+  }): ClassifiedFieldSpec {
+    return {
+      _noydbClassified: true, _viaBrand: 'classified', preset: 'checksummed',
+      storage: 'recoverable',
+      sensitivity: options.sensitivity ?? 'pii',
+      list: options.list ?? { kind: 'omit' },
+      validate: options.validate,
+    }
+  },
+
   birthDate(): ClassifiedFieldSpec {
     return {
       _noydbClassified: true, _viaBrand: 'classified', preset: 'birthDate', storage: 'recoverable',

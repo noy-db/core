@@ -1,0 +1,18 @@
+{
+  "subpath": "@noy-db/hub/query",
+  "entry": "./dist/query/index.js",
+  "values": [
+    "CollectionIndexes",
+    "FieldNotQueryableError",
+    "IndexRequiredError",
+    "IndexWriteFailureError",
+    "Query",
+    "QueryExtensionMissingError",
+    "ScanBuilder",
+    "UnsafePatternError",
+    "evaluateClause",
+    "evaluateFieldClause",
+    "executePlan",
+    "readPath"
+  ]
+}

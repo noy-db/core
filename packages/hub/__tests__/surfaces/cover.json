@@ -1,0 +1,20 @@
+{
+  "subpath": "@noy-db/hub/cover",
+  "entry": "./dist/cover/index.js",
+  "values": [
+    "COVER_FIELDS",
+    "COVER_RECORD_ID",
+    "DEFAULT_COVER_SCHEMA",
+    "isCover",
+    "loadCover",
+    "mergeCustom",
+    "pickLocale",
+    "readCover",
+    "resolveCoverSchema",
+    "resolveLocale",
+    "resolveSchema",
+    "saveCover",
+    "validateCoverInput",
+    "validateCoverSize"
+  ]
+}

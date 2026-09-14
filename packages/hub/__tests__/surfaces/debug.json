@@ -1,0 +1,9 @@
+{
+  "subpath": "@noy-db/hub/debug",
+  "entry": "./dist/debug/index.js",
+  "values": [
+    "DebugPlaintextError",
+    "DebugReservedFieldError",
+    "readPlaintextRecord"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "subpath": "@noy-db/hub/broker",
+  "entry": "./dist/broker/index.js",
+  "values": [
+    "BrokerEnrolmentError",
+    "BrokerNotEnabledError",
+    "BrokerProofError",
+    "NO_BROKER",
+    "issueChallenge",
+    "verifyBrokerProof",
+    "withBroker"
+  ]
+}

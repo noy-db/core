@@ -1,0 +1,20 @@
+{
+  "subpath": "@noy-db/hub/directory",
+  "entry": "./dist/directory/index.js",
+  "values": [
+    "DIRECTORY_RECORD_ID",
+    "META_COLLECTION",
+    "UserApi",
+    "VISIBILITY_RECORD_PREFIX",
+    "deleteUserEnvelope",
+    "deleteUserVisibility",
+    "listUserEnvelopeIds",
+    "loadUserEnvelope",
+    "persistDirectoryConfig",
+    "persistUserVisibility",
+    "readDirectoryConfig",
+    "readUserVisibility",
+    "saveUserEnvelope",
+    "visibilityRecordId"
+  ]
+}

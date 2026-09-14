@@ -1,0 +1,29 @@
+{
+  "subpath": "@noy-db/hub/history",
+  "entry": "./dist/history/index.js",
+  "values": [
+    "CollectionInstant",
+    "LEDGER_COLLECTION",
+    "LEDGER_DELTAS_COLLECTION",
+    "LedgerStore",
+    "NO_HISTORY",
+    "VaultInstant",
+    "applyPatch",
+    "canonicalJson",
+    "clearHistory",
+    "computePatch",
+    "diff",
+    "envelopePayloadHash",
+    "formatDiff",
+    "getHistory",
+    "getVersionEnvelope",
+    "hashEntry",
+    "historyIdentity",
+    "paddedIndex",
+    "parseIndex",
+    "pruneHistory",
+    "saveHistory",
+    "sha256Hex",
+    "withHistory"
+  ]
+}

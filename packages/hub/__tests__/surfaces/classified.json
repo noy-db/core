@@ -1,0 +1,20 @@
+{
+  "subpath": "@noy-db/hub/classified",
+  "entry": "./dist/classified/index.js",
+  "values": [
+    "ClassifiedConfigError",
+    "ClassifiedNeverStoredError",
+    "ClassifiedRevealError",
+    "ClassifiedRotationError",
+    "ClassifiedValidationError",
+    "ClassifiedVerifyError",
+    "NO_CLASSIFIED",
+    "classified",
+    "enforceClassifiedWrite",
+    "isClassifiedFieldSpec",
+    "isClassifiedGroup",
+    "luhnCheck",
+    "resolveClassifiedFields",
+    "withClassified"
+  ]
+}

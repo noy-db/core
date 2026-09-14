@@ -1,0 +1,11 @@
+{
+  "subpath": "@noy-db/hub/transactions",
+  "entry": "./dist/transactions/index.js",
+  "values": [
+    "TxCollection",
+    "TxContext",
+    "TxVault",
+    "runTransaction",
+    "withTransactions"
+  ]
+}

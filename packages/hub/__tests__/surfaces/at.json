@@ -1,0 +1,10 @@
+{
+  "subpath": "@noy-db/hub/at",
+  "entry": "./dist/at/index.js",
+  "values": [
+    "MemoryRecipientSealer",
+    "MemorySealer",
+    "SEALED_SECRET_RECORD_ID",
+    "parseSealedEnvelope"
+  ]
+}
