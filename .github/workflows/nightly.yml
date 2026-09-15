@@ -1,3 +1,5 @@
+# Adopted from noy-db/.github templates/nightly-caller.yml (2026-09-13).
+#
 # ⭐ THIS IS THE OTHER HALF OF THE CI TRIM (2026-09-13). The per-push run was
 # narrowed to a single Node major to keep the develop-and-bounce loop fast while
 # `@dev` is the family's only release surface. That trade is only honest if the
