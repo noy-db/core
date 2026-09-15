@@ -25,4 +25,4 @@ vault/collection isolation, edge cases (Unicode ids, 1 MB envelopes, `_del` mark
 
 ## License
 
-[MIT](./LICENSE) © vLannaAi
+[Apache-2.0](./LICENSE) © vLannaAi

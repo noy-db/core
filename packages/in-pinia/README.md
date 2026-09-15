@@ -154,4 +154,4 @@ See [ROADMAP.md](https://github.com/noy-db/docs/blob/main/ROADMAP.md) for the fo
 
 ## License
 
-MIT © vLannaAi
+Apache-2.0 © vLannaAi

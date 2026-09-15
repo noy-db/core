@@ -77,4 +77,4 @@ const keyring = await unlockWebAuthn(loadEnrollment())
 
 ## License
 
-MIT © vLannaAi — see the [noy-db repo](https://github.com/noy-db/core) for full documentation.
+Apache-2.0 © vLannaAi — see the [noy-db repo](https://github.com/noy-db/core) for full documentation.

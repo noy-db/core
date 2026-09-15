@@ -61,4 +61,4 @@ A failed mutation publishes nothing; a `tx` publishes one frame per op only afte
 
 ## License
 
-MIT © vLannaAi
+Apache-2.0 © vLannaAi

@@ -340,4 +340,4 @@ pnpm add @noy-db/hub@next @noy-db/to-memory@next
 
 ## License
 
-[MIT](./LICENSE) © vLannaAi
+[Apache-2.0](./LICENSE) © vLannaAi

@@ -34,4 +34,4 @@ Record writes are staged in a `.tmp` sidecar and renamed into place, so an inter
 
 ## License
 
-MIT © vLannaAi — see the [noy-db repo](https://github.com/noy-db/core) for full documentation.
+Apache-2.0 © vLannaAi — see the [noy-db repo](https://github.com/noy-db/core) for full documentation.

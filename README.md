@@ -397,7 +397,7 @@ The hub package itself uses only `crypto.subtle`, which is built into every targ
 
 ## License
 
-[MIT](LICENSE)
+[Apache-2.0](LICENSE)
 
 ---
 

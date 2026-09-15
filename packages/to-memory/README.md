@@ -32,4 +32,4 @@ Data lives only in the current process — it's gone when the process exits. Per
 
 ## License
 
-MIT © vLannaAi — see the [noy-db repo](https://github.com/noy-db/core) for full documentation.
+Apache-2.0 © vLannaAi — see the [noy-db repo](https://github.com/noy-db/core) for full documentation.

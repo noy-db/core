@@ -38,4 +38,4 @@ Pass a [`@noy-db/to-meter`](https://www.npmjs.com/package/@noy-db/to-meter) hand
 
 ## License
 
-MIT
+Apache-2.0
