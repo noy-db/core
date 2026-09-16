@@ -11,8 +11,19 @@
  *
  * So this file records what was measured on 2026-09-13, including the parts
  * NOT fixed, so the next person inherits the map instead of re-deriving it.
+ *
+ * ⚠️ WHAT STAYS UNGUARDED, recorded here in prose rather than as a test:
+ * `with-lookup/embeddings` and `with-lookup/search` resolve paths through the
+ * same unvalidated helper, and only DECLARATION sites are guarded. The durable
+ * fix is a branded compiled-path type across every `getAtPath` /
+ * `setAtPathInPlace` caller — deliberately not smuggled into this change.
+ * ⛔ The original note put a call-site count ("33 across 8 files") inside a
+ * test body next to `expect(true).toBe(true)`. Re-measured 2026-09-15 it is
+ * 41 across 10 — so the count was stale AND unfalsifiable at once. A number
+ * nothing checks is prose; it is now written as prose, undated numbers and all.
  */
 import { describe, it, expect } from 'vitest'
+import { z } from 'zod'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { memoryStore } from '../src/kernel/memory-store.js'
 import { i18nText } from '../src/via/i18n/core.js'
@@ -28,6 +39,14 @@ async function vault() {
   const db = await createNoydb({ store: memoryStore(), user: 'a', secret: 'pw-s2-8xx', i18nStrategy: withI18n() })
   return db.openVault('v1')
 }
+
+// Only the leaf-gap case below needs a readable schema — the guard is inert
+// without one, which is exactly what would make that case pass vacuously.
+const schema = z.object({
+  id: z.string(),
+  title: z.record(z.string(), z.string()),
+  contacts: z.array(z.object({ name: z.record(z.string(), z.string()) })).optional(),
+})
 
 describe('a malformed i18n path fails at construction', () => {
   it('refuses, instead of accepting a declaration that can never apply', async () => {
@@ -84,17 +103,40 @@ describe('the sweep of 2026-09-13 — what was measured, and what was not', () =
     expect(flatKey).toHaveLength(4)
   })
 
-  it('⛔ records the gap this guard does NOT close', () => {
-    // A well-formed path naming a field that does not exist — `titel` for
-    // `title` — is syntactically valid and silently inert. Catching it needs
-    // the collection's schema, which is optional, so it is a design decision
-    // rather than a guard. Filed separately; NOT fixed here.
+  it('⛔ asserts the gap this guard does NOT close — a nested LEAF typo', async () => {
+    // ⭐ THIS WAS A COMMENT ASSERTING NOTHING, AND IT WENT STALE THE SAME DAY.
+    // It read "a well-formed path naming a field that does not exist — `titel`
+    // for `title` — ... NOT fixed here". #25 closed exactly that case 45
+    // minutes later (`declared-field-guard.test.ts`), and nothing failed,
+    // because the only assertion here was `expect(true).toBe(true)`. A record
+    // that cannot fail does not notice being overtaken.
     //
-    // Also unclosed: `with-lookup/embeddings` and `with-lookup/search` resolve
-    // paths through the same unvalidated helper. 33 call sites across 8 files
-    // reach `getAtPath`/`setAtPathInPlace`; only declaration sites are guarded.
-    // Making the skip impossible means a branded compiled-path type across all
-    // 33 — the durable fix, deliberately not smuggled into this change.
-    expect(true).toBe(true)
+    // So the gap is asserted now, at its real width. The ROOT segment IS
+    // checked against the schema; the LEAF of a nested path is not —
+    // `schemaFieldKeys` enumerates top-level keys only, which
+    // `assertDeclaredField`'s header states. `contacts` resolves, `naem` is
+    // never verified, and the declared rule is silently inert.
+    //
+    // ⚠️ WHEN THIS TEST FAILS, THE GAP CLOSED — that is the point. Do not
+    // relax it back to a no-throw; move it to the refused side and say so.
+    const v = await vault()
+    expect(() => v.collection('leaf-typo', {
+      schema,
+      i18nFields: { 'contacts[].naem': i18nText({ languages: ['en'], required: 'all' }) },
+    })).not.toThrow()
+    // The control: the same typo in the ROOT of the same path IS refused, so
+    // the line above pins a leaf-specific gap and not an inert guard.
+    //
+    // ⛔ THE TWO CALLS MUST USE DIFFERENT COLLECTION NAMES. `vault.collection()`
+    // is memoized by name (`vault.ts` — `collectionCache.get(collectionName)`)
+    // and `compileVias`, which runs this guard, executes on FIRST CONSTRUCTION
+    // ONLY. Reusing 'docs' here returned the cached handle, validated nothing,
+    // and the control silently did not throw — a false pass of exactly the
+    // shape the note on `vault()` above describes. Caught only because the
+    // control was written to fail loudly.
+    expect(() => v.collection('root-typo', {
+      schema,
+      i18nFields: { 'contakts[].name': i18nText({ languages: ['en'], required: 'all' }) },
+    })).toThrow(ValidationError)
   })
 })

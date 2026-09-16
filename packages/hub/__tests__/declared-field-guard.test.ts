@@ -19,6 +19,7 @@ import { z } from 'zod'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { memoryStore } from '../src/kernel/memory-store.js'
 import { i18nText } from '../src/via/i18n/core.js'
+import { dict } from '../src/via/lookup/descriptor.js'
 import { withI18n } from '../src/via/i18n/index.js'
 import { ValidationError } from '../src/kernel/errors.js'
 
@@ -105,13 +106,31 @@ describe('#25 — the guard stays silent when it cannot know', () => {
 })
 
 describe('#25 — lookupFields is deliberately NOT checked', () => {
-  it('accepts a lookup field absent from the schema — it DECLARES, not references', () => {
-    // Measured, not assumed: extending the existence check to lookupFields
-    // broke `composite-triggerby.test.ts:448`, which exists to pin that a
-    // match field "declared only via lookupFields" must not false-positive.
-    // A via family's key can be a DECLARATION rather than a REFERENCE, so
-    // existence-checking has to be justified per family.
-    expect(true).toBe(true)
+  // Measured, not assumed: extending the existence check to lookupFields broke
+  // `composite-triggerby.test.ts`, which exists to pin that a match field
+  // "declared only via lookupFields" must not false-positive. A via family's
+  // key can be a DECLARATION rather than a REFERENCE, so existence-checking has
+  // to be justified per family.
+  it('accepts a lookup field absent from the schema — it DECLARES, not references', async () => {
+    const v = await vault()
+    expect(() => v.collection('docs', {
+      schema,
+      lookupFields: { clientTag: dict('clientTag') },
+    })).not.toThrow()
+  })
+
+  it('and the guard is LIVE on that same collection — the control', async () => {
+    // ⚠️ Without this the case above passes vacuously. `declaredFieldAllowList`
+    // returns `undefined` — meaning "do not check" — for any collection whose
+    // schema it cannot enumerate, and a not-throwing assertion cannot tell that
+    // apart from the exemption it means to pin. Same schema, same vault: the
+    // i18n typo must still be refused, or the case above proves nothing.
+    const v = await vault()
+    expect(() => v.collection('docs', {
+      schema,
+      lookupFields: { clientTag: dict('clientTag') },
+      i18nFields: { titel: i18nText({ languages: ['en'], required: 'all' }) },
+    })).toThrow(ValidationError)
   })
 })
 

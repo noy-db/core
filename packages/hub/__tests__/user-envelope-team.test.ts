@@ -6,12 +6,26 @@
  * canonical "render team-member list with profile data" path for
  * admin UIs.
  *
- * Presence `displayName`: not tested here. The existing
- * `team/presence.ts` already takes a generic payload `P`, so apps
- * just include `displayName` (sourced from
- * `vault.user.me<MyShape>().data.profile.displayName`) inside their
- * presence payload. No hub change needed; the recipe in #24
- * demonstrates the pattern.
+ * Presence `displayName`: not tested here, and deliberately not
+ * FAKE-tested here either. This file used to end with a describe block
+ * whose only assertion was `expect(true).toBe(true)`, carrying the
+ * pattern note below in a comment. It measured nothing, and its own
+ * prose had gone stale unnoticed — it named `team/presence.ts`, which
+ * does not exist; presence lives at `src/with-sync/presence.ts`. A
+ * claim nothing checks decays silently, so the note is prose now.
+ *
+ * THE PATTERN: presence takes a generic payload `P`, so apps include
+ * `displayName` (sourced from
+ * `vault.user.me<MyShape>().data.profile.displayName`) inside their own
+ * presence payload. Hub does not introspect the user envelope to
+ * populate presence and remains payload-agnostic. No hub change needed;
+ * the recipe in #24 demonstrates the pattern.
+ *
+ * Payload genericity IS asserted — `__tests__/presence.test.ts` round-
+ * trips an app-defined payload across two encrypted peers (15 tests).
+ * What no test covers is the envelope->presence hop specifically; doing
+ * so needs this file to grow a two-client sync harness, which is why it
+ * was left as prose rather than written badly.
  *
  * @see design-history/2026-05-05-user-envelope-design.md
  */
@@ -124,26 +138,5 @@ describe('team integration — listUsersWithEnvelopes (#23)', () => {
     // The keyring info is still present so the caller can fall back
     // to the keyring's display_name.
     expect(carol.user.displayName).toBe('Carol')
-  })
-})
-
-describe('team integration — presence pattern documentation (#23)', () => {
-  it('apps put displayName in their presence payload P (no hub change)', () => {
-    // This test documents the intended pattern: hub does not introspect
-    // the user envelope to populate presence. Apps source displayName
-    // from vault.user.me<MyShape>().data.profile.displayName and pass
-    // it as part of the generic payload P.
-    //
-    // Pseudocode (the real flow lives in showcase #70 / recipe):
-    //
-    //   const me = await vault.user.me<MyShape>()
-    //   await collection.presence().update({
-    //     displayName: me?.data.profile?.displayName,
-    //     editingRecordId: 'invoice-42',
-    //   })
-    //
-    // The presence subscriber receives PresencePeer<{ displayName, ...}>
-    // and renders accordingly. Hub remains payload-agnostic.
-    expect(true).toBe(true)
   })
 })
