@@ -8,7 +8,7 @@ A capsule is noy-db's crypto interior behind one seam. `enclave-aes` ships insid
 
 ```ts
 import { runCapsuleConformance } from '@noy-db/test-capsule-conformance'
-import * as capsule from '../src/index.js'
+import * as capsule from './my-capsule.js'
 
 runCapsuleConformance(capsule, { name: '@noy-db/exclave-plain' })
 ```

@@ -4,7 +4,7 @@ The `as-*` export gate, published as an executable suite.
 
 ```ts
 import { runFormatConformanceTests } from '@noy-db/test-format-conformance'
-import { asMyformat, download, write } from '../src/index.js'
+import { asMyformat, download, write } from './my-format.js'
 
 runFormatConformanceTests('as-myformat', {
   tier: 'plaintext',            // or 'bundle' for an encrypted-pod format (then omit `format`)

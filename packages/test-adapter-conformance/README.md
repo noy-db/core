@@ -6,7 +6,7 @@ out-of-tree.
 
 ```ts
 import { runStoreConformanceTests } from '@noy-db/test-adapter-conformance'
-import { toMyBackend } from '../src/index.js'
+import { toMyBackend } from './my-backend.js'
 
 runStoreConformanceTests('to-my-backend (mock)', async () => toMyBackend({ client: mockClient() }))
 ```
