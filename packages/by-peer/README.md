@@ -33,6 +33,7 @@ Classic cloud sync routes every envelope through a central store. `@noy-db/by-pe
 
 ```ts
 import { createNoydb } from '@noy-db/hub'
+import { withSync } from '@noy-db/hub/sync'
 import { toBrowserIdb } from '@noy-db/to-browser-idb'
 import { peerStore, createOffer, acceptOffer } from '@noy-db/by-peer'
 

@@ -1863,7 +1863,20 @@ function checkSourcesTracked() {
     // Not a git checkout (a packed tarball, a vendored copy). Nothing to check.
     return
   }
+  // ⚠️ OS/editor droppings are exempt, and ONLY these. The incident above is a
+  // git-ignored file that WAS SOURCE — a module and its tests silently absent
+  // from the pushed tree. `.DS_Store` can never be that: Finder recreates it in
+  // any directory it renders, it is never source, and it is never pushed.
+  // Leaving it in made `pnpm check:architecture` and `pnpm test:scripts` fail
+  // on every macOS checkout for a file no one authored, which trains a reader
+  // to skip the one gate whose whole job is "is my working tree what I am about
+  // to push". A gate people learn to ignore protects nothing.
+  // ⛔ Do not widen this set to anything a human could have written. The test at
+  // scripts/__tests__/subtle-outside-capsule.test.ts asserts a clean tree exits
+  // 0, so a new dropping shows up there first, as an unrelated-looking failure.
+  const DROPPINGS = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini'])
   for (const rel of out.split('\n').map(l => l.trim()).filter(Boolean)) {
+    if (DROPPINGS.has(rel.split('/').pop())) continue
     fail(
       'sources-tracked',
       `${rel} is GIT-IGNORED but sits under a package's src/ or __tests__/. It exists on your disk and will NOT exist in the pushed tree, so every local gate passes and CI fails on something that looks unrelated. Find the offending .gitignore rule (\`git check-ignore -v ${rel}\`) and anchor it instead of deleting it — a bare \`name/\` pattern matches that directory at any depth.`,

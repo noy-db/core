@@ -64,7 +64,7 @@
  * Run: node scripts/check-prose-examples.mjs
  */
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, existsSync, symlinkSync, realpathSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { prepareBlocks } from './prose-examples/blocks.mjs'
 
@@ -83,6 +83,56 @@ const IGNORED = new Set([
   'TS2448',  // used before declaration      — prose narrates out of order
   'TS2454',  // used before assigned         — same
 ])
+
+// ⭐ …EXCEPT when the missing name is one WE PUBLISH. Raised by the `noy-db/on`
+// silo (family#26) with a case core's rule hid: `on-shamir`'s README called
+// `encodeShareBase32` with no import — a symbol the package genuinely
+// re-exports, so a reader copying the block gets a broken program, and it was
+// filed under TS2304 and dropped. Measured in this tree the same day:
+// `by-peer/README.md:49` called `withSync()`, a real export of
+// `@noy-db/hub/sync`, in a block that already carried three imports.
+//
+// ⛔ The preamble convention is NOT the answer for this class, which is why it
+// needs its own rule. An honest preamble for such a file would have to
+// `declare const withSync` — documenting an ambient that is not ambient, and
+// cementing the very defect. A name the family exports is a MISSING IMPORT.
+//
+// The distinction is checkable with what the probe already has: every
+// published entry point's `.d.ts`. Reader-supplied values (`userSecret`,
+// `opts`, `mockClient`) are absent from it and stay ignored, which is the
+// whole point — this narrows the exemption rather than removing it.
+const NAMED = /Cannot find name '([^']+)'/
+
+/** Names exported from any PUBLISHED entry point of any package in this repo. */
+function collectFamilyExports() {
+  const names = new Set()
+  for (const pkg of readdirSync('packages')) {
+    const manifest = join('packages', pkg, 'package.json')
+    if (!existsSync(manifest)) continue
+    let json
+    try { json = JSON.parse(readFileSync(manifest, 'utf8')) } catch { continue }
+    for (const entry of Object.values(json.exports ?? {})) {
+      const types = typeof entry === 'string' ? null : entry?.types
+      if (!types) continue
+      const dts = resolve(ROOT, 'packages', pkg, types)
+      if (!existsSync(dts)) continue
+      const text = readFileSync(dts, 'utf8')
+      // `export { a, b as c, type D }` and `export type { E }`
+      for (const m of text.matchAll(/export\s+(?:type\s+)?\{([^}]*)\}/g)) {
+        for (const raw of m[1].split(',')) {
+          const part = raw.trim().replace(/^type\s+/, '')
+          if (!part) continue
+          const alias = part.split(/\s+as\s+/)
+          const name = (alias[1] ?? alias[0]).trim()
+          if (/^[A-Za-z_$][\w$]*$/.test(name)) names.add(name)
+        }
+      }
+      for (const m of text.matchAll(/export\s+declare\s+(?:abstract\s+)?(?:function|const|class|let|var|enum)\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1])
+      for (const m of text.matchAll(/export\s+(?:declare\s+)?(?:interface|type)\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1])
+    }
+  }
+  return names
+}
 
 // ── Sources: prose that ships, plus tracked subsystem docs ────────────────
 const files = []
@@ -122,6 +172,26 @@ for (const file of files) {
     if (!requirePreamble && !b.hasImport && !prepared.preamble) { skippedExtra++; continue }
     blocks.push({ file, line: b.line, code: b.code, preambleLines: b.preambleLines, preambleLine: prepared.preamble?.line })
   }
+}
+
+// ⛔ EMPTY SCOPE IS A FAILURE, NOT A PASS. Without this, a run that finds no
+// blocks at all prints "0 fenced block(s) compiled", matches the baseline
+// vacuously, and exits 0 having examined NOTHING. Extraction is exactly the
+// event that empties a scope silently — the 2026-09-01 move took 24 packages
+// and their READMEs out of this tree in one commit — and a glob that stops
+// matching looks identical to prose that is clean. Proposed by the `noy-db/on`
+// silo (family#26) after measuring that core had the build-order guard below
+// and not this one; the two fail for opposite reasons and neither implies the
+// other. Exit 2, like the build-order guard, so a CI step cannot read it as a
+// clean pass.
+if (blocks.length === 0) {
+  console.error(
+    'check-prose-examples: found ZERO fenced blocks across ' +
+      `${files.length} file(s) — the gate examined nothing.\n` +
+      'That is a broken scope, not clean prose: check the package glob and ' +
+      'PROSE_EXTRA before assuming there is nothing to check.',
+  )
+  process.exit(2)
 }
 
 const runnable = blocks
@@ -255,8 +325,23 @@ const parse = (raw) => {
 const unparseable = new Set(parse(compile([])).filter((d) => /^TS1\d{3}$/.test(d.code)).map((d) => d.b))
 
 // ── Pass 2: type-check what is left ───────────────────────────────────────
+const familyExports = collectFamilyExports()
+if (familyExports.size === 0) {
+  // Same reasoning as the build-order guard: an empty set would silently turn
+  // the missing-import rule off and every run would look clean.
+  console.error('check-prose-examples: resolved ZERO exported names from any package entry point — the missing-import rule would be vacuous. Run `pnpm build` first.')
+  process.exit(2)
+}
+
+/** A TS2304/TS2552 naming something we publish is a missing import, not probe noise. */
+const isMissingImport = (d) => {
+  if (d.code !== 'TS2304' && d.code !== 'TS2552') return false
+  const name = NAMED.exec(d.msg)?.[1]
+  return name !== undefined && familyExports.has(name)
+}
+
 const failures = parse(compile([...unparseable].map((b) => b.probe)))
-  .filter((d) => !IGNORED.has(d.code) && !/^TS1\d{3}$/.test(d.code))
+  .filter((d) => (isMissingImport(d) || !IGNORED.has(d.code)) && !/^TS1\d{3}$/.test(d.code))
   .map((d) => ({ file: d.b.file, line: d.line, code: d.code, msg: d.msg }))
 
 const BASELINE = join(ROOT, 'scripts', 'prose-examples-baseline.json')

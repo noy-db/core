@@ -117,6 +117,7 @@ Pass any object exposing `parse(input): T` (Zod, Valibot, ArkType, Effect Schema
 
 ```ts
 import { z } from 'zod';
+import { defineNoydbStore } from '@noy-db/in-pinia';
 
 const InvoiceSchema = z.object({
   id: z.string(),

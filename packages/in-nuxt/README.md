@@ -8,6 +8,12 @@
 import '@noy-db/in-nuxt'
 import type { NuxtConfig } from '@nuxt/schema'
 import { defineNoydbStore } from '@noy-db/in-pinia'
+// ⚠️ `computed` in the SFC blocks below is VUE's, auto-imported inside
+// `<script setup>` — NOT `@noy-db/hub`'s via-field descriptor of the same
+// name. The names genuinely collide, and a reader who resolves the ambiguity
+// the other way gets a field descriptor where they wanted reactivity.
+// Declared here so the blocks are checked against the one they mean.
+import { computed } from 'vue'
 declare function defineNuxtConfig(config: NuxtConfig): NuxtConfig
 interface Invoice { id: string; status: string; dueDate: string }
 -->
