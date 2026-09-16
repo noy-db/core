@@ -134,13 +134,33 @@ function collectFamilyExports() {
   return names
 }
 
-// ── Sources: prose that ships, plus tracked subsystem docs ────────────────
+// ── Sources: the PRIVATE docs layer only ──────────────────────────────────
+//
+// ⭐ ONE CHECKER PER CLAIM (ruled family#26, 2026-09-16). Shipped prose — the
+// root README, every package README, and the JSDoc that ships inside a
+// published .d.ts — is checked by the FAMILY gate, `family-tools
+// prose-examples` at noy-db/.github@v1, which runs in CI as `gate
+// prose-examples`. This script no longer looks at any of it.
+//
+// ⛔ The reason is not tidiness. Until today two implementations checked the
+// same READMEs with different resolution strategies, and they DISAGREED: the
+// rail gate compiles inside the owning package and found three defects this
+// one misses by accident of probe location — the conformance kits' examples
+// importing the reader's module from '../src/index.js', a path that resolves
+// to the kit's own source (734103c6). A duplicated contract with nothing
+// checking the copies is the shape this family spent the week removing; it
+// drifted in the rail's favour today and would not necessarily tomorrow.
+//
+// What is left here is what the rail STRUCTURALLY CANNOT see: the private docs
+// layer, which lives in the family repo and never enters the public clone. The
+// runner is `../tools/check-private-prose.mjs`, which sets PROSE_EXTRA.
+//
+// ⚠️ So this script is a WRAPPER tool, not a CI gate, and it is deliberately
+// out of `localChecks`: CI runs against the public clone, where the private
+// docs do not exist, and a check with nothing to check is the vacuous pass
+// this whole file argues against.
 const files = []
 const addIf = (p) => { if (existsSync(p)) files.push(p) }
-addIf('README.md')
-for (const pkg of readdirSync('packages')) addIf(join('packages', pkg, 'README.md'))
-// JSDoc module comments on published entry points ship inside the .d.ts.
-addIf('packages/hub/src/index.ts')
 // SERVICES.md and docs/subsystems moved to the private family layer
 // (2026-08-31 restructure). They are still checked by the SAME machinery via
 // PROSE_EXTRA — a comma-separated list of .md files or directories — which the
@@ -187,9 +207,10 @@ for (const file of files) {
 if (blocks.length === 0) {
   console.error(
     'check-prose-examples: found ZERO fenced blocks across ' +
-      `${files.length} file(s) — the gate examined nothing.\n` +
-      'That is a broken scope, not clean prose: check the package glob and ' +
-      'PROSE_EXTRA before assuming there is nothing to check.',
+      `${files.length} file(s) — this examined nothing.\n` +
+      'This script now checks the PRIVATE docs layer only; shipped prose is the\n' +
+      "family gate's (`family-tools prose-examples`, run in CI). Invoke it via\n" +
+      '`node ../tools/check-private-prose.mjs`, which sets PROSE_EXTRA.',
   )
   process.exit(2)
 }

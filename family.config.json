@@ -12,7 +12,6 @@
     "pnpm check:architecture",
     "pnpm check:codemods",
     "pnpm check:prose-api",
-    "pnpm check:prose-examples",
     "pnpm check:test-env-deps",
     "pnpm test:scripts"
   ]
