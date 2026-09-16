@@ -14,8 +14,33 @@
  *   6+      L     y-bytes (L = byteLength)
  * ```
  *
- * Base32 adds a 26-character ULID `shareId` prefix + version/k/n
- * metadata for human-readable diagnostics.
+ * Base32 adds an eye-readable prefix carrying the x-coordinate and the
+ * k/n metadata — `SHAMIR_S<x>_K<k>N<n>__<base32 groups>`. The prefix is
+ * informational only: `decodeShareBase32` discards it and reads everything
+ * from the bytes after the last `__`.
+ *
+ * ⛔ NO FIELD HERE IDENTIFIES WHICH SECRET A SHARE SPLITS, in any of the
+ * three encodings. That is load-bearing, not an omission (family#29):
+ *
+ *   - A share from a SUPERSEDED split is byte-indistinguishable from a
+ *     current one. `combineSecret` validates length, count, and distinct
+ *     x-coordinates — never that the shares came from the same split. So K
+ *     stale shares return the OLD secret, and a MIXED set interpolates to
+ *     garbage, both silently and both well-formed. The failure surfaces
+ *     wherever the result is finally used, not here.
+ *   - Consequently a rotated KEK is handled by REDISTRIBUTION — split the
+ *     new one to N holders again — never by re-wrapping the old shares.
+ *     Nothing in this package can detect or enforce that.
+ *
+ * A per-split random tag COULD be carried without leaking the secret, and
+ * is deliberately not: it would be a linkability handle across holders who
+ * are meant to be uncoordinated. Recorded so the absence reads as a choice
+ * with a cost, rather than an oversight to be "fixed" later.
+ *
+ * ⚠️ This comment previously described "a 26-character ULID `shareId`
+ * prefix". There was never a ULID and never a `shareId` — the string
+ * appeared nowhere but in this docstring, and it was the only thing in the
+ * family suggesting staleness was detectable. Corrected 2026-09-16.
  */
 
 import type { RawShare } from './shamir.js'

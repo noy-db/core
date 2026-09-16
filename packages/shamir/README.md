@@ -28,6 +28,23 @@ Protects against up to K−1 colluding share holders (mathematically — fewer t
 zero bits) and loss of up to N−K shares. Does not protect against K colluding holders (the
 threshold contract) or compromise of the machine combining the shares.
 
+**A share does not identify the secret it splits**, and that is a property of the scheme, not a
+gap in this implementation. `combineSecret` checks length, count and distinct x-coordinates —
+never that the shares came from the same split. So:
+
+| you combine | you get |
+|---|---|
+| K shares of a **superseded** split | the **old** secret, silently and correctly |
+| a **mix** of two generations | **garbage** — well-formed, right length, no error |
+
+Neither case throws. The failure surfaces wherever the recovered bytes are finally used, arbitrarily
+later, looking like corruption rather than a stale share.
+
+**So rotating a split secret means REDISTRIBUTION, not rewrapping.** Split the new secret and reach
+all N holders again; there is no way to refresh a share in place, and nothing here can detect that a
+holder is carrying an outdated one. If you are splitting a key that rotates, the redistribution step
+belongs in your runbook — this package cannot remind you.
+
 ## Share format
 
 Base32 string: `SHAMIR_S<x>_K<k>N<n>__<base32 groups>`. Binary: 6-byte header (magic, x, k, n,

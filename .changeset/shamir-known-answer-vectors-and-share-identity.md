@@ -1,0 +1,13 @@
+---
+'@noy-db/shamir': patch
+---
+
+**Documented that a share does not identify the secret it splits, and added known-answer vectors that can detect the class of bug the existing suite structurally could not.**
+
+The threat-model section stated the confidentiality property (fewer than K shares reveal zero bits) and not the identity one. Both now appear, because the second decides an operational question the first does not: `combineSecret` validates length, count and distinct x-coordinates — never that the shares came from the same split. K shares of a superseded split return the **old** secret, correctly and silently; a **mixed** set from two generations interpolates to **garbage** that is well-formed and the right length. Neither throws, so the failure surfaces wherever the recovered bytes are finally used, looking like corruption rather than a stale share. The consequence for callers: rotating a split secret means **redistribution**, not rewrapping — and nothing in this package can detect or remind you that a holder still carries an outdated share.
+
+⛔ **A docstring correction that mattered more than its size.** `share-format.ts` described "a 26-character ULID `shareId` prefix" on the Base32 form. There was never a ULID and never a `shareId`; the string appeared nowhere but in that comment, and the real prefix is `SHAMIR_S<x>_K<k>N<n>__`, which `decodeShareBase32` discards. It was the only thing in the family suggesting share staleness was detectable — which is exactly the question the paragraph above answers with "it is not". The comment now also records that a per-split random tag *could* be carried and is deliberately not, because it would be a linkability handle across holders who are meant to be uncoordinated.
+
+**Known-answer vectors (`__tests__/known-answer-vectors.test.ts`).** Every existing split/combine test is a round trip — split, combine, assert the secret returns — and a round trip cannot fail on a *consistent* error. Demonstrated rather than asserted: shifting the x-coordinates from `1..n` to `2..n+1`, which would make our shares incompatible with every other Shamir implementation, leaves the existing suite passing **13 of 13** and fails the new vectors. The vectors fix exact share bytes, derived from the polynomial definition and an independently written shift-and-xor multiply — never by running the code under test, since a vector generated from the implementation proves stability rather than correctness. Anchored externally on FIPS-197's published worked examples (`0x57 • 0x83 = 0xc1`, the `xtime` chain, `inv(0x53) = 0xca`), since this field is AES's, plus a whole-field cross-check over all 65,536 pairs that catches a mis-built log/exp table the algebraic property tests cannot.
+
+No runtime change.
