@@ -42,6 +42,14 @@ export type CapsuleGroup =
   | 'sealing'
   | 'deterministic'
   | 'classify'
+  // ⭐ ADDED 2026-09-16 (core#42). `wrapCek` / `unwrapCek` are real primitives
+  // a capsule may refuse independently, and the conformance kit has carried a
+  // live refusal test for them under this name since it shipped — but no
+  // member of this union covered them, so the refusal could not be NAMED.
+  // Found when `EnclaveNotSupportedError` turned out to accept it while this
+  // union did not: three vocabularies disagreed, and this one was the one
+  // missing a group rather than the error inventing one.
+  | 'per-record-keys'
 
 /**
  * Thrown at `createNoydb()` when a service needs a group the bound capsule

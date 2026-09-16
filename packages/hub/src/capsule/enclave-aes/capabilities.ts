@@ -49,6 +49,14 @@ const ALL: ReadonlySet<CapsuleGroup> = sealedSet<CapsuleGroup>([
   'sealing',
   'deterministic',
   'classify',
+  // ⭐ ADDED 2026-09-16 (core#42). `enclave-aes` implements `wrapCek` and
+  // `unwrapCek`, so advertising the group is the truthful `capabilities()`.
+  // The nine-member set was the REFERENCE capsule under-reporting itself:
+  // "supports every group" was the documented intent above, and it had been
+  // untrue since `per-record-keys` existed as a refusable thing.
+  // ⛔ This is a published behaviour change — `capabilities()` returns one
+  // more member to any consumer that inspects it. Release-noted by name.
+  'per-record-keys',
 ])
 
 export function capabilities(): ReadonlySet<CapsuleGroup> {

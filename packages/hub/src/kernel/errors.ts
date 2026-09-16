@@ -94,6 +94,11 @@
 
 import { USER_ENVELOPE_MAX_BYTES } from './constants.js'
 import type { GateName, GatePolicy } from './types.js'
+// ⚠️ TYPE-ONLY, and it must stay that way: `capsule/contract.ts` imports the
+// VALUE `NoydbError` from this module, so a value import back would be a real
+// runtime cycle. `import type` is erased, so the dependency exists only for
+// the type checker. Do not "tidy" this into a value import.
+import type { CapsuleGroup } from '../capsule/contract.js'
 
 /**
  * Base class for all NOYDB errors.
@@ -3893,10 +3898,26 @@ export class RecoveryProfileNotImplementedError extends NoydbError {
  * stable, catchable code instead of an ad hoc throw.
  */
 export class EnclaveNotSupportedError extends NoydbError {
-  /** The optional group that is not supported by this enclave. */
-  readonly group: 'sealing' | 'deterministic' | 'per-record-keys'
+  /**
+   * The group that is not supported by this enclave.
+   *
+   * ⭐ WIDENED to the full {@link CapsuleGroup} 2026-09-16 (core#42). It used
+   * to be `'sealing' | 'deterministic' | 'per-record-keys'` — three of ten,
+   * and not a subset: it could not name `classify`, which `capsule/contract.ts`
+   * explicitly documents a capsule refusing, nor the six core groups.
+   *
+   * ⚠️ The narrowness was invisible because **hub never constructs this error**
+   * — it exists for a fork to throw (see the note above), so the union is a
+   * contract for THIRD-PARTY capsule authors, and hub's own test only ever
+   * built it with `'sealing'`. Found only when the conformance kit's tests
+   * were finally typechecked against hub's source.
+   *
+   * ⛔ This is a widened published READ: a consumer switching exhaustively on
+   * `err.group` gains cases. Release-noted by name for that reason.
+   */
+  readonly group: CapsuleGroup
 
-  constructor(group: 'sealing' | 'deterministic' | 'per-record-keys', detail?: string) {
+  constructor(group: CapsuleGroup, detail?: string) {
     super(
       'ENCLAVE_NOT_SUPPORTED',
       `enclave: ${group} is not supported by this enclave${detail ? ` — ${detail}` : ''}`,

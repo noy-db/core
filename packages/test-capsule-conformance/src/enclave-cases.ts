@@ -80,7 +80,23 @@ export interface EnclaveModule<K = unknown> {
     opts?: { encrypted?: boolean },
   ): Promise<string>
   writeEnvelopeBody(
-    identity: { readonly collection: string; readonly id: string; readonly tier?: number; readonly by?: string },
+    // ⭐ `version` is REQUIRED, and was missing here until core#42. Hub's real
+    // `RecordIdentity` requires it deliberately — "a version that could be
+    // omitted would be a version some writer forgets, and a record sealed at a
+    // version nobody chose is one a reader cannot open" — so a capsule author
+    // implementing the shape as this kit declared it wrote a handler that did
+    // not know `version` arrives. Kept STRUCTURAL rather than importing
+    // `RecordIdentity` (see the module note on why the shape is duplicated on
+    // purpose); the assertions in `__tests__/contract-drift.test.ts` are what
+    // keep the copy honest now that anything checks it at all.
+    // ⚠️ `| undefined` on the optionals is NOT noise. Under
+    // `exactOptionalPropertyTypes`, `tier?: number` refuses an explicit
+    // `{ tier: undefined }` — which hub's `RecordIdentity` permits and can
+    // pass. So the narrower spelling told capsule authors to implement a
+    // signature that rejects a call hub actually makes. Found by the drift
+    // assertion below on its first run (core#42, the fourth drift in this
+    // copy). Match hub's optionality exactly, not approximately.
+    identity: { readonly collection: string; readonly id: string; readonly version: number; readonly tier?: number | undefined; readonly by?: string | undefined },
     json: string,
     key: K,
     opts?: { encrypted?: boolean; perRecordKey?: boolean },
@@ -142,7 +158,17 @@ export interface EnclaveConformanceOptions {
 /** The stable code every `EnclaveNotSupportedError` (or fork subclass) carries. */
 const NOT_SUPPORTED_CODE = new EnclaveNotSupportedError('sealing').code
 
-/** One of the optional groups the capsule contract lets an implementation refuse. */
+/**
+ * One of the optional groups the capsule contract lets an implementation refuse.
+ *
+ * ⛔ These are a SUBSET of hub's `CapsuleGroup`, not a parallel vocabulary —
+ * every member must be a real group, and `assertGroupRefuses` needs an entry in
+ * the `GROUPS` map below for each, which is why it is not simply `CapsuleGroup`.
+ * The subset relation is asserted at compile time in
+ * `__tests__/contract-drift.test.ts`; until core#42 nothing checked it, and
+ * `per-record-keys` had been listed here while being absent from `CapsuleGroup`
+ * entirely.
+ */
 export type ConformanceGroup = 'sealing' | 'deterministic' | 'per-record-keys' | 'classify'
 
 /**

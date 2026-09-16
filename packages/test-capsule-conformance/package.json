@@ -35,7 +35,8 @@
   "scripts": {
     "build": "tsup",
     "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json"
   },
   "peerDependencies": {
     "@noy-db/hub": "workspace:^",
