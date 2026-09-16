@@ -40,7 +40,8 @@
     "build": "tsup && node scripts/postbuild.mjs",
     "test": "vitest run",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json"
   },
   "dependencies": {
     "@clack/prompts": "^0.9.1",

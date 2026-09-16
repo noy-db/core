@@ -18,7 +18,7 @@ describe('peerStore + servePeerStore', () => {
     const [a, b] = pairInMemory()
     const remote = memoryStore()
     const dispose = servePeerStore({ channel: b, store: remote, token: 'test-invite-token' })
-    const local = peerStore({ channel: a, token: 'test-invite-token', token: 'test-invite-token' })
+    const local = peerStore({ channel: a, token: 'test-invite-token' })
 
     const env = envelope(1)
     await local.put('v1', 'c1', 'r1', env)
@@ -45,7 +45,7 @@ describe('peerStore + servePeerStore', () => {
     const [a, b] = pairInMemory()
     const remote = memoryStore()
     const dispose = servePeerStore({ channel: b, store: remote, token: 'test-invite-token' })
-    const local = peerStore({ channel: a, token: 'test-invite-token', token: 'test-invite-token' })
+    const local = peerStore({ channel: a, token: 'test-invite-token' })
 
     await local.put('v1', 'c1', 'r1', envelope(1))
 
@@ -85,7 +85,7 @@ describe('peerStore + servePeerStore', () => {
       store: remote,
       allow: new Set(['get', 'list', 'loadAll', 'ping']),
     })
-    const local = peerStore({ channel: a, token: 'test-invite-token', token: 'test-invite-token' })
+    const local = peerStore({ channel: a, token: 'test-invite-token' })
 
     expect(await local.get('v1', 'c1', 'r1')).toEqual(envelope(1))
     await expect(local.put('v1', 'c1', 'r2', envelope(1))).rejects.toThrow(/not allowed/)

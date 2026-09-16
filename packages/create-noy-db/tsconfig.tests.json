@@ -1,0 +1,19 @@
+{
+  "//": "Typechecks this package's test files, which `tsconfig.json` (include: [\"src\"]) never saw — vitest transpiles without checking, so until this existed they were checked by nothing (family#28). `types` is set EXPLICITLY and is never left to default: defaulting pulls in every @types/* in scope and hides the gap, while a blanket `types: []` strips ambient globals so a package that correctly declares @types/node cannot use `process`. The `exclude` list is a burn-down — add a file that fails today, delete the entry when it is fixed; new test files are covered from day one because they were never listed. BURN-DOWN: __tests__/wizard.test.ts carries 44 diagnostics on its own (WizardResult members the wizard does not expose) and is excluded so the other files are checked NOW rather than waiting on one file. Fix them and delete the entry — do not add to this list.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": [
+      "node"
+    ],
+    "noImplicitAny": false
+  },
+  "include": [
+    "src",
+    "__tests__"
+  ],
+  "exclude": [
+    "__tests__/wizard.test.ts"
+  ]
+}

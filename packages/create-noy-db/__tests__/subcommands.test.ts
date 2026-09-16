@@ -126,7 +126,11 @@ function sharedAdapter() {
 // ─── Test setup — pre-populate a vault with data ─────────────
 
 interface Fixture {
-  store: NoydbStore
+  // `adapter`, not `store`: makeFixture returns `{ adapter, buildAdapter }`
+  // and every consumer reads `fx.adapter`. Nothing in this package ever
+  // provided or read a `store` field — the name existed only in this
+  // declaration, which vitest never checked (family#28).
+  adapter: NoydbStore
   buildAdapter: (dir: string) => NoydbStore
 }
 

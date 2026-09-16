@@ -28,7 +28,7 @@ async function hostAndGuest() {
   servePeerStore({ channel: hostCh, store: hostStore, token: 'test-invite-token' })
 
   const guestDb = await createNoydb({
-    store: peerStore({ channel: guestCh, token: 'test-invite-token', token: 'test-invite-token' }), user: 'ann', secret: SECRET, validateSecret: false,
+    store: peerStore({ channel: guestCh, token: 'test-invite-token' }), user: 'ann', secret: SECRET, validateSecret: false,
   })
   const guestVault = await guestDb.openVault('pilot1')
   return { hostStore, hostVault, guestVault }
@@ -89,7 +89,7 @@ describe('#1026 — CAS through a peerStore', () => {
     const { hostStore } = await hostAndGuest()
     const [hostCh, guestCh] = pairInMemory()
     servePeerStore({ channel: hostCh, store: hostStore, token: 'test-invite-token' })
-    const remote = peerStore({ channel: guestCh, token: 'test-invite-token', token: 'test-invite-token' })
+    const remote = peerStore({ channel: guestCh, token: 'test-invite-token' })
 
     const envelope = { _noydb: 1 as const, _v: 1, _ts: new Date().toISOString(), _iv: '', _data: '{}' }
     await remote.put('pilot1', 'raw', 'r1', envelope)

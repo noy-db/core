@@ -67,7 +67,7 @@ function createMockLocks(): MinimalLockManager {
           run: () => callback({ name, mode: options.mode ?? 'exclusive' }),
           resolve: resolve as (v: unknown) => void,
           reject,
-          signal: options.signal,
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
           cancelled: false,
         }
 
@@ -147,7 +147,7 @@ describe('servePeerStore({ leaderElection }) — issue #3', () => {
 
     // The leader (server 1) responds to the client; we verify by routing
     // through its dedicated pair.
-    const client = peerStore({ channel: a, token: 'test-invite-token', token: 'test-invite-token' })
+    const client = peerStore({ channel: a, token: 'test-invite-token' })
     await remote.put('v', 'c', 'r1', envelope(1))
     expect(await client.get('v', 'c', 'r1')).toEqual(envelope(1))
 
@@ -203,7 +203,7 @@ describe('servePeerStore({ leaderElection }) — issue #3', () => {
     await flushMicrotasks()
 
     // Server 1 (leader) answers normally.
-    const client1 = peerStore({ channel: client1Ch, token: 'test-invite-token', token: 'test-invite-token' })
+    const client1 = peerStore({ channel: client1Ch, token: 'test-invite-token' })
     expect(await client1.get('v', 'c', 'r1')).toEqual(envelope(1))
 
     // Servers 2 and 3 are queued behind the lock — their channels have no
@@ -255,7 +255,7 @@ describe('servePeerStore({ leaderElection }) — issue #3', () => {
 
     const [a, b] = pairInMemory()
     const dispose = servePeerStore({ channel: b, store: remote, token: 'test-invite-token' })
-    const client = peerStore({ channel: a, token: 'test-invite-token', token: 'test-invite-token' })
+    const client = peerStore({ channel: a, token: 'test-invite-token' })
 
     expect(await client.get('v', 'c', 'r1')).toEqual(envelope(1))
 

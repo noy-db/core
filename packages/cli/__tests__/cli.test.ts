@@ -223,6 +223,15 @@ describe('formatSnapshot — monitor output shape', () => {
         list:    { count: 2, errors: 0, p50: 3, p90: 5, p99: 5, max: 5, avg: 4 },
         loadAll: { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
         saveAll: { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
+        // The optional half of the store contract. `snapshot()` walks METHODS
+        // and populates EVERY key, so a real MeterSnapshot always carries
+        // these — a fixture that omits them is not a smaller snapshot, it is
+        // one that cannot occur.
+        listPage:     { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
+        getStoreTime: { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
+        tx:           { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
+        listVaults:   { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
+        ping:         { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
       },
       status: 'ok',
       casConflicts: 0,

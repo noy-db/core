@@ -51,8 +51,8 @@ describe('byPeer — presence', () => {
 
     const seen = await b.reachableWriters(VAULT, { staleMs: 5_000, now: 2_000 })
     expect(seen).toHaveLength(1)
-    expect(seen[0].writerId).toBe('A')
-    expect(seen[0].sessionId).toBe('user-1')
+    expect(seen[0]!.writerId).toBe('A')
+    expect(seen[0]!.sessionId).toBe('user-1')
   })
 
   it('a writer past staleMs is pruned from reachableWriters', async () => {

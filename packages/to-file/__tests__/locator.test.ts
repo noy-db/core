@@ -17,7 +17,7 @@ describe('to-file store-locator descriptor', () => {
       const descriptor = fileStoreDescriptor(dir)
       const store = await locator.resolve(descriptor)
 
-      expect(await store.ping()).toBe(true)
+      expect(await store.ping!()).toBe(true)
       await store.put('vault1', 'coll1', 'id1', {
         _noydb: 1,
         _v: 1,
