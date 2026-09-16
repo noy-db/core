@@ -288,4 +288,4 @@ Open an issue if you need one of these sooner.
 
 ## License
 
-Apache-2.0
+Apache-2.0 © vLannaAi

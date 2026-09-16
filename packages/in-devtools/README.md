@@ -38,4 +38,4 @@ Pass a [`@noy-db/to-meter`](https://www.npmjs.com/package/@noy-db/to-meter) hand
 
 ## License
 
-Apache-2.0
+Apache-2.0 © vLannaAi

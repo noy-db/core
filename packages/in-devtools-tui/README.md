@@ -30,4 +30,4 @@ Add `--meter` to wrap the store in [`@noy-db/to-meter`](https://www.npmjs.com/pa
 
 ## License
 
-Apache-2.0
+Apache-2.0 © vLannaAi

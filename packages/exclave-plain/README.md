@@ -102,4 +102,4 @@ This package runs `@noy-db/test-capsule-conformance`, the same suite `enclave-ae
 
 ## License
 
-Apache-2.0
+Apache-2.0 © vLannaAi
