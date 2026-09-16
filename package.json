@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Zero-knowledge, offline-first, encrypted document store with pluggable backends and multi-user access control",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core#readme",
   "repository": {
