@@ -291,11 +291,44 @@ runnable.forEach((b, i) => { b.probe = `ex${i}.ts`; b.nodeTyped = declaresNodeTy
 // (a function declaration, not a const: it is called by the probe-writing
 // loop above, which runs before this point in the file.)
 function declaresNodeTypes(file) {
+  // ⭐ A FILE MAY DECLARE ITS RUNTIME (#44). The manifest lookup below answers
+  // "does the owning package declare @types/node", which is the right question
+  // for a package README and has NO answer for the private docs layer: those
+  // files belong to no package, fall back to the root manifest, and the root
+  // does not declare @types/node — so a doc describing a Node-side subsystem
+  // compiled under `types: []` and its `process` / `Buffer` uses were TS2591.
+  //
+  // ⛔ The preamble convention cannot carry this, and that is why it needed its
+  // own marker rather than a wider preamble: a preamble is prepended only to
+  // IMPORT-LESS blocks, and `broker.md`'s server-side examples all open with
+  // imports. Nor is adding @types/node to the ROOT manifest the fix — that
+  // would silently switch Node globals on for the root README too, which is
+  // the "#1306 blast radius" this two-program split exists to avoid.
+  //
+  // So the file says so, once, in a comment that renders nowhere:
+  //
+  //     <!-- prose-env: node -->
+  //
+  // It is a CLAIM, not an escape hatch: it says these examples target Node,
+  // and it is wrong to add to a doc whose examples target a browser — the
+  // globals it buys are exactly the ones a browser example must not use.
+  if (declaresNodeEnv(file)) return true
   const m = relative(ROOT, file).match(/^packages[/\\]([^/\\]+)[/\\]/)
   const manifest = m ? join(ROOT, 'packages', m[1], 'package.json') : join(ROOT, 'package.json')
   if (!existsSync(manifest)) return false
   const j = JSON.parse(readFileSync(manifest, 'utf8'))
   return Boolean({ ...j.dependencies, ...j.devDependencies, ...j.peerDependencies }['@types/node'])
+}
+
+// ⛔ A FUNCTION DECLARATION WITH NO MODULE-SCOPE STATE, for the same reason
+// `declaresNodeTypes` is one — see its note. The probe-writing loop calls both
+// BEFORE this point in the file, so a `const` cache here is in the temporal
+// dead zone and throws `Cannot access 'nodeEnvCache' before initialization`.
+// Measured: I wrote the cache anyway, three lines under the comment warning
+// against exactly it. Re-reading a handful of prose files is not worth a
+// hoisting hazard.
+function declaresNodeEnv(file) {
+  return /^<!--\s*prose-env:\s*node\s*-->\s*$/m.test(readFileSync(file, 'utf8'))
 }
 
 const compile = (exclude) => {
