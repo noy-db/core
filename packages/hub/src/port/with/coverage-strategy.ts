@@ -19,7 +19,23 @@
  * binary-search, and a signal is not. Adding "just an option" to refuse
  * reintroduces exactly the objection the shape was chosen to dissolve.
  *
- * @internal
+ * ⭐ PUBLISHED SEAM — ruled 2026-09-16 (core#38, recorded in the family's seam
+ * registry). {@link CoverageEvent} is re-exported from `@noy-db/hub/coverage`
+ * and shipped in 0.8.0's `.d.ts`; consumers already hold it. This module
+ * previously ended `@internal`, which strips nothing (`stripInternal` is set
+ * in no tsconfig here) and so described the opposite of what shipped. The tag
+ * is gone rather than made true, because adding `stripInternal` now would
+ * break every importer at 0.8.0.
+ *
+ * Consequences, additive-only from here:
+ *   - a new sensor ADDS fields and never redefines `served` / `novel` /
+ *     `coverage` / `window` — their horizons are mixed BY DESIGN (see each
+ *     field), and redefining one per `source` is what makes a controller
+ *     subscribe once and compute nonsense;
+ *   - `source` stays `string` — an enum would make every new sensor a
+ *     breaking change to hub — and its VALUES are allocated in the family
+ *     registry as `<repo>/<sensor>`. A new sensor claims its value there
+ *     before it ships.
  */
 
 /**
