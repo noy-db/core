@@ -11,6 +11,31 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runWizard } from '../src/wizard/run.js'
 import { validateProjectName } from '../src/wizard/run.js'
 import { applyTokens, ownVersion, renderTemplate, templateDir } from '../src/wizard/render.js'
+import type { WizardFreshResult } from '../src/wizard/types.js'
+
+/**
+ * Run the wizard and NARROW to the fresh-project branch, which every
+ * `runWizard` test below assumes.
+ *
+ * ⛔ `WizardResult` is a discriminated union and the augment branch carries
+ * none of `options` / `projectPath` / `files` — its own docstring says the
+ * caller narrows on `kind`. Until these tests were typechecked (family#28)
+ * they read those members straight off the union, so nothing checked that
+ * the call had taken the fresh path at all: a wizard that silently returned
+ * an augment result would have failed on `undefined` somewhere downstream
+ * rather than here, with a message about the wrong thing.
+ *
+ * ⚠️ Deliberately an ASSERTION, not a cast. `as WizardFreshResult` would
+ * have silenced all 44 diagnostics in one line and preserved the hole —
+ * and the discriminator is the contract every consumer of this package has
+ * to use, exercised nowhere else in the suite.
+ */
+async function runFresh(...args: Parameters<typeof runWizard>): Promise<WizardFreshResult> {
+  const result = await runWizard(...args)
+  expect(result.kind).toBe('fresh')
+  if (result.kind !== 'fresh') throw new Error('unreachable: asserted fresh above')
+  return result
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -213,7 +238,7 @@ describe('runWizard — non-interactive', () => {
   })
 
   it('generates a project with all defaults when yes:true', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'default-app',
       cwd: tmp,
@@ -228,7 +253,7 @@ describe('runWizard — non-interactive', () => {
   })
 
   it('respects explicit adapter and sampleData', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'file-app',
       adapter: 'file',
@@ -242,7 +267,7 @@ describe('runWizard — non-interactive', () => {
   })
 
   it('generates seed data when sampleData:true', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'seeded-app',
       sampleData: true,
@@ -270,12 +295,12 @@ describe('runWizard — non-interactive', () => {
   it('writes into an empty pre-existing directory happily', async () => {
     const target = path.join(tmp, 'empty')
     await fs.mkdir(target)
-    const result = await runWizard({ yes: true, projectName: 'empty', cwd: tmp })
+    const result = await runFresh({ yes: true, projectName: 'empty', cwd: tmp })
     expect(result.files.length).toBeGreaterThan(0)
   })
 
   it('generates a package.json whose name matches the project', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'roundtrip',
       cwd: tmp,
@@ -299,13 +324,13 @@ describe('runWizard — template selection (v0.17.1 )', () => {
   })
 
   it('defaults to nuxt-default when no template is passed', async () => {
-    const result = await runWizard({ yes: true, projectName: 'app-default', cwd: tmp })
+    const result = await runFresh({ yes: true, projectName: 'app-default', cwd: tmp })
     expect(result.options.template).toBe('nuxt-default')
     expect(result.files).toContain('nuxt.config.ts')
   })
 
   it('scaffolds the vite-vue template when --template vite-vue', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'app-vite',
       template: 'vite-vue',
@@ -328,7 +353,7 @@ describe('runWizard — template selection (v0.17.1 )', () => {
   })
 
   it('scaffolds the vanilla template when --template vanilla', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'app-vanilla',
       template: 'vanilla',
@@ -346,7 +371,7 @@ describe('runWizard — template selection (v0.17.1 )', () => {
   })
 
   it('substitutes PROJECT_NAME into vite-vue template files', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'my-named-vue-app',
       template: 'vite-vue',
@@ -361,12 +386,12 @@ describe('runWizard — template selection (v0.17.1 )', () => {
   })
 
   it('defaults syncAdapter to "none" when omitted', async () => {
-    const result = await runWizard({ yes: true, projectName: 'no-sync', cwd: tmp })
+    const result = await runFresh({ yes: true, projectName: 'no-sync', cwd: tmp })
     expect(result.options.syncAdapter).toBe('none')
   })
 
   it('accepts explicit syncAdapter', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'with-sync',
       syncAdapter: 'memory',
@@ -376,7 +401,7 @@ describe('runWizard — template selection (v0.17.1 )', () => {
   })
 
   it('scaffolds the electron template when --template electron', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'app-electron',
       template: 'electron',
@@ -395,7 +420,7 @@ describe('runWizard — template selection (v0.17.1 )', () => {
   })
 
   it('substitutes PROJECT_NAME into electron template files', async () => {
-    const result = await runWizard({
+    const result = await runFresh({
       yes: true,
       projectName: 'my-electron-app',
       template: 'electron',
@@ -463,7 +488,7 @@ describe('template dependency pins (#703)', () => {
   it('runWizard pins the generated app to this package\'s own version', async () => {
     const tmp2 = await makeTempDir()
     try {
-      const result = await runWizard({ yes: true, projectName: 'pin-check', cwd: tmp2 })
+      const result = await runFresh({ yes: true, projectName: 'pin-check', cwd: tmp2 })
       const pkg = JSON.parse(await readFile(path.join(result.projectPath, 'package.json')))
       const expected = `^${await ownVersion()}`
       for (const [dep, range] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) {
