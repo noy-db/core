@@ -2,7 +2,7 @@
  * Derive the schema manifest from `_schemas/<collection>` + keep it in sync
  * (#941 Task 3).
  *
- * Uses the real `toMemory()` store + `createNoydb`/`openVault` (mirrors
+ * Uses the real `memoryStore({ full: true })` store + `createNoydb`/`openVault` (mirrors
  * `schema-field-ids.test.ts` / `bundle-roundtrip.test.ts`) so DEKs go through
  * the real keyring, not a hand-rolled single-key stub — the manifest's
  * per-collection index is only meaningful when each `_schemas/<collection>`
@@ -37,7 +37,7 @@ import { loadSchemaManifestEntry } from '../../src/with-shape/manifest/storage.j
 import { syncSchemaManifest } from '../../src/with-shape/manifest/sync.js'
 import type { GetManifestDEK } from '../../src/with-shape/manifest/storage.js'
 import type { NoydbStore } from '../../src/kernel/types.js'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 
 const USER = 'alice'
 const SECRET = 'test-pw-12345678'
@@ -64,7 +64,7 @@ async function openWith(store: NoydbStore, historyOn = false) {
 
 describe('deriveSchemaManifest', () => {
   it('2 collections with schemas → entries for both, matching each _schemas/<collection> envelope', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await openWith(store)
     const Invoice = z.object({ id: z.string(), amount: z.number() })
     const Customer = z.object({ id: z.string(), name: z.string() })
@@ -96,7 +96,7 @@ describe('deriveSchemaManifest', () => {
   })
 
   it('empty vault (no schemas) → empty collections + deterministic aggregateHash, no crash', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await openWith(store)
     vault.collection('invoices') // no schema declared
     await vault._drainPendingSchemaWrites()
@@ -116,7 +116,7 @@ describe('deriveSchemaManifest', () => {
 
 describe('#941 Task 3: sync wiring — persistSchemaIfNeeded keeps _manifest/schema current', () => {
   it('after declaring a schema, the persisted _manifest/schema record equals a fresh deriveSchemaManifest', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await openWith(store)
     const Invoice = z.object({ id: z.string(), amount: z.number() })
     vault.collection('invoices', { schema: Invoice, persistJsonSchema: true })
@@ -131,7 +131,7 @@ describe('#941 Task 3: sync wiring — persistSchemaIfNeeded keeps _manifest/sch
   })
 
   it('declaring a second collection re-syncs the manifest to include both', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     let vault = await openWith(store)
     vault.collection('invoices', { schema: z.object({ id: z.string() }), persistJsonSchema: true })
     await vault._drainPendingSchemaWrites()
@@ -163,7 +163,7 @@ describe('#941 Task 3: sync wiring — persistSchemaIfNeeded keeps _manifest/sch
     // would persist that partial (invoices-only) manifest and stop. After
     // the fix, its post-write recheck detects the mismatch and loops until
     // the manifest reflects both collections.
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await openWith(store)
     vault.collection('invoices', { schema: z.object({ id: z.string(), amount: z.number() }), persistJsonSchema: true })
     vault.collection('customers', { schema: z.object({ id: z.string(), name: z.string() }), persistJsonSchema: true })
@@ -199,7 +199,7 @@ describe('#941 Task 3: sync wiring — persistSchemaIfNeeded keeps _manifest/sch
 
 describe('#941 review CRITICAL fix: a scoped principal must never clobber the pod-wide manifest', () => {
   it('a member granted access to ONLY one collection does not drop siblings from _manifest, and their own DEK lookup never mints sibling DEKs into their keyring', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const owner = await createNoydb({ store, user: 'owner', secret: SECRET, teamStrategy: withTeam() })
     const ownerVault = await owner.openVault(VAULT)
     const Invoice = z.object({ id: z.string(), amount: z.number() })
@@ -260,7 +260,7 @@ describe('#941 review CRITICAL fix: a scoped principal must never clobber the po
 
 describe('#941 AC #2: round-trip identity', () => {
   it('dump → restore into a fresh store → re-derived manifest equals the original', async () => {
-    const srcStore = toMemory()
+    const srcStore = memoryStore({ full: true })
     const srcVault = await openWith(srcStore)
     const Invoice = z.object({ id: z.string(), amount: z.number() })
     const Customer = z.object({ id: z.string(), name: z.string() })
@@ -273,7 +273,7 @@ describe('#941 AC #2: round-trip identity', () => {
 
     const bundleBytes = await writePod(srcVault, { compression: 'none' })
 
-    const dstStore = toMemory()
+    const dstStore = memoryStore({ full: true })
     const dstDb = await createNoydb({ store: dstStore, user: USER, secret: SECRET })
     const dstVault = await dstDb.openVault(VAULT)
     const { dumpJson } = await readPod(bundleBytes)
@@ -293,7 +293,7 @@ describe('#941 AC #2: round-trip identity', () => {
 
 describe('#941: field identity survives a rename through coordinatedCutover', () => {
   it("a→b rename: the manifest's fieldIds carries a's id forward under b", async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const oldS = z.object({ id: z.string(), a: z.number() })
     const newS = z.object({ id: z.string(), b: z.number() })
     const transform = (d: Record<string, unknown>) => {
@@ -337,7 +337,7 @@ describe('#941: field identity survives a rename through coordinatedCutover', ()
 
 describe('#941 AC #5: schema mutations are ledger-audited', () => {
   it('declaring a schema (with the history strategy on) appends an op:migration ledger entry for the manifest sync', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await openWith(store, /* historyOn */ true)
     vault.collection('invoices', { schema: z.object({ id: z.string(), amount: z.number() }), persistJsonSchema: true })
     await vault._drainPendingSchemaWrites()
@@ -350,7 +350,7 @@ describe('#941 AC #5: schema mutations are ledger-audited', () => {
   })
 
   it('a second, unrelated schema-content-unchanged re-declare does NOT append a second migration entry', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     let vault = await openWith(store, true)
     const Invoice = z.object({ id: z.string(), amount: z.number() })
     vault.collection('invoices', { schema: Invoice, persistJsonSchema: true })

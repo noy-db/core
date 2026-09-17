@@ -15,7 +15,7 @@
  * post-commit on the atomic path.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import { ConflictError, createNoydb } from '../../src/index.js'
 import { withHistory } from '../../src/with-commit/history/index.js'
 import type { Noydb } from '../../src/index.js'
@@ -35,7 +35,7 @@ interface Instrumented {
 
 /** Same observability idiom as `atomic-commit.test.ts`. */
 function instrument(
-  base: NoydbStore = toMemory(),
+  base: NoydbStore = memoryStore({ full: true }),
   opts: { txThrows?: Error; beforeTx?: () => Promise<void> | void } = {},
 ): Instrumented {
   const calls: string[] = []
@@ -120,7 +120,7 @@ describe('#921 — putMany atomic mode delegates through store.tx()', () => {
   })
 
   it('a concurrent writer inside the prepare→commit window fails the batch with ConflictError, nothing applied', async () => {
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     let raced = false
     const { store, calls } = instrument(memory, {
       beforeTx: async () => {
@@ -156,7 +156,7 @@ describe('#921 — putMany atomic mode delegates through store.tx()', () => {
 
   it('history, ledger and change events fire per record AFTER the batch lands, in entry order', async () => {
     const log: string[] = []
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     const store: NoydbStore = {
       ...memory,
       async put(v, c, id, env, expected) {
@@ -247,7 +247,7 @@ describe('#921 — putMany atomic mode delegates through store.tx()', () => {
   })
 
   it('a store without txAtomic keeps the sequential path byte-for-byte', async () => {
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     const occ: NoydbStore = {
       ...memory,
       capabilities: { ...memory.capabilities!, txAtomic: false },
@@ -291,7 +291,7 @@ describe('#921 — putMany atomic mode delegates through store.tx()', () => {
 
   it('an onAfterWrite hook no longer gates — the batch delegates and the hook fires per record after the batch lands (#931)', async () => {
     const log: string[] = []
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     const store: NoydbStore = {
       ...memory,
       async tx(ops) {

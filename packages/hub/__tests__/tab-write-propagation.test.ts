@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { withHistory } from '../src/with-commit/history/index.js'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import type { TabChannel } from '../src/with-sync/tab-coordination.js'
 
 /** In-memory broadcast bus (each send reaches all OTHER channels). */
@@ -88,7 +88,7 @@ const SECRET = 'tab-prop-pass-1234'
  * it loads the same keyring + DEK (otherwise each tab mints its own DEK and the
  * cross-read fails with TamperedError). See persistence.test.ts:41.
  */
-async function twoTabs(store = toMemory()) {
+async function twoTabs(store = memoryStore({ full: true })) {
   const db1 = await createNoydb({ store, user: 'alice', secret: SECRET, historyStrategy: withHistory() })
   const v1 = await db1.openVault('books'); const c1 = v1.collection<Inv>('invoices')
   await c1.put('seed', { id: 'seed', amount: 0 }) // mint + persist the invoices DEK
@@ -114,7 +114,7 @@ describe('apply primitives (#228b)', () => {
   })
 
   it('_applyRemoteWrite is a no-op for an unloaded collection', async () => {
-    const db = await createNoydb({ store: toMemory(), user: 'alice', secret: SECRET })
+    const db = await createNoydb({ store: memoryStore({ full: true }), user: 'alice', secret: SECRET })
     const v = await db.openVault('books')
     await expect(v._applyRemoteWrite('not-loaded', 'x', 'put')).resolves.toBeUndefined()
     db.close()
@@ -155,7 +155,7 @@ describe('end-to-end cross-tab propagation (#228b)', () => {
     expect(await c2.get('i1')).toBeNull() // db2 opted out → no refresh
 
     // no channel at all (node default) → enabling is a safe no-op, no throw
-    const db3 = await createNoydb({ store: toMemory(), user: 'bob', secret: SECRET })
+    const db3 = await createNoydb({ store: memoryStore({ full: true }), user: 'bob', secret: SECRET })
     expect(() => db3.enableTabCoordination()).not.toThrow()
     db1.close(); db2.close(); db3.close()
   })
@@ -176,14 +176,14 @@ describe('capture + converge primitive (#228c)', () => {
   })
 
   it('_captureAndConverge returns null for an unloaded collection', async () => {
-    const db = await createNoydb({ store: toMemory(), user: 'alice', secret: SECRET })
+    const db = await createNoydb({ store: memoryStore({ full: true }), user: 'alice', secret: SECRET })
     const v = await db.openVault('books')
     expect(await v._captureAndConverge('not-loaded', 'x', 'put', 0)).toBeNull()
     db.close()
   })
 
   it('remote is read from the store in lazy mode (LRU evicted on converge)', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const db1 = await createNoydb({ store, user: 'alice', secret: SECRET, historyStrategy: withHistory() })
     const c1 = (await db1.openVault('books')).collection<Inv>('invoices', { prefetch: false, cache: { maxRecords: 100 } })
     await c1.put('lz', { id: 'lz', amount: 1 })

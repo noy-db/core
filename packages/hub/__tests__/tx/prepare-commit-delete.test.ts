@@ -15,7 +15,7 @@
  * hydration, the history-read gate and the #589 marker rules.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import { createNoydb } from '../../src/index.js'
 import { withSync } from '../../src/with-sync/index.js'
 import { withHistory } from '../../src/with-commit/history/index.js'
@@ -37,7 +37,7 @@ async function flushMicrotasks(): Promise<void> {
 
 /** Body-level write log — history snapshots land in their own collection. */
 function tracked(): { store: NoydbStore; puts: string[]; deletes: string[] } {
-  const memory = toMemory()
+  const memory = memoryStore({ full: true })
   const puts: string[] = []
   const deletes: string[] = []
   const store: NoydbStore = {
@@ -66,7 +66,7 @@ describe('#905 — _prepareDelete / _commitDelete split (synced: marker path)', 
     deletes = t.deletes
     db = await createNoydb({
       store: t.store,
-      sync: toMemory(),
+      sync: memoryStore({ full: true }),
       user: 'owner',
       secret: 'prepare-commit-delete-secret-2026',
       syncStrategy: withSync(),
@@ -183,7 +183,7 @@ describe('#905 — _finalizeDelete snapshots under the ORIGINAL key material', (
   it('perRecordKeys: the history snapshot keeps the live envelope`s _cek', async () => {
     const t = tracked()
     const db = await createNoydb({
-      store: t.store, sync: toMemory(), user: 'owner', secret: 'finalize-cek-secret-2026',
+      store: t.store, sync: memoryStore({ full: true }), user: 'owner', secret: 'finalize-cek-secret-2026',
       syncStrategy: withSync(), historyStrategy: withHistory(),
     })
     const coll = (await db.openVault('v')).collection<Doc>('docs', { perRecordKeys: true })
@@ -211,7 +211,7 @@ describe('#905 — _finalizeDelete snapshots under the ORIGINAL key material', (
   it('digest-only classified field: the history snapshot carries the live _vdig forward', async () => {
     const t = tracked()
     const db = await createNoydb({
-      store: t.store, sync: toMemory(), user: 'owner', secret: 'finalize-vdig-secret-2026',
+      store: t.store, sync: memoryStore({ full: true }), user: 'owner', secret: 'finalize-vdig-secret-2026',
       syncStrategy: withSync(), historyStrategy: withHistory(), classifiedStrategy: withClassified(),
     })
     const coll = (await db.openVault('v')).collection<Record<string, unknown>>('docs', {

@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { enableChangeBroadcast, defaultChangeChannel, changeChannelName, type ChangeSignal } from '../src/with-sync/change-broadcast.js'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import type { TabChannel } from '../src/with-sync/tab-coordination.js'
 // #1458 — the query DSL ships in four groups; these side-effect imports
 // attach the extension methods this file exercises. A consumer on the root
@@ -75,7 +75,7 @@ const SECRET = 'change-broadcast-pass-1234'
  * (otherwise each tab mints its own and the cross-read fails as TamperedError).
  */
 async function twoTabs() {
-  const store = toMemory()
+  const store = memoryStore({ full: true })
   const db1 = await createNoydb({ store, user: 'alice', secret: SECRET })
   const v1 = await db1.openVault('books')
   const c1 = v1.collection<Inv>('invoices')
@@ -288,7 +288,7 @@ describe('#1362 no channel ⇒ no regression', () => {
     try {
       expect(defaultChangeChannel(changeChannelName('memory'))).toBeUndefined()
 
-      const store = toMemory()
+      const store = memoryStore({ full: true })
       const db = await createNoydb({ store, user: 'alice', secret: SECRET })
       const c = (await db.openVault('books')).collection<Inv>('invoices')
 

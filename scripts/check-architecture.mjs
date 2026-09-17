@@ -1961,7 +1961,7 @@ function checkNoOutboundKlumImport() {
  *
  * ⚠️ BOUND: cross-repo binders do not count here and cannot. `/to`'s heaviest
  * consumers are the 17 stores in noy-db-to, and this script cannot see them —
- * so `/to` passes on its in-repo binders (`to-memory`, `to-file`, …) and a
+ * so `/to` passes on its in-repo binders (`to-file`, `to-browser-idb`, …) and a
  * family whose implementors are ALL cross-repo would fail this check even
  * though its seam is justified. That case does not exist today; when it does,
  * the fix is an explicit exemption with the cross-repo binder named, not

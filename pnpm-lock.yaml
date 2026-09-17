@@ -476,15 +476,6 @@ importers:
         specifier: ^22.0.0
         version: 22.19.17
 
-  packages/to-memory:
-    devDependencies:
-      '@noy-db/hub':
-        specifier: workspace:*
-        version: link:../hub
-      '@noy-db/test-adapter-conformance':
-        specifier: workspace:*
-        version: link:../test-adapter-conformance
-
   packages/to-meter:
     devDependencies:
       '@noy-db/hub':

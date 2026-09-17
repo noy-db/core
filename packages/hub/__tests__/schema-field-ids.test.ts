@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { generateDEK } from '../src/capsule/enclave-aes/index.js'
 import { ConflictError } from '../src/kernel/errors.js'
 import { createNoydb } from '../src/kernel/noydb.js'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import { coordinatedCutover } from '../src/with-shape/schema-update/index.js'
 import { persistSchemaIfNeeded } from '../src/with-shape/persisted-schemas/register.js'
 import { loadPersistedSchema, savePersistedSchema, SCHEMAS_COLLECTION } from '../src/with-shape/persisted-schemas/storage.js'
@@ -192,7 +192,7 @@ describe('full-vault integration: schemaFenceState() after a real coordinatedCut
   }
 
   it('generation advances via runSchemaCutover; a later non-gated re-declare persists the migrated schema at the new generation', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     let v = await open(store)
     v.collection('invoices', { schema: oldS, persistJsonSchema: true })
     await v._drainPendingSchemaWrites()
@@ -243,7 +243,7 @@ describe('rename migrates data AND carries field identity through a real coordin
   }
 
   it('a→b (same shape): the transform actually runs (data moves a→b) AND `b` inherits `a`\'s id', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     let v = await open(store)
     const invoicesOld = v.collection('invoices', { schema: oldS, persistJsonSchema: true })
     await v._drainPendingSchemaWrites()

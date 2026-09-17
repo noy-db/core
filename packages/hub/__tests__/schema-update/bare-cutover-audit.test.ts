@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { createNoydb } from '../../src/kernel/noydb.js'
 import { withHistory } from '../../src/with-commit/history/index.js'
 import { coordinatedCutover } from '../../src/with-shape/schema-update/index.js'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import type { NoydbStore } from '../../src/kernel/types.js'
 
 interface InvOld extends Record<string, unknown> { id: string; total: number }
@@ -32,7 +32,7 @@ async function open(store: NoydbStore) {
 
 describe('bare schema generation bump is audited in the ledger (#965)', () => {
   it('a cutover with NO records leaves exactly one bump entry naming the new generation', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
 
     // gen 0: declare the OLD schema, no records ever written.
     let v = await open(store)
@@ -65,7 +65,7 @@ describe('bare schema generation bump is audited in the ledger (#965)', () => {
   })
 
   it('a cutover WITH per-record migrations still gets exactly one distinct bump entry', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
 
     let v = await open(store)
     const invoicesOld = v.collection<InvOld>('invoices', { schema: oldSchema, persistJsonSchema: true })

@@ -17,7 +17,7 @@
  *     that is independently immutable.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import {
   ValidationError, PeriodClosedError, RecordLockedError, createNoydb, immutableGuard,
 } from '../src/index.js'
@@ -44,7 +44,7 @@ describe('#1022 — reopenPeriod', () => {
 
   beforeEach(async () => {
     db = await createNoydb({
-      store: toMemory(), user: 'owner', encrypt: false, periodsStrategy: withPeriods(),
+      store: memoryStore({ full: true }), user: 'owner', encrypt: false, periodsStrategy: withPeriods(),
     })
   })
 
@@ -207,7 +207,7 @@ describe('#1022 — reopenPeriod', () => {
   describe('record-level immutability still wins — reopen only widens', () => {
     it('a reopened period does not resurrect a record under immutableGuard', async () => {
       const guarded = await createNoydb({
-        store: toMemory(), user: 'owner', encrypt: false,
+        store: memoryStore({ full: true }), user: 'owner', encrypt: false,
         periodsStrategy: withPeriods(),
         guardStrategies: [immutableGuard<Filing>({ name: 'filings-worm', collection: 'filings', appendOnly: true })],
       })
@@ -233,7 +233,7 @@ describe('#1022 × #1005 — reopen is partition-scoped', () => {
 
   beforeEach(async () => {
     db = await createNoydb({
-      store: toMemory(), user: 'owner', encrypt: false,
+      store: memoryStore({ full: true }), user: 'owner', encrypt: false,
       periodsStrategy: withPeriods({ subjects }),
     })
   })

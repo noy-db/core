@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { z } from 'zod'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import { ConflictError, InvariantError, MigrationRequiredError, SchemaFenceError, createNoydb, withDerivation } from '../../src/index.js'
 import { coordinatedCutover } from '../../src/with-shape/schema-update/index.js'
 import { withTransactions } from '../../src/with-commit/tx/index.js'
@@ -49,7 +49,7 @@ interface Instrumented {
  * envelope, before the store sees it) — the concurrent-writer hook.
  */
 function instrument(
-  base: NoydbStore = toMemory(),
+  base: NoydbStore = memoryStore({ full: true }),
   opts: { txThrows?: Error; beforeTx?: () => Promise<void> | void } = {},
 ): Instrumented {
   const calls: string[] = []
@@ -128,7 +128,7 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
 
   it('a rejected tx() leaves the store byte-identical, with no ledger entries and no change events', async () => {
     const rejection = new Error('batch rejected by the store')
-    const { store, calls } = instrument(toMemory(), { txThrows: rejection })
+    const { store, calls } = instrument(memoryStore({ full: true }), { txThrows: rejection })
     const db = await open(store, { historyStrategy: withHistory() })
     // Seed so the batch is an UPDATE — a failed update is the case where a
     // stray compensating write would be visible in the dump.
@@ -161,7 +161,7 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
   })
 
   it('a store without txAtomic takes the OCC path unchanged', async () => {
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     const occ: NoydbStore = {
       ...memory,
       capabilities: { ...memory.capabilities!, txAtomic: false },
@@ -205,7 +205,7 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
     // enters the tracker — so the batch is tracked at the transaction layer.
     let pendingDuringTx = false
     let db!: Noydb
-    const { store } = instrument(toMemory(), { beforeTx: () => { pendingDuringTx = db.writeQueue.pending } })
+    const { store } = instrument(memoryStore({ full: true }), { beforeTx: () => { pendingDuringTx = db.writeQueue.pending } })
     db = await open(store)
 
     expect(db.writeQueue.pending).toBe(false)
@@ -244,7 +244,7 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
     // entirely), the atomic path fires them per op post-finalize, in staged
     // order, with a faithful WriteEvent.
     const log: string[] = []
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     const store: NoydbStore = {
       ...memory,
       async tx(ops) {
@@ -269,7 +269,7 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
 
   it('history, ledger and change events fire per op in staged order AFTER the batch lands', async () => {
     const log: string[] = []
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     const store: NoydbStore = {
       ...memory,
       async put(v, c, id, env, expected) {
@@ -305,7 +305,7 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
   })
 
   it('every TxOp carries expectedVersion — a concurrent writer fails the batch with ConflictError and applies nothing', async () => {
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     let raced = false
     const { store, calls, batches } = instrument(memory, {
       beforeTx: async () => {
@@ -511,7 +511,7 @@ describe('#906/#922 — the delete leg of a mixed batch', () => {
 
   it('synced: the delete reaches tx() as a PUT-type leg carrying the #589 marker', async () => {
     const { store, calls, batches } = instrument()
-    const db = await open(store, { sync: toMemory(), syncStrategy: withSync() })
+    const db = await open(store, { sync: memoryStore({ full: true }), syncStrategy: withSync() })
     await db.vault('acme').collection<Invoice>('invoices').put('inv-1', { amount: 50, status: 'draft' })
     calls.length = 0
 

@@ -22,14 +22,14 @@
  *   - anything else       → refused. "Unable to determine" is not "permitted".
  */
 import { describe, it, expect } from 'vitest'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import { createNoydb, PeriodClosedError, ValidationError } from '../src/index.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
 
 const subjects = { rows: (r: Record<string, unknown>) => [r.c as string, 'vat'] }
 
 async function sealedCell() {
-  const db = await createNoydb({ store: toMemory(), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
+  const db = await createNoydb({ store: memoryStore({ full: true }), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
   const vault = await db.openVault('acme')
   const rows = vault.collection<Record<string, unknown>>('rows')
   await vault.closePeriod({ name: '2026-06', endDate: '2026-06-30', dateField: 'cycle', partition: ['c1', 'vat'] })
@@ -65,7 +65,7 @@ describe('#1455 — values the gate could not read', () => {
 
 describe('#1455 — absent date means outside every period', () => {
   it('a stored row with NO date field stays writable through a close whose window contains its write time', async () => {
-    const db = await createNoydb({ store: toMemory(), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
+    const db = await createNoydb({ store: memoryStore({ full: true }), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
     const vault = await db.openVault('acme')
     const rows = vault.collection<Record<string, unknown>>('rows')
     await rows.put('r', { id: 'r', c: 'c1', amount: 1 })            // written now, no `cycle`
@@ -81,7 +81,7 @@ describe('#1455 — absent date means outside every period', () => {
   })
 
   it('a period with NO dateField keeps its write-time seal — that path is unchanged', async () => {
-    const db = await createNoydb({ store: toMemory(), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
+    const db = await createNoydb({ store: memoryStore({ full: true }), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
     const vault = await db.openVault('acme')
     const rows = vault.collection<Record<string, unknown>>('rows')
     await rows.put('r', { id: 'r', c: 'c1', amount: 1 })

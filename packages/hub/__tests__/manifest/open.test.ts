@@ -25,7 +25,7 @@ import {
 } from '../../src/with-pod/format.js'
 import type { DocSigner } from '../../src/with-audit/attestation/signer.js'
 import type { NoydbStore } from '../../src/kernel/types.js'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 
 const USER = 'alice'
 const SECRET = 'test-pw-12345678'
@@ -34,7 +34,7 @@ const VAULT = 'acme'
 interface Invoice { id: string; amount: number }
 
 async function makeSourcePod(opts: { readonly sign?: false | DocSigner } = {}): Promise<Uint8Array> {
-  const store = toMemory()
+  const store = memoryStore({ full: true })
   const db = await createNoydb({ store, user: USER, secret: SECRET, historyStrategy: withHistory() })
   const vault = await db.openVault(VAULT)
   const Schema = z.object({ id: z.string(), amount: z.number() })
@@ -69,7 +69,7 @@ function baseOpts(store: NoydbStore, extra: Partial<OpenPodOptions> = {}): OpenP
  * `SchemaFenceController` snapshot tracks the bump it itself causes.
  */
 async function makeAheadPod(): Promise<Uint8Array> {
-  const store = toMemory()
+  const store = memoryStore({ full: true })
   const oldSchema = z.object({ id: z.string(), amount: z.number() })
   const newSchema = z.object({ id: z.string(), total: z.number() })
   const transform = (d: Record<string, unknown>) => {
@@ -122,7 +122,7 @@ describe('open() — #941 Task 4', () => {
   it('opens a pod with schemas: vault is open, a record reads back, manifest matches the source', async () => {
     const bytes = await makeSourcePod()
 
-    const result = await open(bytes, baseOpts(toMemory()))
+    const result = await open(bytes, baseOpts(memoryStore({ full: true })))
 
     expect(result.header.formatVersion).toBeGreaterThanOrEqual(1)
     expect(result.manifest).toBeDefined()
@@ -138,7 +138,7 @@ describe('open() — #941 Task 4', () => {
     const bytes = await makeSourcePod({ sign: signer })
     const trustedKeys = { [signer.keyId]: signer.publicKeyB64 }
 
-    const result = await open(bytes, baseOpts(toMemory(), { trustedKeys }))
+    const result = await open(bytes, baseOpts(memoryStore({ full: true }), { trustedKeys }))
 
     expect(result.verification?.status).toBe('verified')
     expect(result.verification?.keyId).toBe(signer.keyId)
@@ -148,7 +148,7 @@ describe('open() — #941 Task 4', () => {
     const signer = (await generateDocSigningKeyPair()) as DocSigner
     const bytes = await makeSourcePod({ sign: false })
 
-    const result = await open(bytes, baseOpts(toMemory(), {
+    const result = await open(bytes, baseOpts(memoryStore({ full: true }), {
       trustedKeys: { [signer.keyId]: signer.publicKeyB64 },
     }))
 
@@ -161,7 +161,7 @@ describe('open() — #941 Task 4', () => {
     const bytes = await makeSourcePod({ sign: signer })
 
     await expect(
-      open(bytes, baseOpts(toMemory(), { trustedKeys: {} /* signer's keyId not trusted */ })),
+      open(bytes, baseOpts(memoryStore({ full: true }), { trustedKeys: {} /* signer's keyId not trusted */ })),
     ).rejects.toThrow(PodHeaderVerificationError)
   })
 
@@ -182,21 +182,21 @@ describe('open() — #941 Task 4', () => {
     const tamperedBytes = reassembleWithHeader(bytes, tamperedHeader)
 
     await expect(
-      open(tamperedBytes, baseOpts(toMemory(), { trustedKeys: { [forgedKeyId]: signer.publicKeyB64 } })),
+      open(tamperedBytes, baseOpts(memoryStore({ full: true }), { trustedKeys: { [forgedKeyId]: signer.publicKeyB64 } })),
     ).rejects.toThrow(PodHeaderVerificationError)
   })
 
   it('pod generation ahead of the reader → MigrationRequiredError', async () => {
     const bytes = await makeAheadPod()
 
-    await expect(open(bytes, baseOpts(toMemory()))).rejects.toThrow(MigrationRequiredError)
+    await expect(open(bytes, baseOpts(memoryStore({ full: true })))).rejects.toThrow(MigrationRequiredError)
   })
 
   it('allowGenerationAhead: true opens anyway, with a console warning', async () => {
     const bytes = await makeAheadPod()
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const result = await open(bytes, baseOpts(toMemory(), { allowGenerationAhead: true }))
+    const result = await open(bytes, baseOpts(memoryStore({ full: true }), { allowGenerationAhead: true }))
     expect(result.vault).toBeDefined()
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
@@ -208,7 +208,7 @@ describe('open() — #941 Task 4', () => {
     // makeAheadPod()'s pattern but applied to the store open() restores
     // INTO. `_meta/schema-fence` does NOT travel in a pod dump (see the
     // module doc), so this local generation survives `vault.load()` intact.
-    const targetStore = toMemory()
+    const targetStore = memoryStore({ full: true })
     const oldSchema = z.object({ id: z.string(), amount: z.number() })
     const newSchema = z.object({ id: z.string(), total: z.number() })
     const transform = (d: Record<string, unknown>) => {

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import { FenceWatcher } from '../../src/with-shape/schema-update/fence-watcher.js'
 import { saveFence } from '../../src/with-shape/schema-update/fence.js'
 import { listClientDocs } from '../../src/with-shape/schema-update/client-registry.js'
 import { StoreMesh } from '../../src/with-shape/schema-update/store-coordination-provider.js'
 
-function mkWatcher(store = toMemory(), onFlush = async () => {}) {
+function mkWatcher(store = memoryStore({ full: true }), onFlush = async () => {}) {
   let t = 1000
   const events: string[] = []
   // Default coordination = StoreMesh over the same store; the
@@ -28,7 +28,7 @@ describe('FenceWatcher', () => {
 
   it('check() during draining flushes then stamps quiescedAtVersion', async () => {
     let flushed = false
-    const { store, w } = mkWatcher(toMemory(), async () => { flushed = true })
+    const { store, w } = mkWatcher(memoryStore({ full: true }), async () => { flushed = true })
     await saveFence(store, 'v', { currentSchemaVersion: 7, fenceState: 'draining' })
     await w.check()
     expect(flushed).toBe(true)
@@ -48,7 +48,7 @@ describe('FenceWatcher', () => {
 
   it('check() in normal state does not flush or ack', async () => {
     let flushed = false
-    const { store, w } = mkWatcher(toMemory(), async () => { flushed = true })
+    const { store, w } = mkWatcher(memoryStore({ full: true }), async () => { flushed = true })
     await saveFence(store, 'v', { currentSchemaVersion: 0, fenceState: 'normal' })
     await w.check()
     expect(flushed).toBe(false)

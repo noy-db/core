@@ -18,7 +18,7 @@
  *     reachable hole; (2) makes the remaining paths honest, not airtight.
  */
 import { describe, it, expect } from 'vitest'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import { createNoydb, ReservedCollectionNameError } from '../src/index.js'
 import { PeriodChainError } from '../src/kernel/errors.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
@@ -37,12 +37,12 @@ describe('#1454 — the periods family is refused by vault.collection()', () => 
     '_period_archives',
     '_period_target_purges',
   ])('%s', async (name) => {
-    const vault = await open(toMemory())
+    const vault = await open(memoryStore({ full: true }))
     expect(() => vault.collection(name)).toThrow(ReservedCollectionNameError)
   })
 
   it('so the reporter\'s two-put rewrite has no public entry point', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await open(store)
     await vault.closePeriod({ name: 'Q1', endDate: '2026-03-31', dateField: 'date' })
     await vault.reopenPeriod('Q1', { reason: 'late invoice' })
@@ -68,7 +68,7 @@ describe('#1454 — loadPeriods verifies the hash chain', () => {
   }
 
   it('an interior close rewritten under the store breaks its successor\'s anchor', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await open(store)
     await vault.closePeriod({ name: 'Q1', endDate: '2026-03-31', dateField: 'date' })
     await vault.closePeriod({ name: 'Q2', endDate: '2026-06-30', dateField: 'date' })
@@ -83,7 +83,7 @@ describe('#1454 — loadPeriods verifies the hash chain', () => {
   })
 
   it('an interior close DELETED under the store is detected too', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await open(store)
     await vault.closePeriod({ name: 'Q1', endDate: '2026-03-31', dateField: 'date' })
     await vault.closePeriod({ name: 'Q2', endDate: '2026-06-30', dateField: 'date' })
@@ -98,7 +98,7 @@ describe('#1454 — loadPeriods verifies the hash chain', () => {
     // which the stored record never has — so a close following a reopen was
     // anchored to a hash no loader could recompute. Latent until (2) made the
     // loader recompute it.
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const vault = await open(store)
     await vault.closePeriod({ name: 'Q1', endDate: '2026-03-31', dateField: 'date' })
     await vault.reopenPeriod('Q1')
@@ -114,7 +114,7 @@ describe('#1454 — loadPeriods verifies the hash chain', () => {
   })
 
   it('an intact multi-partition vault loads clean', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const db = await createNoydb({
       store, user: 'owner', encrypt: false,
       periodsStrategy: withPeriods({ subjects: { rows: (r) => [r.c as string] } }),

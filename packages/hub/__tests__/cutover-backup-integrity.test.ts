@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { withHistory } from '../src/with-commit/history/index.js'
 import { coordinatedCutover } from '../src/with-shape/schema-update/index.js'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import type { NoydbStore } from '../src/kernel/types.js'
 
 interface InvOld extends Record<string, unknown> { id: string; total: number }
@@ -31,7 +31,7 @@ async function open(store: NoydbStore) {
 
 describe('cutover migration ledger entries carry a real payloadHash (#964)', () => {
   it('verifyBackupIntegrity() passes after a coordinated cutover with history on', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
 
     // gen 0: seed old-shape data
     let v = await open(store)
@@ -58,7 +58,7 @@ describe('cutover migration ledger entries carry a real payloadHash (#964)', () 
   })
 
   it('dump()/load() round-trips a pod that took a cutover with history on', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     let v = await open(store)
     const invoicesOld = v.collection<InvOld>('invoices', { schema: oldSchema, persistJsonSchema: true })
     await v._drainPendingSchemaWrites()
@@ -74,7 +74,7 @@ describe('cutover migration ledger entries carry a real payloadHash (#964)', () 
 
     const backup = await v.dump()
 
-    const targetStore = toMemory()
+    const targetStore = memoryStore({ full: true })
     const targetDb = await createNoydb({
       store: targetStore, user: 'alice', secret: 'cutover-backup-pass-1234',
       historyStrategy: withHistory(),

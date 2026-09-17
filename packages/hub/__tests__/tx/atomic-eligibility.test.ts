@@ -18,7 +18,7 @@
  *     prepare/commit that a bare `store.tx(ops)` batch cannot reproduce.
  */
 import { describe, it, expect } from 'vitest'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import { createNoydb, withDerivation } from '../../src/index.js'
 import { withIndexing } from '../../src/with-lookup/indexing/index.js'
 import { ref } from '../../src/kernel/refs.js'
@@ -29,7 +29,7 @@ import type { NoydbStore } from '../../src/kernel/types.js'
 
 const SECRET = 'atomic-eligibility-test-secret-2026'
 
-async function open(store: NoydbStore = toMemory(), extra: Record<string, unknown> = {}) {
+async function open(store: NoydbStore = memoryStore({ full: true }), extra: Record<string, unknown> = {}) {
   const db = await createNoydb({ store, user: 'owner', secret: SECRET, ...extra })
   const vault = await db.openVault('v')
   return { db, vault }
@@ -49,7 +49,7 @@ describe('canCommitAtomically — #893/#906-prep gate', () => {
   })
 
   it('false when the store lacks txAtomic', async () => {
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     const store: NoydbStore = {
       ...memory,
       capabilities: { casAtomic: true, auth: { kind: 'none', required: false, flow: 'static' }, txAtomic: false },
@@ -62,7 +62,7 @@ describe('canCommitAtomically — #893/#906-prep gate', () => {
   })
 
   it('false when txAtomic is declared but tx() is missing (out-of-tree store)', async () => {
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { tx, ...rest } = memory as any
     const store = { ...rest, capabilities: { ...memory.capabilities, txAtomic: true } } as NoydbStore
@@ -101,7 +101,7 @@ describe('canCommitAtomically — #893/#906-prep gate', () => {
       derive: () => ({ total: {} }),
       lifecycle: 'eager',
     })
-    const { db, vault } = await open(toMemory(), { derivationStrategies: [derivation] })
+    const { db, vault } = await open(memoryStore({ full: true }), { derivationStrategies: [derivation] })
     vault.collection('orders')
     const ctx = new TxContext(db)
     ctx._ops.push({ type: 'put', vaultName: 'v', collectionName: 'orders', id: '1', record: { n: 1 } })
@@ -116,7 +116,7 @@ describe('canCommitAtomically — #893/#906-prep gate', () => {
       derive: () => ({ total: {} }),
       lifecycle: 'lazy',
     })
-    const { db, vault } = await open(toMemory(), { derivationStrategies: [derivation] })
+    const { db, vault } = await open(memoryStore({ full: true }), { derivationStrategies: [derivation] })
     vault.collection('orders')
     const ctx = new TxContext(db)
     ctx._ops.push({ type: 'put', vaultName: 'v', collectionName: 'orders', id: '1', record: { n: 1 } })
@@ -132,7 +132,7 @@ describe('canCommitAtomically — #893/#906-prep gate', () => {
   })
 
   it('false when a touched collection declares unique constraints', async () => {
-    const { db, vault } = await open(toMemory(), { indexingStrategy: withIndexing() })
+    const { db, vault } = await open(memoryStore({ full: true }), { indexingStrategy: withIndexing() })
     vault.collection('employees', { indexes: [{ fields: ['taxId'], unique: true }] })
     const ctx = new TxContext(db)
     ctx._ops.push({ type: 'put', vaultName: 'v', collectionName: 'employees', id: '1', record: { taxId: 'x' } })

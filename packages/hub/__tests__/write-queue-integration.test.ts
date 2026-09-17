@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { createNoydb, type Noydb } from '../src/kernel/noydb.js'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import type { NoydbStore } from '../src/kernel/types.js'
 
 interface Invoice extends Record<string, unknown> {
@@ -15,7 +15,7 @@ interface Invoice extends Record<string, unknown> {
 
 /**
  * Wrap a memory store so its `put` blocks on a gate the test controls.
- * toMemory() returns an object of closures, so spread + override is safe.
+ * memoryStore({ full: true }) returns an object of closures, so spread + override is safe.
  */
 function gatedMemory(): {
   store: NoydbStore
@@ -23,7 +23,7 @@ function gatedMemory(): {
   release: () => void
   whenEntered: (n: number) => Promise<void>
 } {
-  const base = toMemory()
+  const base = memoryStore({ full: true })
   let gate: Promise<void> = Promise.resolve()
   let open: () => void = () => {}
   let entered = 0
@@ -76,7 +76,7 @@ async function setup(store: NoydbStore): Promise<Noydb> {
 
 describe('hub.writeQueue (#227)', () => {
   it('is idle on a fresh hub', async () => {
-    const db = await setup(toMemory())
+    const db = await setup(memoryStore({ full: true }))
     expect(db.writeQueue.pending).toBe(false)
     expect(db.writeQueue.depth).toBe(0)
   })

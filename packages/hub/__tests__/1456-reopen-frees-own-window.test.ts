@@ -15,14 +15,14 @@
  * February, so the reopen is exactly as wide as the accountant said.
  */
 import { describe, it, expect } from 'vitest'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import { createNoydb, PeriodClosedError } from '../src/index.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
 
 const subjects = { rows: (r: Record<string, unknown>) => [r.c as string, 'wht'] }
 
 async function threeCloses() {
-  const db = await createNoydb({ store: toMemory(), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
+  const db = await createNoydb({ store: memoryStore({ full: true }), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
   const vault = await db.openVault('acme')
   const rows = vault.collection<Record<string, unknown>>('rows')
   const p = ['c1', 'wht'] as const
@@ -65,7 +65,7 @@ describe('#1456 — reopen January with February and March closed', () => {
   it('a row dated in a GAP between closes belongs to the next close up', async () => {
     // No April close: a 2026-04 row is owned by nothing and is writable; with
     // only Jan and Mar closed, a February row is owned by March.
-    const db = await createNoydb({ store: toMemory(), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
+    const db = await createNoydb({ store: memoryStore({ full: true }), user: 'owner', encrypt: false, periodsStrategy: withPeriods({ subjects }) })
     const vault = await db.openVault('acme')
     const rows = vault.collection<Record<string, unknown>>('rows')
     const p = ['c1', 'wht'] as const

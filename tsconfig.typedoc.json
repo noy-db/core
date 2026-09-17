@@ -7,7 +7,6 @@
     "paths": {
       "@noy-db/hub": ["./packages/hub/src/index.ts"],
       "@noy-db/to-file": ["./packages/to-file/src/index.ts"],
-      "@noy-db/to-memory": ["./packages/to-memory/src/index.ts"],
       "@noy-db/to-browser-idb": ["./packages/to-browser-idb/src/index.ts"],
       "@noy-db/in-vue": ["./packages/in-vue/src/index.ts"],
       "@noy-db/in-pinia": ["./packages/in-pinia/src/index.ts"],
@@ -17,7 +16,6 @@
   "include": [
     "packages/hub/src/**/*.ts",
     "packages/to-file/src/**/*.ts",
-    "packages/to-memory/src/**/*.ts",
     "packages/to-browser-idb/src/**/*.ts",
     "packages/in-vue/src/**/*.ts",
     "packages/in-pinia/src/**/*.ts",

@@ -12,7 +12,7 @@
  * write was refused as "record may have been tampered with".
  */
 import { describe, it, expect } from 'vitest'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import { createNoydb, TamperedError } from '../src/index.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
 import { withTeam } from '../src/with-party/team/index.js'
@@ -26,7 +26,7 @@ interface Filing extends Record<string, unknown> {
 
 describe('TamperedError.reason = key-absent (#1288)', () => {
   it('a per-collection member writing a subject collection behind a closed period sees key-absent, not a bare tamper alert', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     // The grantor runs WITHOUT the periods strategy, so grant() has no reason
     // to mint `_periods` first (see the ask-2 test below): a grant wraps only
     // the DEKs that exist at grant time, so `_periods` — minted by the owner's
@@ -56,7 +56,7 @@ describe('TamperedError.reason = key-absent (#1288)', () => {
   })
 
   it('a reserved collection with NO records still mints lazily — creating is not key absence', async () => {
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const owner = await createNoydb({ store, user: 'owner', secret: 'owner-secret', periodsStrategy: withPeriods(), teamStrategy: withTeam() })
     const v = await owner.openVault('acme')
     // First touch of `_periods` on a fresh vault: no records, so the resolver mints.
@@ -69,7 +69,7 @@ describe('TamperedError.reason = key-absent (#1288)', () => {
     // schema and no introspection output, so no permission builder can name
     // it — grant() mints the owner's `_periods` DEK first, so the ordinary
     // reserved-collection propagation wraps it for every grantee.
-    const store = toMemory()
+    const store = memoryStore({ full: true })
     const owner = await createNoydb({ store, user: 'owner', secret: 'owner-secret', periodsStrategy: withPeriods(), teamStrategy: withTeam() })
     const v = await owner.openVault('acme')
     await v.collection<Filing>('filings').put('f1', { id: 'f1', clientId: 'A', amount: 100, date: '2026-06-15' })

@@ -31,7 +31,7 @@
  * loudly when both cannot be.
  */
 import { describe, it, expect } from 'vitest'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import { createNoydb, isConflictError } from '../../src/index.js'
 import { withTransactions } from '../../src/with-commit/tx/index.js'
 import type { NoydbStore } from '../../src/index.js'
@@ -71,7 +71,7 @@ interface Hooks {
  * `canCommitAtomically` falls back to the per-op replay path.
  */
 function instrumented(hooks: Hooks, atomic: boolean): NoydbStore {
-  const inner = toMemory()
+  const inner = memoryStore({ full: true })
   const wrapped: NoydbStore = {
     ...inner,
     async get(v, c, id) {

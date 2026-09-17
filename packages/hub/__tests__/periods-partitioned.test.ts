@@ -18,7 +18,7 @@
  * uses to answer the same question.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import { ValidationError, PeriodClosedError, createNoydb } from '../src/index.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
 import type { Noydb } from '../src/index.js'
@@ -40,7 +40,7 @@ describe('#1005 — partitioned accounting periods', () => {
 
   beforeEach(async () => {
     db = await createNoydb({
-      store: toMemory(),
+      store: memoryStore({ full: true }),
       user: 'owner',
       encrypt: false,
       periodsStrategy: withPeriods({ subjects }),
@@ -301,7 +301,7 @@ describe('#1005 — partitioned accounting periods', () => {
 describe('#1005 — unpartitioned behaviour is unchanged without `subjects`', () => {
   it('withPeriods() with no config still seals vault-wide by business date', async () => {
     const db = await createNoydb({
-      store: toMemory(), user: 'owner', encrypt: false, periodsStrategy: withPeriods(),
+      store: memoryStore({ full: true }), user: 'owner', encrypt: false, periodsStrategy: withPeriods(),
     })
     const vault = await db.openVault('acme')
     const receipts = vault.collection<Receipt>('receipts')

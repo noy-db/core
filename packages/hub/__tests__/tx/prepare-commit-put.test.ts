@@ -10,7 +10,7 @@
  * atomic (`store.tx()`) path uses once the envelopes are already persisted.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { toMemory } from '../../../to-memory/src/index.js'
+import { memoryStore } from '../../src/index.js'
 import { createNoydb } from '../../src/index.js'
 import { withHistory } from '../../src/with-commit/history/index.js'
 import type { Noydb } from '../../src/index.js'
@@ -32,7 +32,7 @@ describe('#904 — _preparePut / _commitPut split', () => {
   let bodyPuts: string[]
 
   beforeEach(async () => {
-    const memory = toMemory()
+    const memory = memoryStore({ full: true })
     bodyPuts = []
     // Only the record bodies matter here — history snapshots land in their own
     // collection and would otherwise mask a stray body write.

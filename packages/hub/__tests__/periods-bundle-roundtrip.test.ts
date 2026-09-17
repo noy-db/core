@@ -14,7 +14,7 @@
  * into a sealed month. Silent in both directions: no error on load, none on write.
  */
 import { describe, it, expect } from 'vitest'
-import { toMemory } from '../../to-memory/src/index.js'
+import { memoryStore } from '../src/index.js'
 import { createNoydb, PeriodClosedError } from '../src/index.js'
 import { withHistory } from '../src/with-commit/history/index.js'
 import { withPeriods } from '../src/with-audit/periods/index.js'
@@ -29,7 +29,7 @@ interface Filing extends Record<string, unknown> {
 const SECRET = 'bundle-roundtrip-2026'
 const subjects = { filings: (r: Record<string, unknown>) => [String(r.clientId)] }
 
-async function openVault(store = toMemory()) {
+async function openVault(store = memoryStore({ full: true })) {
   const db: Noydb = await createNoydb({
     store, user: 'ann', secret: SECRET, validateSecret: false,
     // `dump()` is history-gated: with the ledger wired the backup also carries a
