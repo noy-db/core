@@ -32,25 +32,62 @@ const CONFIG = join(HERE, 'fixtures', 'vitest.suites.config.ts')
 const REPO_ROOT = join(HERE, '..', '..', '..')
 
 /** Run one child suite; return its exit code and output. */
-function runSuite(name: string): { code: number; out: string } {
+function runSuite(name: string, ...extra: readonly string[]): { code: number; out: string } {
   try {
     const out = execFileSync(
       'npx',
-      ['vitest', 'run', '--config', CONFIG, name],
+      ['vitest', 'run', '--config', CONFIG, name, ...extra],
       { cwd: REPO_ROOT, encoding: 'utf8', stdio: 'pipe' },
     )
-    return { code: 0, out }
+    return { code: 0, out: plain(out) }
   } catch (e) {
     const err = e as { status?: number; stdout?: string; stderr?: string }
-    return { code: err.status ?? 1, out: `${err.stdout ?? ''}${err.stderr ?? ''}` }
+    return { code: err.status ?? 1, out: plain(`${err.stdout ?? ''}${err.stderr ?? ''}`) }
   }
+}
+
+/**
+ * Strip ANSI colour before matching.
+ *
+ * ⚠️ vitest colours its SUMMARY, so `Tests  1 failed | 9 passed` carries escape
+ * sequences between the words. A regex written against what the terminal SHOWS
+ * silently never matches — an assertion that cannot match is the same defect
+ * class this kit exists to catch, one layer up. (Paid for in core#46.)
+ */
+function plain(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\[[0-9;]*m/g, '')
 }
 
 describe('the format conformance kit, run against a synthetic format', () => {
   it('PASSES a fixture that satisfies the contract', () => {
     const { code, out } = runSuite('green')
     expect(code, `the kit failed a conforming fixture:\n${out}`).toBe(0)
-    expect(out).toMatch(/8 passed/)
+    expect(out).toMatch(/10 passed/)
+  }, 120_000)
+
+  it('⛔ FAILS a fixture calling with an option the package no longer reads (core#43)', () => {
+    // The defect this kit could not see: as-csv's fixture passed `collection`
+    // after the rename to `collections`, and 18 tests passed either side of the
+    // fix. Only the scope case may react — if the gate cases go red too, the
+    // control is failing for some other reason and proves nothing about scope.
+    const { code, out } = runSuite('wrong-option')
+    expect(code, `the kit passed a fixture whose export widened to everything:\n${out}`).not.toBe(0)
+    expect(out).toMatch(/the SCOPED call exports EXACTLY its scope/)
+    expect(out).toMatch(/Tests {2}1 failed \|/)
+  }, 120_000)
+
+  it('SAYS SO IN THE OUTPUT when a fixture declares no scope, rather than passing quietly', () => {
+    // The upgrade path for every as-* fixture written before core#43: `scope`
+    // is optional, so they stay green — but the run must say the property is
+    // unverified, or an unchecked scope is indistinguishable from a checked one.
+    //
+    // ⚠️ `--reporter=verbose` is load-bearing: the default reporter prints no
+    // name for a PASSING test, so the string this case looks for would never
+    // appear and the assertion could not fail for the right reason.
+    const { code, out } = runSuite('no-scope', '--reporter=verbose')
+    expect(code, `a fixture without \`scope\` must still pass:\n${out}`).toBe(0)
+    expect(out).toMatch(/scope: SKIPPED — fixture declares no scoped call/)
   }, 120_000)
 
   it('⛔ FAILS a fixture with no observableVault — the control for the case above', () => {

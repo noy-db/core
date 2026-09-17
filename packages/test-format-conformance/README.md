@@ -21,6 +21,15 @@ runFormatConformanceTests('as-myformat', {
     { name: 'vault.import(asMyformat())', run: (v) => v.import(asMyformat(), payload, { collection: 'invoices' }) },
   ],
   writeWithoutAcknowledgement: (v, path) => write(v, path, opts),
+  // What the export PRODUCED, not merely that the gate fired (core#43).
+  // `unscoped` is the control: it must yield MORE than `expected`, or there is
+  // nothing for the scope to exclude and the case cannot fail.
+  scope: {
+    name: 'download',
+    scoped: (v) => download(v, { collections: ['invoices'] }),
+    expected: ['invoices'],
+    unscoped: (v) => download(v, {}),
+  },
 })
 ```
 
@@ -39,7 +48,27 @@ For **every** entry point the fixture lists:
 - it **refuses** when `assertCanExport` denies, and
 - it refuses **before reading a single record**.
 
-Plus: the `write` path refuses without `acknowledgeRisks: true`.
+Plus: the `write` path refuses without `acknowledgeRisks: true`, and — when the
+fixture declares `scope` — that a scoped call exports **exactly** its scope.
+
+## Gate-fired is not the same as exported-correctly
+
+Every case above fires on the **gate**. A call passing an option the package no
+longer reads fires it exactly as well as a correct one: `as-csv`'s fixture kept
+saying `collection` after the rename to `collections`, and **18 tests passed
+before the fix and 18 after**. Typechecking found it; running it never would.
+
+`scope` closes that. The kit wraps the format's `encode` for the duration of the
+call and asserts the collections it actually received — **not** what the store
+read, because hub reads every collection and filters afterwards (core#45), so
+the two calls are byte-identical at the store.
+
+It is optional: a fixture without it stays green, and the suite says
+`scope: SKIPPED` so an unverified scope is not mistaken for a verified one.
+
+⚠️ It only sees an entry point routing through `vault.export`. One driving
+`exportStream` itself reaches no `encode`, and the case fails saying so — an
+unobservable scope is not a satisfied one.
 
 ## Gated is not the property. Gated BEFORE decrypting is.
 

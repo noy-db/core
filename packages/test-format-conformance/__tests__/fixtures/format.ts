@@ -81,10 +81,29 @@ async function build(): Promise<{ db: Noydb; vault: Vault; store: ObservedStore 
   return { db, vault: await db.openVault('acme'), store }
 }
 
+/**
+ * The option name a DRIFTED fixture would use — `collections` was called
+ * `collection` before the read moved into hub, and `as-csv`'s fixture went on
+ * passing the old name with 18 tests green either side of the rename (core#43).
+ * `exportText` takes `ExportOptions`, so the wrong name cannot be written
+ * without this cast; the cast is the fixture saying "this is the defect", not a
+ * convenience.
+ */
+export const driftedScope = { collection: ['invoices'] } as unknown as ExportOptions
+
 /** @param scoped - the arguments the entry point is called with. */
 export function fixtureFor(scoped: ExportOptions): FormatFixture {
   const entry = { name: 'exportText', run: (v: Vault) => exportText(v, scoped) }
   return {
+    // core#43: what the export PRODUCED, not merely that the gate fired. The
+    // vault holds `invoices` and `payments`, so a scope of `['invoices']` has
+    // something to exclude and the unscoped control has something to show.
+    scope: {
+      name: 'exportText',
+      scoped: (v: Vault) => exportText(v, scoped),
+      expected: ['invoices'],
+      unscoped: (v: Vault) => exportText(v),
+    },
     tier: 'plaintext',
     format: 'csv',
     vault: async () => (await build()).vault,
