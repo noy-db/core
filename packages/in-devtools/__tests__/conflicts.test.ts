@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createInspector } from '../src/index.js'
-import type { InspectorNoydb, InspectorWriteConflict } from '../src/types.js'
+import type { InspectableContainer, InspectorWriteConflict } from '../src/types.js'
 
-function fakeNoydb(): InspectorNoydb & { emitConflict: (c: InspectorWriteConflict) => void } {
+function fakeNoydb(): InspectableContainer & { emitConflict: (c: InspectorWriteConflict) => void } {
   const listeners = new Set<(c: InspectorWriteConflict) => void>()
   return {
     onAfterWrite: () => () => {},
@@ -10,7 +10,7 @@ function fakeNoydb(): InspectorNoydb & { emitConflict: (c: InspectorWriteConflic
     listVaults: async () => [],
     onWriteConflict(fn: (c: InspectorWriteConflict) => void) { listeners.add(fn); return () => listeners.delete(fn) },
     emitConflict(c) { for (const l of listeners) l(c) },
-  } as unknown as InspectorNoydb & { emitConflict: (c: InspectorWriteConflict) => void }
+  } as unknown as InspectableContainer & { emitConflict: (c: InspectorWriteConflict) => void }
 }
 
 const sampleConflict: InspectorWriteConflict = {

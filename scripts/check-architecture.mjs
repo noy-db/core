@@ -1885,6 +1885,67 @@ function checkSourcesTracked() {
   }
 }
 
+// ─── Check: tests-typechecked (a package's tests reach a tsc program) ───
+//
+// ⛔ THE CLASS (core#40, family#28). Every package `tsconfig.json` is
+// `include: ["src"]`, and vitest TRANSPILES without typechecking. So a test
+// file could name a type that no longer exists, or hand a double a shape the
+// contract has never had, and nothing anywhere would say so — the suite ran
+// green because the types were erased before it ran.
+//
+// ⭐ Both of those are real finds from the commit that added this check, not
+// hypotheticals: `in-devtools`'s tests imported `InspectorNoydb`, renamed to
+// `InspectableContainer` some time earlier, and `in-relay`'s fake store
+// returned `{ ids, cursor }` for `listPage` where `ListPageResult` is
+// `{ items, nextCursor }` — a wire payload documented wrongly in the package
+// doi-db asserts its relay vocabulary against.
+//
+// This asks the structural question a per-package config cannot: does every
+// package that HAS tests put them in front of a compiler at all. The shape of
+// the config stays per-package (ambient types differ, and a repo-wide
+// `types: []` strips globals a package legitimately declares) — the family
+// issue's open question is whether this CHECK belongs in family-tools, and
+// this is core's answer to it in executable form.
+function checkTestsTypechecked() {
+  for (const pkgDir of listPackageDirs()) {
+    const testsDir = join(pkgDir, '__tests__')
+    if (!existsSync(testsDir)) continue
+    let hasTests = false
+    walkTsFiles(testsDir, (f) => { if (f.endsWith('.test.ts') || f.endsWith('.test.tsx')) hasTests = true })
+    if (!hasTests) continue
+
+    const pkg = readPackageJson(pkgDir)
+    const name = pkg.name ?? pkgDir
+    const typecheck = pkg.scripts?.typecheck
+    if (!typecheck) {
+      fail('tests-typechecked', `${name} has test files and no \`typecheck\` script, so nothing compiles them.`, join(pkgDir, 'package.json'))
+      continue
+    }
+
+    // Covered either by the main config already including __tests__, or by a
+    // second program the typecheck script runs. Both are in use here, and
+    // which one is right depends on whether the package emits from the same
+    // config — so the check accepts either rather than mandating a layout.
+    const base = JSON.parse(readFileSync(join(pkgDir, 'tsconfig.json'), 'utf8').replace(/^\s*\/\/.*$/gm, ''))
+    if ((base.include ?? []).some((i) => i.includes('__tests__'))) continue
+
+    const referenced = [...typecheck.matchAll(/-p\s+(\S+\.json)/g)].map((m) => m[1])
+    const covering = referenced.find((rel) => {
+      const p = join(pkgDir, rel)
+      if (!existsSync(p)) return false
+      const cfg = JSON.parse(readFileSync(p, 'utf8').replace(/^\s*\/\/.*$/gm, ''))
+      return (cfg.include ?? []).some((i) => i.includes('__tests__'))
+    })
+    if (!covering) {
+      fail(
+        'tests-typechecked',
+        `${name} has test files that no typecheck program includes. vitest transpiles without checking, so a type error in them is invisible — including a test double whose shape the contract never had. Add a \`tsconfig.tests.json\` (\`include: ["src", "__tests__"]\`, \`types\` set EXPLICITLY — never defaulted, never a blanket []) and append \`&& tsc --noEmit -p tsconfig.tests.json\` to the typecheck script. Files that fail today go on that config's \`exclude\` as a burn-down, so new files are covered from day one.`,
+        join(pkgDir, 'package.json'),
+      )
+    }
+  }
+}
+
 function checkKernelSurface() {
   for (const [rel, ceiling] of Object.entries(KERNEL_SURFACE_BUDGET)) {
     const file = join(ROOT, rel)
@@ -3294,6 +3355,7 @@ checkStrategyOptIns()
 checkServiceSubpathNaming()
 checkEveryServiceGated()
 checkSourcesTracked()
+checkTestsTypechecked()
 checkKernelSurface()
 checkNoDebugPlaintextInSource()
 checkNoOutboundKlumImport()

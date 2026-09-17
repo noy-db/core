@@ -1,0 +1,18 @@
+{
+  "//": "Typechecks this package's test files, which `tsconfig.json` (include: [\"src\"]) never saw \u2014 vitest transpiles without checking, so until this existed they were checked by nothing (family#28, core#40). `types` is set EXPLICITLY and is never left to default: defaulting pulls in every @types/* in scope and hides the gap, while a blanket `types: []` strips ambient globals so a package that correctly declares @types/node cannot use `process`. The `exclude` list is a burn-down \u2014 add a file that fails today, delete the entry when it is fixed; new test files are covered from day one because they were never listed.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "types": [],
+    "noImplicitAny": false
+  },
+  "include": [
+    "src",
+    "__tests__"
+  ],
+  "exclude": [
+    "__tests__/in-zustand.test.ts"
+  ],
+  "//exclude": "BURN-DOWN (core#40), 9 errors in 1 file: the test holds the store as zustand's `create` signature rather than the `StoreApi` it returns, so `getState`/`subscribe` do not resolve. Worth a careful look when burnt down \u2014 an API-shape mismatch in a binding's own test is not automatically harmless."
+}
