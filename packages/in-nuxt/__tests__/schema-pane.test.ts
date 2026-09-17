@@ -65,7 +65,7 @@ describe('SchemaPane — meta header', () => {
         name: 'invoices',
         fields: { id: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         meta: { label: 'Invoice', description: 'All invoices' },
       }],
     }
@@ -81,7 +81,7 @@ describe('SchemaPane — meta header', () => {
         name: 'orders',
         fields: { id: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
       }],
     }
     const wrapper = await mountWithSnap(snap)
@@ -97,7 +97,7 @@ describe('SchemaPane — sensitivity badges', () => {
         name: 'contacts',
         fields: { email: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         described: [
           {
             key: 'email',
@@ -123,7 +123,7 @@ describe('SchemaPane — sensitivity badges', () => {
         name: 'keys',
         fields: { apiKey: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         described: [
           {
             key: 'apiKey',
@@ -151,7 +151,7 @@ describe('SchemaPane — i18n badge', () => {
         name: 'products',
         fields: { name: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         described: [
           {
             key: 'name',
@@ -179,7 +179,7 @@ describe('SchemaPane — config strip badges', () => {
         name: 'articles',
         fields: { title: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         config: { textIndexes: ['title', 'body'] },
       }],
     }
@@ -195,7 +195,7 @@ describe('SchemaPane — config strip badges', () => {
         name: 'docs',
         fields: { content: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         config: { embeddings: { source: 'content', dim: 1536 } },
       }],
     }
@@ -210,7 +210,7 @@ describe('SchemaPane — config strip badges', () => {
         name: 'notes',
         fields: { body: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         config: { crdt: 'lww' },
       }],
     }
@@ -225,7 +225,7 @@ describe('SchemaPane — config strip badges', () => {
         name: 'simple',
         fields: { id: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
       }],
     }
     const wrapper = await mountWithSnap(snap)
@@ -241,7 +241,7 @@ describe('SchemaPane — described fields', () => {
         name: 'invoices',
         fields: { amount: { type: 'number' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         described: [
           {
             key: 'amount',
@@ -267,7 +267,7 @@ describe('SchemaPane — described fields', () => {
         name: 'invoices',
         fields: { id: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         described: [
           {
             key: 'id',
@@ -292,7 +292,7 @@ describe('SchemaPane — described fields', () => {
         name: 'invoices',
         fields: { id: { type: 'string' } as never, amount: { type: 'number' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
       }],
     }
     const wrapper = await mountWithSnap(snap)
@@ -310,7 +310,7 @@ describe('VaultSidebar — vault meta label', () => {
         name: 'orders',
         fields: { id: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
       }],
       meta: { label: 'Acme DB', description: 'The Acme production vault' },
     }
@@ -325,7 +325,7 @@ describe('VaultSidebar — vault meta label', () => {
         name: 'orders',
         fields: { id: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
       }],
     }
     const wrapper = await mountWithSnap(snap)

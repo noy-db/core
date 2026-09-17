@@ -33,7 +33,14 @@ function memoryStore(): NoydbStore {
 }
 
 /** Navigate to the Records tab for the first collection. */
-async function drillToRecords(stdin: NodeJS.WritableStream) {
+/**
+ * @param stdin - ink-testing-library's fake stdin. Typed as the ONE method
+ *   this uses, not as `NodeJS.WritableStream`: the fake is not a writable
+ *   stream (no `writable`, no `end`), so the wider annotation was simply
+ *   false and every call site was a TS2379 nobody could see — vitest strips
+ *   types before the suite runs (core#40).
+ */
+async function drillToRecords(stdin: { write(data: string): void }) {
   await new Promise((r) => setTimeout(r, 120))
   stdin.write('\r')   // enter → drill into first collection
   await new Promise((r) => setTimeout(r, 60))

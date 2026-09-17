@@ -11,8 +11,5 @@
     "src",
     "__tests__"
   ],
-  "exclude": [
-    "__tests__/in-zustand.test.ts"
-  ],
-  "//exclude": "BURN-DOWN (core#40), 9 errors in 1 file: the test holds the store as zustand's `create` signature rather than the `StoreApi` it returns, so `getState`/`subscribe` do not resolve. Worth a careful look when burnt down \u2014 an API-shape mismatch in a binding's own test is not automatically harmless."
+  "exclude": []
 }

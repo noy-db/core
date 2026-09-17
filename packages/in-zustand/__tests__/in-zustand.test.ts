@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createStore } from 'zustand/vanilla'
+// ⚠️ `StoreApi<X>`, NOT `ReturnType<typeof createStore<X>>`. zustand's
+// `createStore` is overloaded with a curried form, and `ReturnType` picks
+// that overload — a function type with no `getState`/`subscribe` on it. The
+// tests below were annotated the second way, so every `zs.getState()` was a
+// TS2339 and the store itself was "not assignable" to its own type. The
+// VALUES were always right; only the annotation was wrong (core#40).
+import type { StoreApi } from 'zustand/vanilla'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '@noy-db/hub'
 import { ConflictError, createNoydb } from '@noy-db/hub'
 import type { Collection } from '@noy-db/hub'
@@ -43,7 +50,7 @@ function toMemory(): NoydbStore {
 
 interface Invoice { id: string; amt: number }
 
-async function setup(): Promise<{ coll: Collection<Invoice>; zustand: ReturnType<typeof createStore<NoydbZustandSlice<Invoice>>> }> {
+async function setup(): Promise<{ coll: Collection<Invoice>; zustand: StoreApi<NoydbZustandSlice<Invoice>> }> {
   const db = await createNoydb({ store: toMemory(), user: 'owner', secret: 'pw' })
   const vault = await db.openVault('acme')
   const coll = vault.collection<Invoice>('invoices')
@@ -54,7 +61,7 @@ async function setup(): Promise<{ coll: Collection<Invoice>; zustand: ReturnType
   return { coll, zustand }
 }
 
-async function waitForHydration<T>(zs: ReturnType<typeof createStore<NoydbZustandSlice<T>>>): Promise<void> {
+async function waitForHydration<T>(zs: StoreApi<NoydbZustandSlice<T>>): Promise<void> {
   await new Promise<void>((resolve) => {
     if (!zs.getState().loading) return resolve()
     const unsub = zs.subscribe((s) => {

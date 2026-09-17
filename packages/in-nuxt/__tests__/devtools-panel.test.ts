@@ -27,8 +27,8 @@ function fakeInspector(overrides: Partial<{
         name: 'invoices',
         fields: { id: { type: 'string' } as never, amount: { type: 'number' } as never },
         indexes: [],
-        refs: [],
-        stats: { count: 5, bytes: 1024 },
+        refs: {},
+        stats: { records: 5, bytes: 1024, bytesAvg: 205, bytesMin: 180, bytesMax: 240, oldest: '2026-01-01T00:00:00.000Z', newest: '2026-06-01T00:00:00.000Z' },
       }],
     },
     records: async () => overrides.page ?? {
