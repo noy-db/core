@@ -143,12 +143,12 @@ describe('#921 — putMany atomic mode delegates through store.tx()', () => {
       { atomic: true },
     ).then(() => null, (e: unknown) => e)
 
-    // Store-thrown, surfaces unwrapped; matched by name.
-    // ⚠️ Reason expired: that was true of `to-memory` binding the published
-    // `@noy-db/hub/to` seam. The store is now hub's own `memoryStore` from
-    // `src/`, so the identity is shared and `instanceof` would hold (#39).
-    expect(err).toBeInstanceOf(Error)
-    expect((err as Error).constructor.name).toBe(ConflictError.name)
+    // Store-thrown, surfaces unwrapped. A name match until #39, because
+    // `to-memory` bound the published `@noy-db/hub/to` seam; the store is now
+    // hub's own `memoryStore` from `src/`, so the identity is shared and the
+    // strong assertion holds. ⛔ Revert to a name match if this suite ever
+    // imports its store from the package specifier.
+    expect(err).toBeInstanceOf(ConflictError)
     // Nothing applied, and NO revert pass ran (nothing to unwind).
     expect(await memory.get('acme', 'invoices', 'inv-2')).toBeNull()
     expect((await memory.get('acme', 'invoices', 'inv-1'))!._v).toBe(2) // the racer's bump only

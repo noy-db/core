@@ -328,15 +328,16 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
     }).then(() => null, (e: unknown) => e)
 
     // The store's ConflictError surfaces unwrapped.
-    // ⚠️ The name match is HISTORICAL, and its reason has expired: it was here
-    // because `to-memory` bound the PUBLISHED `@noy-db/hub/to` seam, giving its
-    // error class a different identity from this suite's `src/` import. The
-    // store is now hub's own `memoryStore`, imported from `src/index.js` like
-    // `ConflictError` itself, so there is ONE identity and `instanceof` would
-    // hold. Kept as-is (it still passes, and is the weaker assertion) rather
-    // than tightened under a docs pass — see #39.
-    expect(err).toBeInstanceOf(Error)
-    expect((err as Error).constructor.name).toBe(ConflictError.name)
+    // This was a NAME match until #39: `to-memory` bound the PUBLISHED
+    // `@noy-db/hub/to` seam, so its error class was a different identity from
+    // this suite's `src/` import and `instanceof` could not be used. The store
+    // is now hub's own `memoryStore`, imported from `src/index.js` like
+    // `ConflictError` itself — one identity, so the strong assertion holds.
+    // ⛔ If a suite ever takes its store from the package specifier instead
+    // (as test-harnesses/simulation-concurrent does), this must go back to a
+    // name match: two module instances, two classes. Check the imports, not
+    // this comment.
+    expect(err).toBeInstanceOf(ConflictError)
     expect(String(err)).toContain('expected v1, found v2')
 
     // Every leg carried the version captured in the pre-flight snapshot.
