@@ -4,10 +4,16 @@ Contract tests for the `at-*` family port. Every `NoydbSealer` implementation �
 
 ```ts
 import { runSealerConformanceTests } from '@noy-db/test-sealer-conformance'
-import { atEnv } from '@noy-db/at-env'
+import type { NoydbSealer } from '@noy-db/hub/at'
 
-runSealerConformanceTests('at-env', () => atEnv({ envVar: 'NOYDB_SEAL_A' }), {
-  other: () => atEnv({ envVar: 'NOYDB_SEAL_B' }),
+// Your provider's factory, imported in YOUR package — `atEnv` from
+// `@noy-db/at-env` (noy-db/at), or your own. ⛔ This kit depends on no `at-*`
+// provider and never can: every provider depends on the kit, so the edge only
+// runs one way.
+declare function makeSealer(envVar: string): NoydbSealer
+
+runSealerConformanceTests('at-env', () => makeSealer('NOYDB_SEAL_A'), {
+  other: () => makeSealer('NOYDB_SEAL_B'),
 })
 ```
 

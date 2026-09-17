@@ -62,18 +62,17 @@ Also exported: `useLiveQuery` (wrap a hub `LiveQuery` in reactive refs),
 Biometric unlock is not this package's job — unlock primitives live in the
 `on-*` family, and `@noy-db/on-webauthn` is framework-neutral, so it is called
 from Vue code directly. It wraps the vault's DEK set under a passkey (PRF) and
-hands back an unlocked keyring — the secret itself never round-trips:
+hands back an unlocked keyring — the secret itself never round-trips.
 
-```ts
-import { enrollWebAuthn, unlockWebAuthn } from '@noy-db/on-webauthn'
+Two calls do it: `enrollWebAuthn()` after a primary unlock, to enroll this
+device's passkey (the enrollment it returns is safe to persist — it holds no
+key material in the clear), and `unlockWebAuthn()` later, on another session,
+to get the keyring back.
 
-// After a primary unlock — enroll this device's passkey:
-const enrollment = await enrollWebAuthn(keyring, 'my-vault')
-persistEnrollment(enrollment)                       // safe to store; holds no key material in the clear
-
-// …later, on another session:
-const keyring = await unlockWebAuthn(loadEnrollment())
-```
+⛔ The signatures live with the package, not here. `@noy-db/on-webauthn` ships
+from [noy-db/on](https://github.com/noy-db/on) on its own version line, so this
+README cannot vouch for their shape — and a worked example here would be prose
+this repo has no way to check. See that package's README.
 
 ## License
 

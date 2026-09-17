@@ -19,8 +19,13 @@ The boot layer for a noy-db portal SPA opened from LINE: one `initLiffApp()` cal
 The LIFF SDK is **injected, never a dependency** — every entry point takes a `LiffLike` (the six-member structural slice this package calls), so apps pass the real `liff` global and tests pass fakes.
 
 ```ts
-import liff from '@line/liff'
-import { initLiffApp, getFreshIdToken, openExternal } from '@noy-db/in-liff'
+import { initLiffApp, getFreshIdToken, openExternal, type LiffLike } from '@noy-db/in-liff'
+
+// YOUR app supplies the SDK — `import liff from '@line/liff'`. This package
+// imports it nowhere and declares it in no dependency field, on purpose: the
+// entry points take the structural `LiffLike` slice, which is what lets the
+// `browser` and `pwa` shells run with no SDK at all and tests pass fakes.
+declare const liff: LiffLike
 
 const ctx = await initLiffApp({ liff, liffId: import.meta.env.VITE_LIFF_ID })
 // ctx: { shell, loggedIn, idToken, inClient, deepLink }
