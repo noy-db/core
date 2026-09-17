@@ -68,7 +68,7 @@
  * @packageDocumentation
  */
 import { describe, it, expect } from 'vitest'
-import type { Vault, ExportFormat, NoydbStore } from '@noy-db/hub'
+import type { Vault, ExportFormat, NoydbStore, ExportChunk } from '@noy-db/hub'
 
 /** One plaintext-producing entry point, named as a consumer would call it. */
 export interface FormatEntryPoint {
@@ -150,6 +150,60 @@ export interface FormatFixture {
    * as-csv left the suite green.
    */
   writeWithoutAcknowledgement?: (vault: Vault, path: string) => Promise<unknown>
+  /**
+   * A SCOPED call and its unscoped twin, so the kit can check what the export
+   * actually produced rather than only that the gate fired (core#43).
+   *
+   * ## What this exists to catch
+   *
+   * `as-csv`'s fixture called `download`/`write` with `collection` after the
+   * option had been renamed to `collections`. **18 tests passed before the fix
+   * and 18 after.** Every case in this kit asserts that the gate FIRED, and a
+   * call with `collections: undefined` fires it exactly as well as a correct
+   * one — so a fixture can drift into calling its own package wrongly and stay
+   * green forever. Typechecking found that one; running it never would, at any
+   * number of repetitions.
+   *
+   * ## Why it is observed at ENCODE and not at the store
+   *
+   * The first design asserted the scope at the store and was measured
+   * impossible: `hub`'s port calls `exportStream()` unscoped and filters the
+   * chunks afterwards (core#45), so `collections: ['invoices']` and
+   * `collections: undefined` produce byte-identical store traffic. The filter
+   * has run by the time `format.encode(chunks)` is called, which is why the
+   * observation is taken there — the kit wraps the format's `encode` for the
+   * duration of the call.
+   *
+   * ⚠️ **This therefore only sees an entry point that routes through
+   * `vault.export`.** One that drives `exportStream` itself never reaches an
+   * `encode` the kit can wrap, and the case FAILS saying so rather than
+   * passing — an unobservable scope is not a satisfied one.
+   *
+   * ⭐ **`unscoped` is not redundant, it is the control.** A scope assertion
+   * over a vault holding one collection passes whatever the call does. The kit
+   * requires the unscoped twin to produce strictly MORE than {@link
+   * FormatScopeCase.expected}, so there is something for the scope to exclude.
+   */
+  readonly scope?: FormatScopeCase
+}
+
+/** The scoped/unscoped pair — see {@link FormatFixture.scope}. */
+export interface FormatScopeCase {
+  /** Shown in the test title, e.g. `'toString'`. */
+  readonly name: string
+  /** The entry point called WITH its scope — the subject. */
+  scoped(vault: Vault): Promise<unknown>
+  /**
+   * The collections `scoped` must produce — exactly, as a set. Not "at least":
+   * a widened export is precisely the defect, so extras must fail.
+   */
+  readonly expected: readonly string[]
+  /**
+   * The SAME entry point with no scope — the control that proves the vault
+   * holds more than {@link FormatScopeCase.expected}, so the case above can
+   * fail.
+   */
+  unscoped(vault: Vault): Promise<unknown>
 }
 
 /**
@@ -239,6 +293,59 @@ function denyGates(vault: Vault, tier: string, format: string | undefined, seen:
     return realStream(...args)
   }
   return vault
+}
+
+/**
+ * Patch a REAL vault in place so every `vault.export` records the collections
+ * the format's `encode` actually receives (core#43). Returns the recorder.
+ *
+ * The format object is not replaced, it is SHADOWED for one call: a delegate
+ * carrying the same own properties, with `encode` wrapped. Hub reads `id` and
+ * `tier` off it and passes it nowhere else, so the delegate is
+ * indistinguishable to the port — and the real `encode` still produces the
+ * real output, because a kit that changed what an export returns would be
+ * testing itself.
+ *
+ * ⚠️ Own-property assignment for the same reason `denyGates` uses it: the
+ * inverted entry point IS `vault.export`, and `download`/`write` reach it
+ * through `this`. A Proxy cannot intercept either (private fields), which is
+ * the trap #1209 already paid for.
+ */
+function recordExportScope(vault: Vault): { calls: string[][] } {
+  const calls: string[][] = []
+  const v = vault as unknown as Record<string, unknown>
+  const realExport = (vault.export as (...a: unknown[]) => unknown).bind(vault)
+  v['export'] = (format: Record<string, unknown>, ...rest: unknown[]) => {
+    const encode = format['encode'] as (chunks: readonly ExportChunk[]) => unknown
+    const delegate = {
+      ...format,
+      encode: (chunks: readonly ExportChunk[]) => {
+        calls.push(chunks.map((c) => c.collection))
+        return encode.call(format, chunks)
+      },
+    }
+    return realExport(delegate, ...rest)
+  }
+  return { calls }
+}
+
+/**
+ * The collections one call produced, as a sorted set.
+ *
+ * ⛔ Reads the LAST `encode`, not a union across calls. An entry point that
+ * exports twice (a pod writing two members, say) would otherwise report the
+ * union as one export's scope and pass a widened call.
+ */
+function scopeOf(recorder: { calls: string[][] }, entry: string): string[] {
+  const last = recorder.calls.at(-1)
+  expect(
+    last,
+    `${entry}: no format.encode was reached, so the export's scope is UNOBSERVABLE here. `
+      + 'The kit wraps `encode` through `vault.export`; an entry point that drives `exportStream` '
+      + 'itself never reaches one. Route it through vault.export, or drop `scope` from the fixture '
+      + 'and accept that the case is unchecked (the suite will say so).',
+  ).toBeDefined()
+  return [...new Set(last)].sort()
 }
 
 /**
@@ -343,6 +450,50 @@ export function runFormatConformanceTests(name: string, fixture: FormatFixture):
           `${entry.name} produced output without reading the store — the refusal case above cannot `
           + 'distinguish a working gate from an entry point that reads nothing',
         ).toBeGreaterThan(0)
+      })
+    }
+
+    const scope = fixture.scope
+    if (!scope) {
+      it('scope: SKIPPED — fixture declares no scoped call, so WHAT was exported is UNVERIFIED here', () => {
+        // Passes loudly, like the import and write skips above. Every other
+        // case in this suite fires on the GATE; without a scope case, a
+        // fixture calling its own package with a renamed or misspelled option
+        // is indistinguishable from a correct one (core#43).
+        expect(scope).toBeUndefined()
+      })
+    } else {
+      it(`${scope.name}: the UNSCOPED call exports MORE than the scope — the control`, async () => {
+        // Without this, the case below passes on a vault holding exactly the
+        // expected collections, where no call could ever be wrong. The control
+        // is what makes "exactly the scope" a claim rather than a coincidence.
+        const vault = await fixture.vault()
+        const rec = recordExportScope(vault)
+        await scope.unscoped(vault)
+        const all = scopeOf(rec, scope.name)
+        const expected = [...new Set(scope.expected)].sort()
+        expect(
+          all.length,
+          `${scope.name}: the unscoped call exported ${JSON.stringify(all)}, which is not more than `
+            + `the declared scope ${JSON.stringify(expected)}. Seed the fixture's vault with a `
+            + 'collection the scope EXCLUDES, or the scope case cannot fail.',
+        ).toBeGreaterThan(expected.length)
+        for (const c of expected) expect(all).toContain(c)
+      })
+
+      it(`${scope.name}: the SCOPED call exports EXACTLY its scope — not merely gated`, async () => {
+        // The assertion #43 asks for, taken at the encode boundary because the
+        // store cannot distinguish the two calls (core#45). A fixture that
+        // passes `collection` where the package now reads `collections` lands
+        // here with every collection in the chunk list.
+        const vault = await fixture.vault()
+        const rec = recordExportScope(vault)
+        await scope.scoped(vault)
+        expect(
+          scopeOf(rec, scope.name),
+          `${scope.name}: the scoped call did not export its declared scope. An option the package `
+            + 'no longer reads is silently dropped, and the export widens to everything.',
+        ).toEqual([...new Set(scope.expected)].sort())
       })
     }
 
