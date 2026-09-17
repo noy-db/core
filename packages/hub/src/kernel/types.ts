@@ -1347,6 +1347,28 @@ export interface ExportStreamOptions {
    * (a full, all-locale backup; format packages apply their own locale strategy).
    */
   readonly resolveLabels?: string
+  /**
+   * Export only these collections. Omitted (the default) exports every
+   * collection the caller can read.
+   *
+   * ⭐ This NARROWS THE READ — the excluded collections are neither fetched
+   * nor decrypted (core#45b). That is the whole point of the option living
+   * here rather than in a caller's filter: until 0.8 `vault.export`'s
+   * `collections` filtered the chunks AFTER `exportStream` had decrypted the
+   * entire vault, so a caller scoping an export to limit what a compromised
+   * process could observe got no such limit. The published JSDoc said so
+   * honestly; this makes the caveat false instead of merely known.
+   *
+   * ⚠️ A name that does not exist yields nothing rather than throwing — a
+   * caller exporting "these, if present" is an ordinary call, and refusing it
+   * would push a pre-check onto every caller.
+   *
+   * ⛔ Internal, underscore-prefixed collections stay unexportable even when
+   * named explicitly. The unscoped path gets that filter free from `loadAll`;
+   * the scoped path applies it itself, because a filter that depends on which
+   * route reached the data is a filter waiting to be lost.
+   */
+  readonly collections?: readonly string[]
 }
 
 /**

@@ -72,20 +72,25 @@ function contextFor(vault: Vault): FormatsContext {
       if (!format) throw new TypeError("assertCanImport('plaintext') requires a non-empty format id")
       vault.assertCanImport('plaintext', format)
     },
-    // ⚠️ Filtered HERE, not passed to exportStream — `ExportStreamOptions`
-    // has no `collections` field, so the option I first passed was silently
-    // dropped and hub read every collection. Caught by an as-json test
-    // expecting ['invoices'] and getting ['invoices','payments'].
+    // ⭐ PASSED DOWN, not filtered here (core#45b). `ExportStreamOptions` now
+    // carries `collections` and narrows the read, so an excluded collection is
+    // neither fetched nor decrypted.
     //
-    // Post-read filtering is correct but not free: hub still DECRYPTS the
-    // collections the caller excluded. Pushing the filter down into
-    // exportStream is the real fix and is a hub change beyond this port.
+    // ⚠️ The history is worth keeping, because the obvious edit here is the
+    // wrong one twice over. The option was first passed to `exportStream`
+    // when that interface had no field for it — silently dropped, every
+    // collection read, caught only by an as-json test expecting ['invoices']
+    // and getting ['invoices','payments']. The fix then was to filter after
+    // the read, which was correct output and a full decrypt: for a
+    // zero-knowledge store, a caller scoping an export to limit exposure got
+    // no limit at all. Neither the compiler nor any chunk-level assertion can
+    // tell these three implementations apart — only a store observation can
+    // (`__tests__/45-export-scope-narrows-read.test.ts`).
     chunks: async function* (collections) {
-      const wanted = collections ? new Set(collections) : null
-      for await (const chunk of vault.exportStream({ granularity: 'collection' })) {
-        if (wanted && !wanted.has(chunk.collection)) continue
-        yield chunk
-      }
+      yield* vault.exportStream({
+        granularity: 'collection',
+        ...(collections ? { collections } : {}),
+      })
     },
     // NOT swallowed. A caller who asked for redaction and silently got
     // unredacted output is the exact failure this port exists to remove — a
@@ -131,8 +136,9 @@ function contextFor(vault: Vault): FormatsContext {
  * const csv = await vault.export(asCsv(), { collections: ['invoices'] })
  * ```
  *
- * ⚠️ `collections` scopes the OUTPUT, not the read: every collection is
- * decrypted and the excluded ones are discarded (core#45).
+ * ⭐ `collections` scopes the READ: an excluded collection is neither fetched
+ * nor decrypted (core#45b, since 0.8 — through 0.7 it filtered output after a
+ * full decrypt).
  */
 export function withFormats(): FormatsStrategy {
   return {
