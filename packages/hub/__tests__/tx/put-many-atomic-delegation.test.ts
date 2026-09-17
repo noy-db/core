@@ -143,8 +143,10 @@ describe('#921 — putMany atomic mode delegates through store.tx()', () => {
       { atomic: true },
     ).then(() => null, (e: unknown) => e)
 
-    // Store-thrown, surfaces unwrapped; matched by name — `to-memory` binds
-    // the published `@noy-db/hub/to` seam (different class identity).
+    // Store-thrown, surfaces unwrapped; matched by name.
+    // ⚠️ Reason expired: that was true of `to-memory` binding the published
+    // `@noy-db/hub/to` seam. The store is now hub's own `memoryStore` from
+    // `src/`, so the identity is shared and `instanceof` would hold (#39).
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).constructor.name).toBe(ConflictError.name)
     // Nothing applied, and NO revert pass ran (nothing to unwind).

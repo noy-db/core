@@ -62,7 +62,7 @@ function memoryStore(): NoydbStore {
 
 /**
  * #706 fixture: wraps a base store with a native `listPage` implementation
- * (sorted-id cursor pagination), mirroring `to-memory`'s `listPage`. Lets
+ * (sorted-id cursor pagination), mirroring `memoryStore()`'s `listPage`. Lets
  * tests exercise the native `decryptPage` path, not just the fallback.
  */
 function withListPage(base: NoydbStore): NoydbStore {

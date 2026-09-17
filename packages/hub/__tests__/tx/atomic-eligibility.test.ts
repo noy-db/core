@@ -36,7 +36,7 @@ async function open(store: NoydbStore = memoryStore({ full: true }), extra: Reco
 }
 
 describe('canCommitAtomically — #893/#906-prep gate', () => {
-  it('true for a plain multi-collection batch on to-memory', async () => {
+  it('true for a plain multi-collection batch on memoryStore', async () => {
     const { db, vault } = await open()
     vault.collection('a')
     vault.collection('b')

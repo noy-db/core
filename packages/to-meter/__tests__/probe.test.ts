@@ -2,7 +2,7 @@
  * Tests for the store-probe diagnostics in @noy-db/to-meter (absorbed from @noy-db/to-probe, #845).
  *
  * Covers:
- *   - runStoreProbe against to-memory: all five axes produce numbers
+ *   - runStoreProbe against the local in-memory fixture: all five axes produce numbers
  *   - Suitability: memory (casAtomic:true) → recommended for all roles
  *   - CAS mismatch: a broken-CAS store declared as atomic emits `cas-mismatch` error risk
  *   - probeTopology: sync-peer with bundle-like name emits warn

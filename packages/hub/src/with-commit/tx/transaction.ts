@@ -57,8 +57,8 @@
  * **Crash window.** On the OCC fallback, steps 2–3 are not a
  * storage-layer transaction — if the process dies between two executed
  * ops, the on-disk state is partial. The atomic path above closes that
- * window for the write set itself (`to-memory` and the SQL stores in
- * `noy-db-to` implement `tx()`); a crash between the batch landing and
+ * window for the write set itself (`memoryStore({ full: true })` and the SQL
+ * stores in `noy-db-to` implement `tx()`); a crash between the batch landing and
  * the finalize loop finishing still leaves per-op side effects (history,
  * ledger, cache) incomplete. Stores that cannot commit a batch
  * atomically (file, S3) omit `tx()` and keep the fallback.

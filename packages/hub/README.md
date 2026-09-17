@@ -26,17 +26,18 @@ Part of [**noy-db**](https://github.com/noy-db/core) — *"None Of Your Damn Bus
 
 ## Install
 
-Every noy-db app needs `@noy-db/hub` plus at least one storage backend (`to-*`). Everything else is optional.
+`@noy-db/hub` ships an in-memory store, so it runs on its own with nothing else installed. Add a
+storage backend (`to-*`) when the data has to survive a restart. Everything else is optional.
 
 ```bash
-pnpm add @noy-db/hub @noy-db/to-memory
+pnpm add @noy-db/hub
 ```
 
 ### Pick a storage backend — [`@noy-db/to-*`](https://www.npmjs.com/search?q=%40noy-db%2Fto-)
 
 | Package | Use for |
 |---------|---------|
-| [`to-memory`](https://www.npmjs.com/package/@noy-db/to-memory) | Tests, prototypes, ephemeral data |
+| [`to-memory`](https://www.npmjs.com/package/@noy-db/to-memory) | Tests, prototypes, ephemeral data — *only if you need a store separate from the built-in `memoryStore()`; ships from [noy-db-to](https://github.com/noy-db/to)* |
 | [`to-file`](https://www.npmjs.com/package/@noy-db/to-file) | Local disk, USB stick |
 | [`to-browser-idb`](https://www.npmjs.com/package/@noy-db/to-browser-idb) | Browser IndexedDB (atomic CAS) |
 | [`to-browser-local`](https://www.npmjs.com/package/@noy-db/to-browser-local) | Browser localStorage |
@@ -68,13 +69,12 @@ pnpm add @noy-db/hub @noy-db/to-memory
 ## Quick start
 
 ```ts
-import { createNoydb } from '@noy-db/hub'
-import { toMemory } from '@noy-db/to-memory'
+import { createNoydb, memoryStore } from '@noy-db/hub'
 
 type Invoice = { id: string; amount: number; customer: string }
 
 const db = await createNoydb({
-  store: toMemory(),
+  store: memoryStore(),
   user: 'alice',
   secret: 'correct horse battery staple',
 })
@@ -329,7 +329,7 @@ const cur = await vault.sequence('invoice-2026').peek()  // read current value w
 **Pre-release** (`0.1.0-pre.1`). API may change before `1.0`. Install from the `next` dist-tag:
 
 ```bash
-pnpm add @noy-db/hub@next @noy-db/to-memory@next
+pnpm add @noy-db/hub@next
 ```
 
 ## Documentation

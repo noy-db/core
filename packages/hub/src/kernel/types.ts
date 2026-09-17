@@ -868,9 +868,9 @@ export interface NoydbStore {
    * hub also falls back when the staged batch isn't statically safe
    * to submit as one write set — see `canCommitAtomically`.
    *
-   * Native implementations today: `to-memory` (one synchronous burst of
-   * Map mutations) and the SQL-backed stores in the sibling `noy-db-to`
-   * repo. `to-dynamo` (`TransactWriteItems`) and `to-browser-idb` (one
+   * Native implementations today: hub's own `memoryStore({ full: true })` (one
+   * synchronous burst of Map mutations) and the SQL-backed stores in the
+   * sibling `noy-db-to` repo — `to-memory` among them, since it moved there. `to-dynamo` (`TransactWriteItems`) and `to-browser-idb` (one
    * `readwrite` transaction) CAN implement it but do not yet. File / S3
    * cannot implement it atomically and should omit the method.
    */

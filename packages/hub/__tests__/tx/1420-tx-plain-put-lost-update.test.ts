@@ -20,7 +20,7 @@
  * between them from the store's declared capabilities, so a store that
  * declares `txAtomic` takes the atomic path and one that does not takes the
  * per-op replay. `to-browser-idb` (the reporter's store) is the latter; a
- * `to-memory` with `tx`/`txAtomic` stripped reproduces it without pulling in
+ * a `memoryStore()` with `tx`/`txAtomic` stripped reproduces it without pulling in
  * fake-indexeddb.
  *
  * ## The invariant these tests assert
@@ -67,7 +67,7 @@ interface Hooks {
 }
 
 /**
- * `to-memory` plus call hooks, optionally with `tx()`/`txAtomic` stripped so
+ * `memoryStore({ full: true })` plus call hooks, optionally with `tx()`/`txAtomic` stripped so
  * `canCommitAtomically` falls back to the per-op replay path.
  */
 function instrumented(hooks: Hooks, atomic: boolean): NoydbStore {
@@ -121,9 +121,12 @@ function assertNoSilentLoss(
     refused.length,
     `both writers reported success but the record is ${JSON.stringify(final)} — one write vanished`,
   ).toBeGreaterThan(0)
-  // `isConflictError`, not `instanceof`: the atomic path's refusal is minted
-  // by the STORE (`to-memory` binds the built `@noy-db/hub/to`, this suite
-  // binds `src/`), so the class identities differ — #935's exact trap.
+  // `isConflictError`, not `instanceof`. ⚠️ The stated reason has expired:
+  // it was that the refusal is minted by the STORE, and `to-memory` bound the
+  // BUILT `@noy-db/hub/to` while this suite binds `src/` — #935's trap. The
+  // store is now hub's own `memoryStore` from `src/`, so the identities
+  // coincide. `isConflictError` is still the right predicate (it is the
+  // published, identity-independent one), so this line does not change (#39).
   for (const r of refused) expect(isConflictError(r), `expected a ConflictError, got ${String(r)}`).toBe(true)
   if (putResult === 'ok') expect(final!.b).toBe('plain')
   if (txResult === 'ok') expect(final!.a).toBe('tx')

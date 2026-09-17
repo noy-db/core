@@ -40,7 +40,7 @@ import { toBrowserIdb } from '../src/index.js'
  *     (the Node-side IDB polyfill used here) is dramatically slower
  *     than Chromium's native IDB — a `byPeriod` query that resolves
  *     1250 records takes 3+s under fake-IDB but ~20ms under real
- *     Chromium (cf. the Node-side `to-memory` baseline in
+ *     Chromium (cf. the Node-side in-memory baseline in
  *     `packages/hub/scripts/bench-lazy-indexes.mjs`). The 250ms gate
  *     is real for the intended runtime; it simply can't be measured
  *     here. Tracked as a follow-up — port to Playwright / Chromium.

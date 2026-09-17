@@ -35,7 +35,7 @@ interface Msg extends Record<string, unknown> {
   body?: string
 }
 
-/** Wraps a real `to-memory` store with a one-shot per-collection put-failure spy. */
+/** Wraps a real `memoryStore()` with a one-shot per-collection put-failure spy. */
 function spyStore(raw: NoydbStore): { store: NoydbStore; failNextPutFor: (coll: string) => void } {
   let failNextFor: string | null = null
   const store: NoydbStore = {

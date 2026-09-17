@@ -15,8 +15,8 @@
  *     base (two writes, one version bump).
  *
  * Neither raised an error on either side, and the loss was **store-capability
- * dependent** — `to-memory` declares `txAtomic` and takes the atomic commit
- * path, `to-browser-idb` does not and takes the per-op replay — so an app
+ * dependent** — `memoryStore({ full: true })` declares `txAtomic` and takes the
+ * atomic commit path, `to-browser-idb` does not and takes the per-op replay — so an app
  * tested on a memory store could ship lossy on IndexedDB.
  *
  * ## The remedy: make the pre-flight's read honest

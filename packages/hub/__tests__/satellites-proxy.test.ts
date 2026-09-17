@@ -2,7 +2,7 @@
  * Satellite read/write proxy (#591, Task 5): existence authority + R-S6.
  *
  * Drives everything through the public `createNoydb`/`openVault` API with
- * `to-memory` (fixture pattern copied from satellites-registration.test.ts).
+ * `memoryStore()` (fixture pattern copied from satellites-registration.test.ts).
  * The `rawStore` handle lets tests simulate offline-resurrection states
  * (a base delete that bypasses the Collection cache) the same way the
  * design spec's "store-shape" vectors do.

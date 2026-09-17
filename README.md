@@ -149,7 +149,7 @@ Each prefix reads as a preposition — the mental model stays the same as you sc
 
 | Prefix | Reads as | What it is | Catalog |
 |---|---|---|---|
-| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 4 essentials (`to-file`, `to-memory`, `to-browser-idb`, `to-meter`) in this repo; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
+| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 3 essentials (`to-file`, `to-browser-idb`, `to-meter`) in this repo, plus the built-in `memoryStore()` in the hub itself; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
 | **`in-`** | *"runs **in** a framework"* | **Framework integrations** — thin reactive bindings. React, Next.js, Vue, Nuxt, Pinia, Svelte, Zustand, TanStack Query/Table, Yjs CRDT, LLM tool-calling. | [→ integrations.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/in-integrations.md) |
 | **`on-`** | *"you get **on** via this method"* | **Unlock / auth** — composable primitives. Passkeys (WebAuthn), OIDC split-key, magic links, TOTP, email OTP, recovery codes, Shamir k-of-n, duress + honeypot. | [→ auth.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/on-auth.md) |
 | **`as-`** | *"export **as** XLSX / JSON / …"* | **Portable artefacts** — two-tier authorisation with audit ledger. CSV, Excel, XML, JSON, NDJSON, SQL dump, PDF blobs, ZIP, and the encrypted `.noydb` bundle. | [→ exports.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/as-exports.md) |
@@ -158,7 +158,7 @@ Each prefix reads as a preposition — the mental model stays the same as you sc
 
 Plus the hub (`@noy-db/hub`) and the standalone tools: `@noy-db/cli`, `create-noy-db` (scaffolder).
 
-> **Maturity at a glance.** `@noy-db/hub` is **Core** — security-critical, highest test bar. `to-memory`, `to-file`, `to-browser-idb` are **Recommended** essentials that ship here. Cloud/SQL backends (`to-aws-dynamo`, `to-aws-s3`, `to-postgres`, etc.) are in [noy-db-to](https://github.com/noy-db/to) — same quality bar, separate repo. Most other satellites are **Bridges** — thin adapters proven in tests but less production-battled. P2P, niche stores, and unusual auth modes are **Experimental** — useful, validate before depending on them.
+> **Maturity at a glance.** `@noy-db/hub` is **Core** — security-critical, highest test bar. `to-file`, `to-browser-idb` are **Recommended** essentials that ship here, and an in-memory store is built into the hub. Cloud/SQL backends (`to-aws-dynamo`, `to-aws-s3`, `to-postgres`, etc.) are in [noy-db-to](https://github.com/noy-db/to) — same quality bar, separate repo. Most other satellites are **Bridges** — thin adapters proven in tests but less production-battled. P2P, niche stores, and unusual auth modes are **Experimental** — useful, validate before depending on them.
 
 ---
 
@@ -230,8 +230,9 @@ saveAll(vault, data)
 ```bash
 # Development / testing — in-memory, no persistence (built-in; nothing to add)
 pnpm add @noy-db/hub
-# …or the fuller in-memory test store (adds listVaults / tx / listPage):
-pnpm add @noy-db/hub @noy-db/to-memory
+# …and the optional half of the store contract (listVaults / ping / tx) is the
+# same built-in store with an option — still nothing to add:
+#   createNoydb({ store: memoryStore({ full: true }), ... })
 
 # Local CLI / Node service — files on disk
 pnpm add @noy-db/hub @noy-db/to-file
@@ -279,7 +280,7 @@ Pre-1.0 (today): both channels can be ahead of where you'd expect a `0.x` librar
 | 💾 USB stick / removable disk | Any OS + any runtime | [`to-file`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
 | 🔌 Electron / Tauri | Desktop shell | [`to-file`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
 | ☁️ Cloudflare Workers | Edge JS | `to-cloudflare-d1` + `to-cloudflare-r2` *(noy-db-to)* |
-| 🧪 Tests / CI | Any JS runtime | [`to-memory`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
+| 🧪 Tests / CI | Any JS runtime | built-in `memoryStore()` — nothing to install |
 
 Minimum requirements: a JavaScript engine and the Web Crypto API. That's it.
 

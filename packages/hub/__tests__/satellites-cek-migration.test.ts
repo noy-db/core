@@ -39,7 +39,7 @@ interface Msg extends Record<string, unknown> {
   body?: string
 }
 
-/** Wraps a real `to-memory` store with put-failure injection (mirrors satellites-forget.test.ts's spyStore). */
+/** Wraps a real `memoryStore()` with put-failure injection (mirrors satellites-forget.test.ts's spyStore). */
 function spyStore(raw: NoydbStore): {
   store: NoydbStore
   failNextPutFor: (coll: string) => void

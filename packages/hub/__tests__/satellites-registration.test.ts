@@ -2,7 +2,7 @@
  * Vault registration wiring for satellite collections (#591, archetype-③).
  *
  * Drives everything through the public `createNoydb`/`openVault` API with
- * `to-memory` (fixture pattern copied from schema-introspection.test.ts).
+ * `memoryStore()` (fixture pattern copied from schema-introspection.test.ts).
  * Covers the thin kernel call-site in `vault.ts`: R-S3/R-S5/R-S7/R-S8/R-S9
  * sync refusals, the joined-name guard, and the async R-S1 poison cross-check.
  */

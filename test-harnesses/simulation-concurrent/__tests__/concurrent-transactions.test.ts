@@ -93,8 +93,13 @@ describe('simulation: two writers racing an atomic batch on a txAtomic store', (
     gate.resolve()
 
     const err = await outcome
-    // Store-thrown error: matched by name — `to-memory` binds the published
-    // `@noy-db/hub/to` seam, a different class identity from this import.
+    // Store-thrown error: matched by name, and the reason STILL HOLDS here —
+    // this file imports `memoryStore` from the package specifier `@noy-db/hub`
+    // (the BUILT dist) while taking `createNoydb` from `../../../packages/hub/
+    // src/`. Two module instances, so the error classes are different
+    // identities and `instanceof` would fail. ⛔ Do not "simplify" this to
+    // `instanceof` by analogy with the hub-internal tx suites, where the two
+    // imports share `src/` and the same change is safe (#39).
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).constructor.name).toBe('ConflictError')
 

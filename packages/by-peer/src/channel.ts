@@ -7,7 +7,7 @@
  * Keeping the transport abstract has three payoffs:
  *
  *   1. **Tests run without a WebRTC polyfill.** `pairInMemory()` returns
- *      two wired channels for conformance tests against `to-memory`.
+ *      two wired channels for conformance tests against `memoryStore()`.
  *   2. **Consumers pick their signaling story.** Matrix rooms, QR codes,
  *      pastebin, Firebase Realtime DB — the handshake is out of scope.
  *   3. **Future transports slot in cheaply.** WebTransport (HTTP/3),

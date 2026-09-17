@@ -327,9 +327,14 @@ describe('#906 — db.transaction commits through store.tx() on txAtomic stores'
       inv.put('inv-2', { amount: 200, status: 'paid' })
     }).then(() => null, (e: unknown) => e)
 
-    // The store's ConflictError surfaces unwrapped. Matched by name, not
-    // `instanceof`: `to-memory` binds the PUBLISHED `@noy-db/hub/to` seam, so
-    // its error class is a different identity from this suite's src import.
+    // The store's ConflictError surfaces unwrapped.
+    // ⚠️ The name match is HISTORICAL, and its reason has expired: it was here
+    // because `to-memory` bound the PUBLISHED `@noy-db/hub/to` seam, giving its
+    // error class a different identity from this suite's `src/` import. The
+    // store is now hub's own `memoryStore`, imported from `src/index.js` like
+    // `ConflictError` itself, so there is ONE identity and `instanceof` would
+    // hold. Kept as-is (it still passes, and is the weaker assertion) rather
+    // than tightened under a docs pass — see #39.
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).constructor.name).toBe(ConflictError.name)
     expect(String(err)).toContain('expected v1, found v2')

@@ -62,7 +62,7 @@
  * |---------|---------|
  * | `@noy-db/to-file` | JSON file store (USB / local disk) |
  * | `@noy-db/to-browser-idb` | IndexedDB store (atomic CAS) |
- * | `@noy-db/to-memory` | In-memory store (testing) |
+ * | `@noy-db/to-memory` | In-memory store (testing) *(noy-db-to)* — hub's own `memoryStore()` needs no install |
  * | `@noy-db/to-aws-dynamo` | DynamoDB single-table store *(noy-db-to)* |
  * | `@noy-db/to-aws-s3` | S3 object store *(noy-db-to)* |
  * | `@noy-db/to-postgres` | PostgreSQL store *(noy-db-to)* |
