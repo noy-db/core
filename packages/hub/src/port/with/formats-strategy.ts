@@ -27,16 +27,18 @@ import type { Vault } from '../../kernel/vault.js'
 /** Options common to an export. */
 export interface FormatExportOptions {
   /**
-   * Restrict the OUTPUT to these collections. Omitted: everything the caller
-   * can read.
+   * Export only these collections. Omitted: everything the caller can read.
    *
-   * ⚠️ **This filters what is written; it does NOT narrow what is read.** Hub
-   * reads and DECRYPTS every collection in the vault and discards the ones you
-   * excluded (`port/as/active.ts`, `chunks`). So scoping an export does not
-   * reduce what a compromised process could observe in memory — for a
-   * zero-knowledge store that is a property worth stating, not a performance
-   * footnote. Narrowing the read requires `collections` on
-   * `ExportStreamOptions`, a published seam (core#45).
+   * ⭐ **This narrows the READ** — the excluded collections are neither
+   * fetched nor decrypted (core#45b, since 0.8).
+   *
+   * ⚠️ It did not always. Through 0.7 this filtered the chunks AFTER hub had
+   * decrypted the whole vault, and the JSDoc here said so: scoping an export
+   * bought output shaping and no reduction in what a compromised process
+   * could observe. If you are reading a version of this note that still says
+   * that, you are reading 0.7's. The narrowing is asserted by observing the
+   * store, because no assertion on the returned chunks can tell the two
+   * implementations apart.
    */
   readonly collections?: readonly string[]
   /**

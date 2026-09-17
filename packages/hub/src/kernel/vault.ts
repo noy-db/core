@@ -1,6 +1,7 @@
 import type { OpenCollectionOptions } from '../port/with/collection-options.js'
 import { populateCollectionRegistries } from '../port/with/collection-registries.js'
 import { NO_BLOBS } from '../port/with/blob-strategy.js'
+import { resolveExportSource } from './export-scope.js'
 import type { StrategyBag } from '../port/with/strategies.js'
 import type {
   NoydbFormat,
@@ -3564,11 +3565,8 @@ export class Vault {
     const exportLocale = opts.resolveLabels
     const localeOpts = exportLocale !== undefined ? { locale: exportLocale, _layer: 'export' as const } : undefined
 
-    // One bulk read to enumerate collections. `loadAll` filters out
-    // underscore-prefixed internal collections, which is exactly what we
-    // want — internal bookkeeping has no place in a plaintext export.
-    const snapshot = await this.adapter.loadAll(this.name)
-    const collectionNames = Object.keys(snapshot).sort()
+    // Scoped or whole-vault: `export-scope.ts` owns the reasoning (core#45b).
+    const source = await resolveExportSource(this.adapter, this.name, opts)
 
     // Resolve the ledger head once if requested. The head is identical
     // across every yielded chunk (one ledger per vault) — we copy
@@ -3599,7 +3597,7 @@ export class Vault {
     // Skip the snapshot entirely when exporting at a locale — records carry
     // resolved `<field>Label`s, so the raw dictionary is redundant.
     if (exportLocale === undefined) {
-      for (const collectionName of collectionNames) {
+      for (const collectionName of source.collections) {
         const dictFields = this.dictKeyFieldRegistry.get(collectionName)
         if (dictFields && Object.keys(dictFields).length > 0) {
           const snap: Record<string, Record<string, Record<string, string>>> = {}
@@ -3616,7 +3614,7 @@ export class Vault {
       }
     }
 
-    for (const collectionName of collectionNames) {
+    for (const collectionName of source.collections) {
       // ACL gate. The same `hasAccess` check that `Collection.list()`
       // honors — silent skip, no error, matches the "operator can read
       // some but not all" pattern.
@@ -3625,7 +3623,9 @@ export class Vault {
       const coll = this.collection(collectionName)
       const schema = coll.getSchema() ?? null
       const refs = this.refRegistry.getOutbound(collectionName)
-      const ids = Object.keys(snapshot[collectionName] ?? {})
+      const ids = await source.ids(collectionName)
+      // Parity with loadAll (non-empty only): unknown name ⇒ no chunk (#45b).
+      if (source.scoped && ids.length === 0) continue
 
       const dictionaries = dictSnapshotCache.get(collectionName)
 
