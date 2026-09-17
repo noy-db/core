@@ -8,11 +8,19 @@
  *
  * `StoreMesh` — the store-polling default — lives in
  * `with-shape/schema-update`, its only consumer, and is intentionally NOT
- * exported here. That is a real cost, recorded rather than worked around: it
- * is hub's own implementation of this port and the one most consumers actually
- * run, and because it is not on the published surface,
- * `@noy-db/test-mesh-conformance` cannot import it. **A port's in-hub default
- * is coverable by its published kit only if it is on the published surface.**
+ * exported here. It is hub's own implementation of this port and the one most
+ * consumers actually run, and `@noy-db/test-mesh-conformance` cannot import
+ * it.
+ *
+ * ⚠️ That was recorded here as a coverage cost, generalised to *"a port's
+ * in-hub default is coverable by its published kit only if it is on the
+ * published surface"*. The generalisation is FALSE and the kit now proves it
+ * (core#46): `createNoydb()` installs this default and `db.mesh` hands it
+ * back, so the kit runs the contract against `StoreMesh` — two clients over
+ * one store — while importing nothing from `with-shape/`. **REACHABILITY
+ * decides, not exportedness**, and the two come apart wherever a port's
+ * default is installed by a constructor. The export decision below is
+ * unchanged; only the cost attributed to it was wrong.
  *
  * ## Why this subpath exists again
  *
