@@ -34,7 +34,7 @@
   },
   "scripts": {
     "build": "tsup",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json"
   },
