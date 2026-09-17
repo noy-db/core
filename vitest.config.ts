@@ -13,6 +13,11 @@ export default defineConfig({
           root: './scripts',
           include: ['__tests__/**/*.test.ts'],
           environment: 'node',
+          // ⛔ These must run SEQUENTIALLY — see `test:scripts` in
+          // package.json, which passes `--no-file-parallelism` (core#40).
+          // ⚠️ Setting `fileParallelism: false` HERE does nothing: inside a
+          // `projects` entry vitest ignores it, silently, and the race it is
+          // meant to stop keeps happening. Measured, not assumed.
         },
       },
     ],

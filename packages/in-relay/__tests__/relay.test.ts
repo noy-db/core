@@ -85,7 +85,13 @@ describe('relay vocabulary', () => {
  */
 describe('vocabulary completeness and capability gaps (parity follow-up)', () => {
   it('dispatches listPage — its absence made clients fall back to loadAll', async () => {
-    const page = { ids: ['r1'], cursor: null }
+    // ⚠️ `{ items, nextCursor }` — the real `ListPageResult`. This double
+    // used to return `{ ids, cursor }`, a shape the store contract has never
+    // had, and nothing noticed: the assertion below checks pass-through, so
+    // any object satisfies it, and vitest transpiles without typechecking
+    // (core#40). A relay test is the wrong place to document a wire payload
+    // wrongly — doi-db asserts its vocabulary against this package's dist.
+    const page = { items: [{ id: 'r1', envelope: env }], nextCursor: null }
     const store = { ...relayStore(), async listPage() { return page } }
     const handle = createRelayHandler({ store })
     const r = await handle({ id: '1', method: 'listPage', args: ['v', 'c', undefined, 10] })

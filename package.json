@@ -33,7 +33,7 @@
     "release:version": "node scripts/release.mjs",
     "test": "turbo run test",
     "test:ci": "turbo run test -- --coverage",
-    "test:scripts": "vitest run --project scripts",
+    "test:scripts": "vitest run --project scripts --no-file-parallelism",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
