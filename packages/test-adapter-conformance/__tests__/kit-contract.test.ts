@@ -20,26 +20,44 @@
  * appears to. The count is the attribution.
  */
 import { describe, it, expect } from 'vitest'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CONFIG = join(HERE, 'fixtures', 'vitest.suites.config.ts')
 const REPO_ROOT = join(HERE, '..', '..', '..')
+const exec = promisify(execFile)
 
-/** Run one child suite; return its exit code and output. */
-function runSuite(name: string): { code: number; out: string } {
+/**
+ * Run one child suite; return its exit code and output.
+ *
+ * ⛔ ASYNC, and that is load-bearing — it was `execFileSync` and CI killed the
+ * job with `[vitest-worker]: Timeout calling "onTaskUpdate"` while every test
+ * PASSED. A synchronous spawn blocks this worker's event loop for the whole
+ * child run (22s under CI contention), so the worker cannot answer vitest's
+ * RPC heartbeat and the run is torn down for being unresponsive. Awaiting keeps
+ * the loop free. ⚠️ Do not "simplify" this back to the sync form: the failure
+ * appears only under load, names nothing in this file, and reads as flake.
+ */
+async function runSuite(name: string): Promise<{ code: number; out: string }> {
   try {
-    const out = execFileSync('npx', ['vitest', 'run', '--config', CONFIG, name], {
+    const { stdout, stderr } = await exec('npx', ['vitest', 'run', '--config', CONFIG, name], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
-      stdio: 'pipe',
+      // ⚠️ 32MB, because the default is 1MB and a verbose child run overflows
+      // it — the spawn then fails with ENOBUFS and TRUNCATED output, so a
+      // match against the summary line silently stops finding it.
+      maxBuffer: 32 * 1024 * 1024,
     })
-    return { code: 0, out: plain(out) }
+    return { code: 0, out: plain(`${stdout}${stderr}`) }
   } catch (e) {
-    const err = e as { status?: number; stdout?: string; stderr?: string }
-    return { code: err.status ?? 1, out: plain(`${err.stdout ?? ''}${err.stderr ?? ''}`) }
+    // ⚠️ `code`, not `status`: the promisified form reports the child's exit
+    // code on `code`, and reading only `status` would call every failure 1 —
+    // true enough for `not.toBe(0)`, wrong the moment anything reads the value.
+    const err = e as { code?: number; status?: number; stdout?: string; stderr?: string }
+    return { code: err.code ?? err.status ?? 1, out: plain(`${err.stdout ?? ''}${err.stderr ?? ''}`) }
   }
 }
 
@@ -57,8 +75,8 @@ function plain(s: string): string {
 }
 
 /** Assert the kit refused this fixture, and refused it in exactly one case. */
-function expectRefused(suite: string, because: RegExp): void {
-  const { code, out } = runSuite(suite)
+async function expectRefused(suite: string, because: RegExp): Promise<void> {
+  const { code, out } = await runSuite(suite)
   expect(code, `the kit PASSED a store it must refuse:\n${out}`).not.toBe(0)
   expect(out).toMatch(because)
   expect(out, `more than one case reacted — the control no longer attributes:\n${out}`).toMatch(
@@ -67,15 +85,15 @@ function expectRefused(suite: string, because: RegExp): void {
 }
 
 describe('the adapter conformance kit, run against stores broken in one way each', () => {
-  it('⛔ FAILS a store that accepts any expectedVersion', () => {
-    expectRefused('broken-ignores-expected-version', /put with wrong expectedVersion throws ConflictError/)
+  it('⛔ FAILS a store that accepts any expectedVersion', async () => {
+    await expectRefused('broken-ignores-expected-version', /put with wrong expectedVersion throws ConflictError/)
   }, 120_000)
 
-  it('⛔ FAILS a store that strips the _del delete marker (#589)', () => {
-    expectRefused('broken-drops-delete-marker', /round-trips a delete-marker envelope/)
+  it('⛔ FAILS a store that strips the _del delete marker (#589)', async () => {
+    await expectRefused('broken-drops-delete-marker', /round-trips a delete-marker envelope/)
   }, 120_000)
 
-  it('⛔ FAILS a store implementing tx() without declaring capabilities.txAtomic', () => {
-    expectRefused('broken-undeclared-tx', /does not declare capabilities\.txAtomic/)
+  it('⛔ FAILS a store implementing tx() without declaring capabilities.txAtomic', async () => {
+    await expectRefused('broken-undeclared-tx', /does not declare capabilities\.txAtomic/)
   }, 120_000)
 })
