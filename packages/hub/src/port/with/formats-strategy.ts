@@ -26,7 +26,18 @@ import type { Vault } from '../../kernel/vault.js'
 
 /** Options common to an export. */
 export interface FormatExportOptions {
-  /** Restrict to these collections. Omitted: everything the caller can read. */
+  /**
+   * Restrict the OUTPUT to these collections. Omitted: everything the caller
+   * can read.
+   *
+   * ⚠️ **This filters what is written; it does NOT narrow what is read.** Hub
+   * reads and DECRYPTS every collection in the vault and discards the ones you
+   * excluded (`port/as/active.ts`, `chunks`). So scoping an export does not
+   * reduce what a compromised process could observe in memory — for a
+   * zero-knowledge store that is a property worth stating, not a performance
+   * footnote. Narrowing the read requires `collections` on
+   * `ExportStreamOptions`, a published seam (core#45).
+   */
   readonly collections?: readonly string[]
   /**
    * Redact before `encode` sees a record. Hub applies the projection, so a

@@ -130,6 +130,9 @@ function contextFor(vault: Vault): FormatsContext {
  * const db = await createNoydb({ store, user, secret, formatsStrategy: withFormats() })
  * const csv = await vault.export(asCsv(), { collections: ['invoices'] })
  * ```
+ *
+ * ⚠️ `collections` scopes the OUTPUT, not the read: every collection is
+ * decrypted and the excluded ones are discarded (core#45).
  */
 export function withFormats(): FormatsStrategy {
   return {
