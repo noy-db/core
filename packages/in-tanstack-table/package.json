@@ -43,8 +43,7 @@
     "@tanstack/table-core": "^8.0.0"
   },
   "devDependencies": {
-    "@noy-db/hub": "workspace:*",
-    "@tanstack/table-core": "^8.20.0"
+    "@noy-db/hub": "workspace:*"
   },
   "keywords": [
     "noy-db",

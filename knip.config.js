@@ -49,6 +49,14 @@ export default {
       ],
       ignore: [PATH_ADDRESSED_FIXTURES],
     },
+    'packages/in-nuxt': {
+      // Same class as the fixtures: a file that exists for a COMPILER PROGRAM
+      // rather than for the import graph. `vue-shims.d.ts` is what lets `tsc`
+      // resolve the `.vue` SFCs the tests mount (core#40) — nothing imports
+      // it, and the shipped code deliberately never imports an SFC as a
+      // module. Deleting it makes every SFC import a TS2307.
+      ignore: ['__tests__/vue-shims.d.ts'],
+    },
     'packages/test-adapter-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
     'packages/test-ceremony-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
     'packages/test-format-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
