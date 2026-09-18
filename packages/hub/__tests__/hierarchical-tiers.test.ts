@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { createNoydb, ConflictError, TierNotGrantedError, TierDemoteDeniedError } from '../src/index.js'
 import { withTiers } from '../src/with-audit/tiers/index.js'
+import { withTeam } from '../src/with-party/team/index.js'
 import { rewrapBodyToDek, buildDeleteMarker } from '../src/capsule/enclave-aes/index.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot, GhostRecord, CrossTierAccessEvent } from '../src/index.js'
 
@@ -284,6 +285,62 @@ describe('v0.18 hierarchical access', () => {
       await vault.revokeDelegation(token.id)
       const store = (db as unknown as { options: { store: NoydbStore } }).options.store
       expect(await store.get('v1', '_delegations', token.id)).toBeNull()
+    })
+
+    /**
+     * #56 — the assertion the two tests above cannot make.
+     *
+     * Both of them watch `_delegations` and are true: the token is written, and
+     * revoking removes it. Neither opens a delegation, so neither can fail on
+     * the thing the feature exists for — whether the recipient can now read
+     * something they could not read before.
+     *
+     * ⛔ This test asserts the CURRENT behaviour, which is that they cannot:
+     * `loadActiveDelegations` (the read half) is called by nothing, so the
+     * wrapped tier DEK the token carries is never merged into the recipient's
+     * keyring. `assertTierAccess`'s own docstring says a non-admin passes
+     * "via a prior grant or an active delegation" — the second clause has no
+     * implementation.
+     *
+     * ⭐ **When the read half lands, this test SHOULD fail** — that is its job.
+     * Flip it to assert bob reads the record; do not delete it.
+     */
+    it('a delegated recipient still cannot read the tier — the read half is absent (#56)', async () => {
+      const store = memoryStore()
+      const owner = await createNoydb({ store, secret: 'pw', user: 'owner', tiersStrategy: withTiers(), teamStrategy: withTeam() })
+      const ownerVault = await owner.openVault('v1')
+      const ownerDocs = ownerVault.collection<Doc>('docs', { tiers: [0, 1] })
+      await ownerDocs.putAtTier('secret', { id: 'secret', title: 'T', body: 'B' }, 1)
+      await ownerDocs.putAtTier('public', { id: 'public', title: 'P', body: 'P' }, 0)
+
+      await owner.grant('v1', { userId: 'bob', displayName: 'Bob', role: 'operator', secret: 'bob-pass-1', permissions: { docs: 'rw' } })
+
+      const asBob = async (id: string): Promise<Doc | GhostRecord | null> => {
+        const bob = await createNoydb({ store, secret: 'bob-pass-1', user: 'bob', tiersStrategy: withTiers(), teamStrategy: withTeam() })
+        const bobVault = await bob.openVault('v1')
+        return bobVault.collection<Doc>('docs', { tiers: [0, 1] }).getAtTier(id)
+      }
+
+      // Positive control — bob's vault really opens and really reads. Without
+      // this the assertions below pass for any reason at all, which is the
+      // failure mode the two tests above already have.
+      expect(((await asBob('public')) as Doc | null)?.body).toBe('P')
+
+      // Control: before any delegation, bob does not get the plaintext.
+      const before = await asBob('secret')
+      expect((before as Doc | null)?.body).not.toBe('B')
+
+      await ownerVault.delegate({
+        toUser: 'bob',
+        tier: 1,
+        collection: 'docs',
+        until: new Date(Date.now() + 60_000).toISOString(),
+      })
+
+      // And after it, unchanged — nothing consumes the token.
+      const after = await asBob('secret')
+      expect((after as Doc | null)?.body).not.toBe('B')
+      expect(after).toEqual(before)
     })
   })
 
