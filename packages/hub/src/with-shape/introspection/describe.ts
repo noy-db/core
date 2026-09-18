@@ -12,7 +12,7 @@
  */
 
 import type { FieldMeta } from './field-meta.js'
-import { resolveFieldMeta, validateFieldMetaKeys, FieldMetaUnknownFieldError, humanizeFieldKey, schemaFieldKeys } from './field-meta.js'
+import { resolveFieldMeta, validateFieldMetaKeys, humanizeFieldKey, schemaFieldKeys } from './field-meta.js'
 export { schemaFieldKeys }
 import type { CollectionMeta } from './meta.js'
 import type { MoneyDescriptor } from '../../via/money/descriptor.js'
@@ -356,8 +356,13 @@ export interface BuildDescriptionInput {
   readonly fieldIds?: Record<string, string> | undefined
 }
 
-// Re-export so that callers that want to catch the error don't need another import path.
-export { FieldMetaUnknownFieldError }
+// #57 — the re-export that used to sit here is GONE, and its purpose is now
+// actually met. It said "so that callers that want to catch the error don't
+// need another import path" and stopped one module short of a published entry:
+// `describe.ts` is internal, so the class reached no consumer and could only be
+// matched on `err.name`. It is now exported from `./index.ts` (i.e.
+// `@noy-db/hub/introspection`) and from the root barrel, which is where a
+// caller can reach it. Do not re-add a route through this module.
 
 // ─── Widget derivation ────────────────────────────────────────────────────────
 

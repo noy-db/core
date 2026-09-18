@@ -110,9 +110,15 @@ export interface FormatsContext {
 
 /** Thrown by every method on {@link NO_FORMATS}. */
 /**
- * `FormatsNotEnabledError` — PUBLISHED API, reachable from @noy-db/hub, @noy-db/hub/tiers. Flagged as unused because
- * nothing inside hub imports it from this module; a consumer does. Do not narrow
- * or delete without a seam change (#55).
+ * `FormatsNotEnabledError` — PUBLISHED API, reachable from `@noy-db/hub` and
+ * `@noy-db/hub/as`. Flagged by knip as unused because nothing inside hub imports
+ * it from this module; a consumer does. Do not narrow or delete without a seam
+ * change (#55).
+ *
+ * ⚠️ This comment claimed `@noy-db/hub` + `@noy-db/hub/tiers` until #57, and both
+ * were false — the class reached NO published entry, so the only way to handle it
+ * was `err.name`. A comment naming who can import something is not evidence;
+ * `__tests__/error-classes-reachable.test.ts` is.
  *
  * @public
  */

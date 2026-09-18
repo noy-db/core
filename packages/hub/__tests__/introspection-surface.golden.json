@@ -1,5 +1,6 @@
 {
   "values": [
+    "FieldMetaUnknownFieldError",
     "applyListProjection",
     "dumpVaultSchema",
     "jsonSchemaToFields"

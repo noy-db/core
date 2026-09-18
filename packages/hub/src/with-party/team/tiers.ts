@@ -32,6 +32,25 @@ export { dekKey }
  * maximum tier for which their keyring holds a DEK. Falls back to 0
  * when the user has only the tier-0 DEK (or none — the getDEK caller
  * will raise separately).
+ *
+ * ## ⚠️ Called by nothing, and it is HALF of a pair (core#58)
+ *
+ * The other half is `KeyringFile.clearance` (`kernel/types.ts`), a persisted,
+ * optional, explicitly advisory field whose own docstring describes this
+ * computation — *"Owners and admins default to the highest tier they have DEKs
+ * for at grant time"*. Measured: **nothing in the tree reads or writes it**,
+ * and nothing calls this function. So the format poses a per-collection
+ * clearance question that no code answers, on either side.
+ *
+ * ⛔ Do not delete this on a "no callers" signal alone. It is the only
+ * implementation of what the persisted field means, and removing it leaves the
+ * field with no definition at all. Do not delete the field either without
+ * deciding what a keyring that already carries one should do.
+ *
+ * ⚠️ `kernel/vault.ts`'s `elevate()` scan is NOT this predicate and cannot be
+ * replaced by a call to it: that asks whether ANY collection has a DEK at ONE
+ * tier (`#N` suffix match); this asks the MAXIMUM tier for ONE collection
+ * (`name#` prefix match). See core#58 for the table.
  */
 export function effectiveClearance(keyring: UnlockedKeyring, collection: string): number {
   let max = 0

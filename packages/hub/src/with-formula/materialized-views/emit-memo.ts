@@ -61,6 +61,21 @@
  * collection's own cache — but such a writer already makes `list()` on that
  * collection wrong, so it is a broader defect than this memo.
  *
+ * ## ⛔ There is no explicit drop, and that is the design (#59)
+ *
+ * Invalidation is BY STAMP, in both directions: `readEmitMemo` deletes a memo
+ * whose stamp no longer matches, and `writeEmitMemo` deletes rather than store
+ * one it cannot trust (`null` stamp, or over the row cap). A refresh that
+ * throws midway has already written some rows, so the output collection's
+ * stamp has moved and the next read drops the memo itself; a row that failed,
+ * was declined or was tombstoned is simply absent from `emitted` and is written
+ * again (`executor.ts`, "Record the stamp AFTER every write and tombstone").
+ *
+ * So there is no invalidation path the stamp guard does not already cover. A
+ * `dropEmitMemo(key)` hook existed until #59 and was called by nothing for
+ * exactly that reason — do not re-add one without first naming the path that
+ * leaves a stale memo behind.
+ *
  * ## ⛔ The memo stands down when a REDUNDANT write is still observable
  *
  * `Collection._cacheStamp` returns `null` — no memo — whenever writing the same
@@ -151,11 +166,6 @@ export function writeEmitMemo(key: string, stamp: number | null, rows: Map<strin
     return
   }
   memos.set(key, { stamp, rows })
-}
-
-/** Forget one MV's output entirely. Used when a refresh could not complete cleanly. */
-export function dropEmitMemo(key: string): void {
-  memos.delete(key)
 }
 
 /**

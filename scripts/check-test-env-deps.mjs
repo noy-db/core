@@ -21,7 +21,10 @@
  * Usage is detected two ways, because one of them is invisible to both an
  * import scan and a config grep:
  *   1. `environment: 'x'` / `environmentMatchGlobs` in vitest.config.ts
- *   2. an `@vitest-environment x` DOCBLOCK PRAGMA in a test file — how `hub`
+ *   2. a `vitest-environment` DOCBLOCK PRAGMA in a test file — how `hub`
+ *      (the `@`-prefixed spelling is avoided in this comment on purpose: knip
+ *      reads that pragma out of comments too, and reported its example value
+ *      as an unlisted dependency — core#55)
  *      uses happy-dom, and why every earlier count missed it
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs'

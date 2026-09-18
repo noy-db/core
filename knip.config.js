@@ -29,8 +29,40 @@
  */
 const PATH_ADDRESSED_FIXTURES = '**/__tests__/fixtures/**'
 
+/**
+ * `@vitest/coverage-v8` is the ONE row deliberately left red (#55 step 4).
+ *
+ * `vitest.config.ts` sets `coverage.provider: 'v8'` and the root script
+ * `test:ci` is `turbo run test -- --coverage`, but the package is in no
+ * manifest and no lockfile — and `test:ci` is invoked by no workflow. So the
+ * coverage path cannot have run since it was written. It resolves EITHER by
+ * installing the provider or by deleting the dead script, and that is a
+ * decision, not a config statement — suppressing it here would convert a real
+ * finding into silence, which is the defect #55 was filed about.
+ *
+ * ⛔ Do not add it to `ignoreDependencies` to make the gate green.
+ */
+
 export default {
   $schema: 'https://unpkg.com/knip@6/schema.json',
+  rules: {
+    // ⛔ OFF, not "no duplicates found" — both instances in this tree are the
+    // same deliberate idiom and knip cannot tell it from a mistake:
+    //   `channelMesh` / `byPeer`            — one factory, two PUBLISHED names
+    //                                         (by-tabs binds one, by-peer the
+    //                                         other); both are documented and
+    //                                         both are in the surface golden.
+    //   `COST_BYTE_V1` / `CURRENT_COST_BYTE` — a versioned constant plus the
+    //                                         `CURRENT_` alias every caller
+    //                                         uses, which is what makes the
+    //                                         next cost byte a one-line move.
+    // Deleting either alias is a breaking change for the first and a
+    // find-and-replace across the classify cluster for the second.
+    duplicates: 'off',
+  },
+  // System binaries a script shells out to. Not npm packages, so there is no
+  // manifest row that could satisfy knip.
+  ignoreBinaries: ['tar'],
   // `@seam`   — exported for a boundary, with no importer BY DESIGN (the tag
   //             sits on the declaration and carries the reason).
   // `@public`  — published API: a consumer imports it, which knip cannot see
@@ -55,12 +87,38 @@ export default {
       ignore: [PATH_ADDRESSED_FIXTURES],
     },
     'packages/in-nuxt': {
+      // Both are used, and neither use is an import:
+      //   `@nuxt/schema` — only ever named by `declare module '@nuxt/schema'`
+      //                    (src/module.ts) and by tsup's `external` list.
+      //   `happy-dom`    — named as a STRING in `environmentMatchGlobs`.
+      // `scripts/check-test-env-deps.mjs` exists precisely because this second
+      // shape is invisible to both an import scan and a config grep.
+      ignoreDependencies: ['@nuxt/schema', 'happy-dom'],
       // Same class as the fixtures: a file that exists for a COMPILER PROGRAM
       // rather than for the import graph. `vue-shims.d.ts` is what lets `tsc`
       // resolve the `.vue` SFCs the tests mount (core#40) — nothing imports
       // it, and the shipped code deliberately never imports an SFC as a
       // module. Deleting it makes every SFC import a TS2307.
       ignore: ['__tests__/vue-shims.d.ts'],
+    },
+    'packages/in-rest': {
+      // `h3` is an OPTIONAL PEER this package adapts to without importing —
+      // the Nitro adapter returns a Fetch `Response` and never touches h3's
+      // API. It is named in tsup's `external` list and in `peerDependencies`;
+      // the devDep is what makes the adapter's tests typecheck.
+      ignoreDependencies: ['h3'],
+    },
+    'test-harnesses/benchmarks': {
+      // ⚠️ Both harnesses reach hub by RELATIVE PATH into `packages/hub/src`,
+      // never by specifier, so knip sees no import. The manifest row is not
+      // decoration: it is what orders hub ahead of the harness in turbo's
+      // graph. Removing it is the exact mistake the to-memory relocation made
+      // — "nothing imports it" is not the same question as "nothing needs it"
+      // when the importers use a path.
+      ignoreDependencies: ['@noy-db/hub'],
+    },
+    'test-harnesses/simulation-filesystem': {
+      ignoreDependencies: ['@noy-db/hub'],
     },
     'packages/test-adapter-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
     'packages/test-ceremony-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
