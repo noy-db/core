@@ -74,6 +74,18 @@ async function makeNoydb(): Promise<Noydb> {
   })
 }
 
+/**
+ * The shape `vault.collection` is spied on as.
+ *
+ * ⚠️ It used to be `{ collection: unknown }`, which typechecks at the
+ * `vi.spyOn` call and makes every ARGUMENT of every recorded call `never` —
+ * so `calls.find(c => c[0] === 'invoices')` compared a string against `never`
+ * and `call[1]` indexed an empty tuple. Four errors per spy, invisible until
+ * these tests were put in front of a compiler (core#40). A spy is only as
+ * precise as the type it is installed through.
+ */
+type SpiedVault = { collection: (name: string, options?: Record<string, unknown>) => unknown }
+
 describe('defineNoydbStore — greenfield path', () => {
   let db: Noydb
 
@@ -449,7 +461,7 @@ describe('schema-update option forwarding (#255)', () => {
     // forwarding (the unit under test) without depending on persistJsonSchema's
     // downstream baseline derivation.
     const vault = await db.openVault('books')
-    const spy = vi.spyOn(Object.getPrototypeOf(vault) as { collection: unknown }, 'collection')
+    const spy = vi.spyOn(Object.getPrototypeOf(vault) as SpiedVault, 'collection')
 
     // Pass-through Standard Schema (in-pinia has no Zod dep); the store still
     // installs it, but this test only checks the migration options forward.
@@ -501,7 +513,7 @@ describe('defineNoydbStore — i18nFields / dictKeyFields forwarding', () => {
 
   it('forwards i18nFields to vault.collection', async () => {
     const vault = await db.openVault('shop')
-    const spy = vi.spyOn(Object.getPrototypeOf(vault) as { collection: unknown }, 'collection')
+    const spy = vi.spyOn(Object.getPrototypeOf(vault) as SpiedVault, 'collection')
 
     const nameDesc = i18nText({ languages: ['en', 'th'], required: 'any' })
     const useProducts = defineNoydbStore('products-i18n-fwd', {

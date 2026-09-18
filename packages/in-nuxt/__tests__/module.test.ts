@@ -87,7 +87,12 @@ vi.mock('@nuxt/kit', () => {
 // Helper to build a minimal mock Nuxt context the module can mutate.
 function makeNuxtMock(dev = false): {
   options: { dev: boolean; runtimeConfig: { public: Record<string, unknown> } }
-  hook: ReturnType<typeof vi.fn>
+  // The real shape. It was declared as `ReturnType<typeof vi.fn>` — a vitest
+  // Mock — while the value below is a plain method that records into
+  // `captured.hooks`. Nothing here ever calls a mock API on it (assertions
+  // read `captured.hooks` directly), so the annotation bought nothing and was
+  // simply false; invisible until these tests were compiled (core#40).
+  hook(name: string, fn: unknown): void
 } {
   return {
     options: { dev, runtimeConfig: { public: {} } },

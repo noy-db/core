@@ -11,8 +11,5 @@
     "src",
     "__tests__"
   ],
-  "exclude": [
-    "__tests__/defineNoydbStore.test.ts"
-  ],
-  "//exclude": "BURN-DOWN (core#40), 8 errors in 1 file: `vi.fn()` spies with no type argument infer `never` parameters, so `mock.calls[0]` indexes an empty tuple. Typing the spies fixes it; nothing about the package is wrong."
+  "exclude": []
 }

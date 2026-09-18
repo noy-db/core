@@ -11,11 +11,5 @@
     "src",
     "__tests__"
   ],
-  "exclude": [
-    "__tests__/devtools-panel.test.ts",
-    "__tests__/module.test.ts",
-    "__tests__/records-mask.test.ts",
-    "__tests__/schema-pane.test.ts"
-  ],
-  "//exclude": "BURN-DOWN (core#40), 24 errors in 4 files: the inspector-snapshot doubles do not match `InspectorSnapshot` \u2014 `refs: []` where the type is a Record, and similar. These ARE contract drift in test doubles (the same class as the in-relay and in-devtools fixes that landed with this config), not harness noise; they are listed rather than fixed here because the fix is per-double and this commit's job is to make them visible."
+  "exclude": []
 }

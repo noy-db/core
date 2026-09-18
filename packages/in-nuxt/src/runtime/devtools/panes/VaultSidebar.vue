@@ -13,7 +13,14 @@
         @click="$emit('select', coll)"
       >
         <span>{{ coll.meta?.label ?? coll.name }}</span>
-        <span v-if="coll.stats?.count" class="noydb-sidebar__badge">{{ coll.stats.count }}</span>
+        <!-- `records`, not `count`: CollectionStats has no `count` field and never
+             has, so this badge NEVER rendered against a real inspector snapshot.
+             The test double invented `count`, so the component and its test agreed
+             with each other and neither agreed with the contract. Found by putting
+             the tests in front of a compiler (core#40) — the .vue itself is still
+             unchecked (tsc, not vue-tsc), which is exactly where the bug was
+             hiding. -->
+        <span v-if="coll.stats?.records" class="noydb-sidebar__badge">{{ coll.stats.records }}</span>
       </button>
     </template>
     <div v-else class="noydb-sidebar__empty">—</div>

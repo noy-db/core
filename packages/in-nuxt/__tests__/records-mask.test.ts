@@ -71,7 +71,7 @@ describe('RecordsPane — PII masking', () => {
         total: { type: 'string' } as never,
       },
       indexes: [],
-      refs: [],
+      refs: {},
       described: [
         {
           key: 'vat',
@@ -124,7 +124,7 @@ describe('RecordsPane — PII masking', () => {
         name: 'keys',
         fields: { apiKey: { type: 'string' } as never },
         indexes: [],
-        refs: [],
+        refs: {},
         described: [
           {
             key: 'apiKey',
@@ -167,7 +167,7 @@ describe('RecordsPane — PII masking', () => {
           amount: { type: 'string' } as never,
         },
         indexes: [],
-        refs: [],
+        refs: {},
         // no described
       }],
     }
@@ -193,7 +193,7 @@ describe('RecordsPane — PII masking', () => {
           extra: { type: 'string' } as never,
         },
         indexes: [],
-        refs: [],
+        refs: {},
         described: [
           {
             key: 'name',
@@ -228,7 +228,7 @@ describe('RecordsPane — collection-change reveal reset', () => {
     name: 'collA',
     fields: { secret: { type: 'string' } as never },
     indexes: [],
-    refs: [],
+    refs: {},
     described: [
       {
         key: 'secret',
@@ -246,7 +246,7 @@ describe('RecordsPane — collection-change reveal reset', () => {
     name: 'collB',
     fields: { secret: { type: 'string' } as never },
     indexes: [],
-    refs: [],
+    refs: {},
     described: [
       {
         key: 'secret',
