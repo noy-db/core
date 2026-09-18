@@ -5,6 +5,7 @@
   "description": "Multi-user grant/revoke/rotate scenarios",
   "type": "module",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run"
   },
   "devDependencies": {

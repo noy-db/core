@@ -34,6 +34,7 @@
     "test": "turbo run test",
     "test:ci": "turbo run test -- --coverage",
     "test:scripts": "vitest run --project scripts --no-file-parallelism",
+    "typecheck:scripts": "tsc --noEmit -p scripts/tsconfig.tests.json",
     "typecheck": "turbo run typecheck"
   },
   "devDependencies": {

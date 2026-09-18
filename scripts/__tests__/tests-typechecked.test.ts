@@ -19,7 +19,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -87,6 +87,42 @@ describe('check-architecture — tests-typechecked', () => {
     )
     const { out } = runCheck()
     expect(out).not.toMatch(/@noy-db\/__probe__/)
+  })
+
+  it('FIRES on a TEST-HARNESS with tests and no typecheck script', () => {
+    // ⛔ The first version of this check scanned `packages/` only and went
+    // green while six harnesses and `scripts/__tests__` were compiled by
+    // nothing. A guard whose green means less than it appears to is the
+    // defect class this milestone is named for — so the scope itself is
+    // asserted, not just the rule.
+    const HARNESS = REPO_ROOT + 'test-harnesses/__probe__'
+    mkdirSync(HARNESS + '/__tests__', { recursive: true })
+    writeFileSync(HARNESS + '/package.json', JSON.stringify({ name: '@noy-db/__harness_probe__', private: true, scripts: {} }, null, 2))
+    writeFileSync(HARNESS + '/tsconfig.json', JSON.stringify({ include: ['src'] }, null, 2))
+    writeFileSync(HARNESS + '/__tests__/probe.test.ts', 'export const probe = 1\n')
+    try {
+      const { out, status } = runCheck()
+      expect(out).toMatch(/@noy-db\/__harness_probe__/)
+      expect(status).not.toBe(0)
+    } finally {
+      rmSync(HARNESS, { recursive: true, force: true })
+    }
+  })
+
+  it('FIRES when the root manifest runs no program over scripts/__tests__', () => {
+    // `scripts/` is not a workspace package, so turbo never reaches it and
+    // the per-package rule cannot see it. It is checked against the ROOT
+    // manifest instead — and that path needs its own proof.
+    const ROOT_PKG = REPO_ROOT + 'package.json'
+    const original = readFileSync(ROOT_PKG, 'utf8')
+    try {
+      writeFileSync(ROOT_PKG, original.replace(/\s*"typecheck:scripts":[^\n]*\n/, '\n'))
+      const { out, status } = runCheck()
+      expect(out).toMatch(/scripts\/__tests__ exists but the root manifest runs no program over it/)
+      expect(status).not.toBe(0)
+    } finally {
+      writeFileSync(ROOT_PKG, original)
+    }
   })
 
   it('IGNORES a package that has no test files', () => {

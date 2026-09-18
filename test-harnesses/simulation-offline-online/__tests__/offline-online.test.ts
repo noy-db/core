@@ -92,8 +92,14 @@ describe('simulation: offline-first writes, explicit push, second-device pull', 
     const remoteEnv = (await remote.get(VAULT, 'invoices', 'inv-001'))!
     expect(remoteEnv._iv).toBe(localEnv._iv)
     expect(remoteEnv._data).toBe(localEnv._data)
-    expect(localEnv._iv.length).toBeGreaterThan(0)
-    expect(() => JSON.parse(remoteEnv._data)).toThrow()
+    // ⚠️ `_iv`/`_data` are OPTIONAL on EncryptedEnvelope, and the omission is
+    // not cosmetic: `JSON.parse(undefined)` also throws, so the "it IS
+    // ciphertext" assertion below would pass on an envelope carrying no body.
+    // Presence first, then the property (core#40).
+    expect(localEnv._iv, 'local envelope carries no IV — nothing was sealed').toBeTypeOf('string')
+    expect(remoteEnv._data, 'remote envelope carries no body').toBeTypeOf('string')
+    expect(String(localEnv._iv).length).toBeGreaterThan(0)
+    expect(() => JSON.parse(String(remoteEnv._data))).toThrow()
   })
 
   it('a second device with its own local store pulls the pushed records and decrypts them', async () => {

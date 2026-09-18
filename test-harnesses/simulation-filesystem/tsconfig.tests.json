@@ -1,0 +1,27 @@
+{
+  "//": "Typechecks this harness, which NOTHING compiled before (core#40): it has no `typecheck` script, and its `tsconfig.json` says `rootDir: \"src\"` while the code deliberately imports hub's INTERNAL source by relative path \u2014 so that config could not compile its own files (TS6059 x400+) and nobody ran it to find out. \u26d4 `rootDir` is the REPO ROOT because the program genuinely spans two packages. \u26d4 THE `paths` ENTRIES ARE LOAD-BEARING, `#capsule` above all: hub's package.json maps #capsule to its BUILD OUTPUT, so compiling hub's source from outside gives every shared type two nominal identities (hub/src/.../Lru vs hub/dist/.../Lru). Measured on simulation-sync: 470 errors with rootDir alone, 0 once these three are mapped \u2014 and the 4 that survived the rootDir fix looked like real defects in hub until the mapping made them disappear. Same remedy as test-capsule-conformance, same reason. `exclude` is a burn-down: add a file that fails today, delete the entry when it is fixed.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "noEmit": true,
+    "types": [],
+    "noImplicitAny": false,
+    "baseUrl": ".",
+    "paths": {
+      "@noy-db/hub": [
+        "../../packages/hub/src/index.ts"
+      ],
+      "@noy-db/hub/*": [
+        "../../packages/hub/src/*"
+      ],
+      "#capsule": [
+        "../../packages/hub/src/capsule/enclave-aes/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "__tests__"
+  ],
+  "exclude": []
+}

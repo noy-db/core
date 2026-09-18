@@ -5,6 +5,7 @@
   "description": "File adapter edge cases (USB, permissions, corrupt)",
   "type": "module",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run"
   },
   "devDependencies": {

@@ -5,6 +5,7 @@
   "description": "Performance benchmarks",
   "type": "module",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run --passWithNoTests",
     "bench:vectors": "vitest run --config vitest.bench.config.ts src/vector-brute-force.bench.ts",
     "bench:ann": "node --expose-gc ../../node_modules/vitest/vitest.mjs run --config vitest.bench.config.ts src/vector-ann-index.bench.ts"

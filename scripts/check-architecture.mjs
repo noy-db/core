@@ -1907,7 +1907,38 @@ function checkSourcesTracked() {
 // issue's open question is whether this CHECK belongs in family-tools, and
 // this is core's answer to it in executable form.
 function checkTestsTypechecked() {
-  for (const pkgDir of listPackageDirs()) {
+  // ⛔ NOT just `packages/`. The first version of this check scanned only
+  // package dirs and went green while `scripts/__tests__` (12 files, no
+  // tsconfig anywhere) and six `test-harnesses/*` were compiled by nothing —
+  // and the harnesses' own configs could not have compiled their tests even
+  // if run (`rootDir: "src"` against files outside it). A guard whose green
+  // means less than it appears to is this milestone's defect class wearing
+  // the milestone's uniform. Measured when someone finally looked.
+  const dirs = [...listPackageDirs()]
+  const harnesses = join(ROOT, 'test-harnesses')
+  if (existsSync(harnesses)) {
+    for (const d of readdirSync(harnesses)) {
+      const full = join(harnesses, d)
+      if (statSync(full).isDirectory() && existsSync(join(full, 'package.json'))) dirs.push(full)
+    }
+  }
+  // `scripts/` is not a workspace package — no package.json of its own — so
+  // it is checked against the ROOT manifest's `typecheck:scripts`.
+  const scriptsTests = join(ROOT, 'scripts', '__tests__')
+  if (existsSync(scriptsTests)) {
+    const rootPkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+    const cfg = join(ROOT, 'scripts', 'tsconfig.tests.json')
+    const wired = Object.values(rootPkg.scripts ?? {}).some((s) => s.includes('scripts/tsconfig.tests.json'))
+    if (!wired || !existsSync(cfg)) {
+      fail(
+        'tests-typechecked',
+        'scripts/__tests__ exists but the root manifest runs no program over it. Add `scripts/tsconfig.tests.json` and a root script that runs it (and put that script in family.config.json localChecks, since turbo does not reach scripts/).',
+        join(ROOT, 'package.json'),
+      )
+    }
+  }
+
+  for (const pkgDir of dirs) {
     const testsDir = join(pkgDir, '__tests__')
     if (!existsSync(testsDir)) continue
     let hasTests = false

@@ -85,8 +85,15 @@ describe('simulation: two user identities on one shared store', () => {
       .toEqual({ customer: 'beta', amount: 750 })
     // And the shared store never saw plaintext.
     const env = (await shared.get(VAULT, 'invoices', 'inv-002'))!
-    expect(env._iv.length).toBeGreaterThan(0)
-    expect(() => JSON.parse(env._data)).toThrow()
+    // ⚠️ `_iv` and `_data` are OPTIONAL on EncryptedEnvelope — a body may be
+    // sealed or not — so presence is asserted before the property that
+    // matters. It is not ceremony: `JSON.parse(undefined)` ALSO throws, so
+    // without it the "this is ciphertext" case passes on an envelope with no
+    // body at all. Found when this harness was first typechecked (core#40).
+    expect(env._iv, 'stored envelope carries no IV — nothing was sealed').toBeTypeOf('string')
+    expect(env._data, 'stored envelope carries no body').toBeTypeOf('string')
+    expect(String(env._iv).length).toBeGreaterThan(0)
+    expect(() => JSON.parse(String(env._data))).toThrow()
   })
 
   it('a viewer reads everything but every write is refused with ReadOnlyError', async () => {

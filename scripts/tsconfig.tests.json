@@ -1,0 +1,14 @@
+{
+  "//": "Typechecks the release-tooling tests, which NOTHING compiled before (core#40): `scripts/` had no tsconfig at all, and vitest transpiles without checking. Several of these read hub source BY PATH, so a file move breaks them \u2014 CI catches that today only by running them. \u26d4 `types` is [] and not [\"node\"]: this directory declares no @types/node of its own, and asking for it here fails TS2688 outright. The repo-wide trap cuts both ways \u2014 never default `types`, never blanket-[] a package that legitimately declares node. Measured: 0 errors as written. \u26d4 `rootDir` is the repo root because these tests reach across into packages/. `exclude` is a burn-down: add a file that fails today, delete the entry when it is fixed.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "types": [],
+    "noImplicitAny": false
+  },
+  "include": [
+    "__tests__"
+  ],
+  "exclude": []
+}
