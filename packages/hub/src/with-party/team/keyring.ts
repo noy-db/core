@@ -1140,7 +1140,7 @@ export async function revoke(
           `rotation because their keyring failed roster authentication: ` +
           `${unverified.map((u) => `${u.userId} (${u.reason})`).join(', ')}. ` +
           'The revocation itself completed. Those members cannot open the vault and did not ' +
-          'receive the rotated keys; their keyring files need repair or removal (noy-db#1114).',
+          'receive the rotated keys; their keyring files need repair or removal (vLannaAi/noy-db#1114).',
       )
     }
   }
