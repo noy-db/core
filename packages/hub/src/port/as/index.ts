@@ -28,6 +28,10 @@
  * Named re-exports only (no `export *`) so the published surface is explicit.
  */
 export { withFormats } from './active.js'
+// #57 — the error the no-op strategy throws when a caller reaches `exportWith`
+// without opting in. Its own message points here, so this is the subpath a
+// consumer catching it already binds.
+export { FormatsNotEnabledError } from '../with/formats-strategy.js'
 export type {
   FormatsStrategy,
   FormatExportOptions,

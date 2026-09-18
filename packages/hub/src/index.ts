@@ -222,6 +222,11 @@ export type { SchemaIntrospection } from './with-shape/introspection/types.js'
 
 // Field metadata
 export type { FieldMeta, SemanticType } from './with-shape/introspection/field-meta.js'
+// #57 — `validateFieldMetaKeys` throws this on a published describe path.
+export { FieldMetaUnknownFieldError } from './with-shape/introspection/field-meta.js'
+// #57 — thrown by every method on the NO_FORMATS no-op strategy, i.e. by
+// `vault.exportWith()` on any vault that did not opt into `withFormats()`.
+export { FormatsNotEnabledError } from './port/with/formats-strategy.js'
 export type { CollectionMeta, VaultMeta } from './with-shape/introspection/meta.js'
 export type { CollectionDescription, DescribedField, DescribeOptions } from './with-shape/introspection/describe.js'
 export { applyListProjection, type ListProjectionOptions } from './with-shape/introspection/projection.js'
@@ -277,6 +282,9 @@ export {
   NoydbError,
   DecryptionError,
   TamperedError,
+  // #57 — thrown by the record read path (`openEnvelopeJson`) at a consumer, so
+  // it must be catchable by class and not only by `err.name`.
+  MissingEnvelopeBodyError,
   InvalidKeyError,
   KeyringCorruptError,
   KeyringTamperedError,

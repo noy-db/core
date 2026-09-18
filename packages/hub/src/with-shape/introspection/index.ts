@@ -30,6 +30,11 @@ export { jsonSchemaToFields } from './fields.js'
 // `dumpVaultSchema`'s own types.
 export type { SchemaIntrospection } from './types.js'
 export type { FieldMeta, SemanticType } from './field-meta.js'
+// #57 — `validateFieldMetaKeys` throws this from a published describe path.
+// `describe.ts` re-exported it for exactly this reason and stopped one module
+// short: the class reached no entry, so a consumer could only match on
+// `err.name`.
+export { FieldMetaUnknownFieldError } from './field-meta.js'
 export type { CollectionDescription, DescribedField, DescribeOptions } from './describe.js'
 // #1021 — the last symbol a describe/UI consumer needed that lived only on the
 // root barrel. `/introspection` is the seam such a consumer binds (there is no
