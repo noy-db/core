@@ -48,5 +48,31 @@
  *
  * A test that trips this is hung, not slow. Re-run it in isolation before
  * touching this number: every failure filed on #1174 passed alone.
+ *
+ * ## ⛔ The one case where that advice is not enough, and why `test:ci` caps
+ * ##    turbo's concurrency (core#55)
+ *
+ * `pnpm test:ci` is `turbo run test --concurrency=4 -- --coverage`. **The `4`
+ * is load-bearing and is not tidiness.** Without it, turbo runs one task per
+ * core, each spawning a v8-instrumented vitest, and on an 8-core machine two
+ * heavy hub tests blow this 30s budget non-deterministically — `#1360` IVF-flat
+ * and `#1458`'s tsc-spawning join refusal.
+ *
+ * ⭐ It is CONTENTION, not instrumentation, and the difference decides the fix.
+ * Measured: the IVF-flat test is **1.9s** uninstrumented, **2.8s** alone under
+ * coverage, and **>30s** only inside the full run at default concurrency. At
+ * `--concurrency=4` the whole suite is 76/76 green. So the ceiling this file's
+ * 30s was calibrated against is still the real ceiling; nothing about the
+ * calibration expired.
+ *
+ * ⛔ **So do NOT raise TEST_TIMEOUT_MS to make a coverage run green** — that
+ * is raising a hang detector to absorb scheduling pressure, which is exactly
+ * what the section above argues against. A starved test and a hung one would
+ * then look the same for however long the new number is. Cap the parallelism
+ * instead; that is the thing that is actually wrong.
+ *
+ * ⚠️ This was unmeasurable until core#55: `test:ci` passed `--coverage` while
+ * `@vitest/coverage-v8` was in no manifest and no lockfile, so the script had
+ * never once run.
  */
 export const TEST_TIMEOUT_MS = 30_000
