@@ -31,6 +31,7 @@ const PATH_ADDRESSED_FIXTURES = '**/__tests__/fixtures/**'
 
 export default {
   $schema: 'https://unpkg.com/knip@6/schema.json',
+  tags: ['-seam'],
   workspaces: {
     '.': {
       entry: ['scripts/*.mjs', 'scripts/__tests__/**/*.test.ts'],

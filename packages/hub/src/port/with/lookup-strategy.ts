@@ -53,6 +53,11 @@ import type { LookupDescriptor } from '../../via/lookup/descriptor.js'
  * `DictionaryOptions` (kept as a distinct alias since the "lookup" name is
  * the forward-looking one; `DictionaryOptions` stays the dict-tier name).
  */
+/**
+ * Frozen seam shape (#650 Task 1): the backing-options alias the later phase-D tasks bind onto.
+ *
+ * @seam
+ */
 export type LookupBackingOptions = DictionaryOptions
 
 /**
@@ -135,6 +140,11 @@ function notEnabled(op: string): Error {
  * (`Vault.i18nStrategy.buildDictionaryHandle` → `withLookup().buildLookupHandle`) never reaches
  * here. Kept as forward scaffolding for a later task that wires an independent lookup opt-in.
  */
+/**
+ * Frozen seam shape, named in this file's header: `NO_LOOKUP` is what later phase-D tasks bind `vault.collection()`'s lookup fields onto — unused by Task 1's wiring on purpose.
+ *
+ * @seam
+ */
 export const NO_LOOKUP: LookupStrategy = {
   buildLookupHandle() {
     throw notEnabled('vault.dictionary()')
@@ -142,9 +152,19 @@ export const NO_LOOKUP: LookupStrategy = {
 }
 
 /** `_dict_*` (legacy dict tier) and `_lookup_*` (the phase-D reserved backing). */
+/**
+ * Frozen seam shape (#650 Task 1, header): bound by later phase-D tasks, deliberately unused by the wiring that landed first.
+ *
+ * @seam
+ */
 export const LOOKUP_COLLECTION_PREFIXES = ['_dict_', '_lookup_'] as const
 
 /** Return true when a collection name is a reserved lookup-backing collection. */
+/**
+ * Frozen seam shape, named in this file's header alongside `NO_LOOKUP`.
+ *
+ * @seam
+ */
 export function isLookupCollectionName(name: string): boolean {
   return LOOKUP_COLLECTION_PREFIXES.some((prefix) => name.startsWith(prefix))
 }
@@ -153,7 +173,17 @@ export function isLookupCollectionName(name: string): boolean {
 // thin delegators call these directly; small always-on functions, not
 // behind the tree-shake seam (same bundling class as `isLookupCollectionName`
 // above, just too large to duplicate inline like that one is).
+/**
+ * Engine helpers re-exported THROUGH the port: `kernel/vault.ts` may import only this module for lookup (header), never `via/lookup/*` — Check 14 bans the direct path.
+ *
+ * @seam
+ */
 export { enforceStaticDictOnPut, resolveDictSource, updateReferencingRecords }
+/**
+ * Engine type through the port — same boundary reason as the line above.
+ *
+ * @seam
+ */
 export type { DictReferencingCollection }
 
 // #650 Task 4 (#647) — the reserved-collection naming helper `vault.ts`'s sync-registry
@@ -164,7 +194,17 @@ export { dictCollectionName } from '../../via/lookup/handle.js'
 // `collectLookupDictCompat`/`lookupToStaticDictCompat`) + the runtime
 // brand/shape predicates `via/compose.ts` needs to route `'lookup'`-branded
 // descriptors, mirroring `isI18nTextDescriptor`/`isDictKeyDescriptor` below.
+/**
+ * Dict-compat helpers through the port — same boundary reason.
+ *
+ * @seam
+ */
 export { resolveLabelFromMap, collectLookupDictCompat, lookupToStaticDictCompat }
+/**
+ * Dict-compat type through the port — same boundary reason.
+ *
+ * @seam
+ */
 export type { LookupDictCompat }
 
 // #653 — partial-sync reserved-dict expansion: maps a set of named collections to the
@@ -174,6 +214,11 @@ export { reservedDictDepsOf }
 // #650 Task 3 — altKeys ingest normalization + open/closed vocabulary
 // governance: the declare/warm-time altIndex builder + the membership test
 // vault.ts's `membership`/`getAltIndex` closures delegate to.
+/**
+ * Backing-table helpers through the port — same boundary reason.
+ *
+ * @seam
+ */
 export { materializeBackingTable, checkLookupMembership, buildLookupAltIndex }
 export type { MaterializedBacking }
 
@@ -185,12 +230,22 @@ export { registerLookupRefEdges }
 // builder `kernel/collection-config.ts` calls to build the
 // `JoinableSource.presentForJoin` hook `kernel/query/relate/join.ts` consumes.
 export { buildLookupSnapshotRows, buildPresentForJoin }
+/**
+ * Snapshot type through the port — same boundary reason.
+ *
+ * @seam
+ */
 export type { LookupSnapshot } from '../../via/lookup/snapshot.js'
 
 // #651 Task 3 — the ONE descriptor-keyed key-resolution core (guarded coercion +
 // backing-row-key resolve + referencing-value match) — every consumer (vault.ts,
 // with-shape/links/vault-facade.ts, kernel/via/dispatch.ts) routes through here,
 // never a bare `String()`, ending the dm12 dialect drift.
+/**
+ * Key-coercion helpers through the port — same boundary reason.
+ *
+ * @seam
+ */
 export { coerceLookupKey, resolveBackingRowKey, matchesReferencingValue }
 
 /** Runtime predicate for detecting a `LookupDescriptor` (any of the three tiers). */
@@ -203,6 +258,11 @@ export function isLookupDescriptor(x: unknown): x is LookupDescriptor {
 }
 
 /** Runtime predicate for the bare enum tier (`backing:'static'`, no in-code `table` — no label source). */
+/**
+ * Descriptor predicate, frozen with the seam it belongs to (#650 Task 1).
+ *
+ * @seam
+ */
 export function isEnumDescriptor(x: unknown): x is LookupDescriptor {
   return isLookupDescriptor(x) && x.backing === 'static' && x.table === undefined
 }
@@ -212,8 +272,25 @@ export function isEnumDescriptor(x: unknown): x is LookupDescriptor {
  * types through the port instead of reaching into `via/lookup/*` or
  * `via/i18n/*` directly. `isolatedModules: true` erases these at
  * build time — no runtime coupling.
+ *
+ * @seam
  */
 export type { LookupHandle, DictEntry, DictionaryOptions } from '../../via/lookup/handle.js'
+/**
+ * Descriptor types through the port. The spine may not reach into `via/lookup/*` (Check 14), so these exist for the boundary, not for a current importer.
+ *
+ * @seam
+ */
 export type { LookupDescriptor, Vocabulary, LookupBacking, OnDelete } from '../../via/lookup/descriptor.js'
+/**
+ * Binding config through the port — same boundary reason as the descriptor types above.
+ *
+ * @seam
+ */
 export type { LookupViaConfig } from '../../via/lookup/binding.js'
+/**
+ * i18n dictionary descriptors through the port — same boundary reason.
+ *
+ * @seam
+ */
 export type { DictKeyDescriptor, StaticDictDescriptor } from '../../via/i18n/dictionary.js'

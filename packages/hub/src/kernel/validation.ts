@@ -18,7 +18,7 @@
  *
  * @module
  */
-import { NoydbError, ValidationError } from './errors.js'
+import { NoydbError } from './errors.js'
 
 /** All reasons a phrase can be rejected. */
 export type WeakSecretReason =
@@ -272,26 +272,6 @@ export function estimateEntropy(secret: string): number {
   const result = validateSecret(secret)
   if (!result.ok) return 0
   return Math.round(result.words * Math.log2(7776))
-}
-
-/**
- * Internal compatibility shim. Older code paths used the throwing
- * `validateSecret(s)` directly; some still do via re-exports. Routes
- * to the new `assertStrongSecret` so the contract holds for both
- * shapes during the transition. New code should call
- * {@link assertStrongSecret} directly.
- *
- * @internal
- */
-export function legacyAssertSecret(s: string): void {
-  try {
-    assertStrongSecret(s)
-  } catch (err) {
-    if (err instanceof WeakSecretError) {
-      throw new ValidationError(err.message)
-    }
-    throw err
-  }
 }
 
 /** Dedicated floors for the echo mode's three parts (spec resolved Q1/Q5). */
