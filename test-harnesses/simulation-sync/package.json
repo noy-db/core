@@ -5,6 +5,7 @@
   "description": "Two-instance sync simulation",
   "type": "module",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run"
   },
   "devDependencies": {

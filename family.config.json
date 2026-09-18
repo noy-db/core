@@ -13,6 +13,7 @@
     "pnpm check:codemods",
     "pnpm check:prose-api",
     "pnpm check:test-env-deps",
+    "pnpm typecheck:scripts",
     "pnpm test:scripts"
   ]
 }

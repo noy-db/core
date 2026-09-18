@@ -5,6 +5,7 @@
   "description": "Network toggle and state transition tests",
   "type": "module",
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run"
   },
   "devDependencies": {
