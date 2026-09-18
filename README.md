@@ -221,7 +221,7 @@ loadAll(vault)
 saveAll(vault, data)
 ```
 
-> If your existing storage can implement these six methods, it can store noy-db ciphertext. That is the full contract — the kernel ships a **built-in in-memory store** (so `store` is optional for the in-memory case); 5 essential `to-*` stores ship here for persistence and the fuller in-memory backend; 16 extended stores (SQL, cloud, remote-FS, personal drives) live in [noy-db-to](https://github.com/noy-db/to). A custom store is `createStore(opts => ({ name, ...methods }))`.
+> If your existing storage can implement these six methods, it can store noy-db ciphertext. That is the full contract — the kernel ships a **built-in in-memory store** (so `store` is optional for the in-memory case); 3 essential `to-*` stores (`to-file`, `to-browser-idb`, `to-meter`) ship here for persistence; `to-memory`, the fuller in-memory backend, and 18 more extended stores (SQL, cloud, remote-FS, personal drives) live in [noy-db-to](https://github.com/noy-db/to). A custom store is `createStore(opts => ({ name, ...methods }))`.
 
 ---
 
