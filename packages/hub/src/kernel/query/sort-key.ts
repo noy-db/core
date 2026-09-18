@@ -34,9 +34,9 @@
  * against its own kind.
  */
 export type KeyKind = 0 | 1 | 2
-export const KIND_NUMBER: KeyKind = 0
+const KIND_NUMBER: KeyKind = 0
 export const KIND_STRING: KeyKind = 1
-export const KIND_DATE: KeyKind = 2
+const KIND_DATE: KeyKind = 2
 
 export interface SortKey {
   readonly kind: KeyKind

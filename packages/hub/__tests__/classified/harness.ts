@@ -50,7 +50,7 @@ export function inlineMemory(): InlineMemoryStore {
 }
 
 /** One recorded store call: the op name + the raw positional args. */
-export interface StoreCall {
+interface StoreCall {
   readonly op: 'get' | 'put' | 'delete' | 'list' | 'loadAll' | 'saveAll'
   readonly args: readonly unknown[]
 }

@@ -781,7 +781,7 @@ async function commitAtomicBatch(
  * derivation side-effect ops onto `_executed`; this helper unwinds the
  * combined list in reverse on rollback.
  */
-export async function revertExecuted(
+async function revertExecuted(
   executed: ReadonlyArray<ExecutedOp>,
   store: Noydb['_store'],
   db?: Noydb,

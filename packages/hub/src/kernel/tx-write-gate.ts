@@ -61,7 +61,7 @@
 const inFlight = new WeakMap<object, Map<string, Set<Promise<void>>>>()
 
 /** The shared `(vault, collection, id)` key shape. @internal */
-export function writeGateKey(vault: string, collection: string, id: string): string {
+function writeGateKey(vault: string, collection: string, id: string): string {
   return `${vault}\x00${collection}\x00${id}`
 }
 

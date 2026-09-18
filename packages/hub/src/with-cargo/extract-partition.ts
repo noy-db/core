@@ -272,7 +272,7 @@ function chunkAAD(eTag: string, chunkIndex: number, chunkCount: number): Uint8Ar
 
 /** Carried blob internals + the fresh transfer `_blob` DEK (present only when
  * the closure references at least one chunk-based blob). */
-export interface ReKeyBlobsResult {
+interface ReKeyBlobsResult {
   /** `_blob_slots_<C>` / `_blob_versions_<C>` / `_blob_index` / `_blob_chunks`
    * envelopes for the bundle's `_internal` map. */
   readonly internal: Record<string, Record<string, EncryptedEnvelope>>
@@ -316,7 +316,7 @@ export interface ReKeyBlobsResult {
  * the bundle — their slot metadata travels (so the catalog entry survives) but
  * the bytes do not (a documented v1 limitation; their eTag is `''`).
  */
-export async function reKeyBlobs(
+async function reKeyBlobs(
   vault: Vault,
   closure: Map<string, Set<string>>,
   destDeks: Map<string, EnclaveKey>,

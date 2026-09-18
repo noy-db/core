@@ -44,7 +44,7 @@ import { useNoydbI18n } from './useNoydbI18n.js'
  * - `'follow'` — resolve to the global `useNoydbI18n` locale; re-read on flip.
  * - `{ locale, fallback? }` — pin to a fixed locale or own ref.
  */
-export type NoydbStoreI18nMode =
+type NoydbStoreI18nMode =
   | 'raw'
   | 'follow'
   | { locale: string | Ref<string>; fallback?: string | readonly string[] }

@@ -34,7 +34,7 @@ export function entryPoints(pkgDir, pkgJson) {
 }
 
 /** A program over every entry point, plus its checker. */
-export function surfaceProgram(entries) {
+function surfaceProgram(entries) {
   const program = ts.createProgram([...entries.values()], {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,

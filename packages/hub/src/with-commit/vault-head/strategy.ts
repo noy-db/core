@@ -164,4 +164,11 @@ export const NO_VAULT_HEAD: VaultHeadStrategy = {
   async knownIn() { throw notEnabled('vault.verifyHead()') },
 }
 
+/**
+ * `EncryptedEnvelope` — PUBLISHED API, reachable from @noy-db/hub, @noy-db/hub/debug, @noy-db/hub/tiers, @noy-db/hub/to, @noy-db/hub/vault-head. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export type { EncryptedEnvelope }

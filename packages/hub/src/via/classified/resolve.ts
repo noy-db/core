@@ -3,6 +3,13 @@
 import { isClassifiedGroup, type ClassifiedEntry, type ClassifiedFieldSpec } from './descriptor.js'
 import { ClassifiedConfigError } from './errors.js'
 
+/**
+ * `ClassifiedList` — PUBLISHED API, reachable from @noy-db/hub, @noy-db/hub/classified. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export type { ClassifiedEntry, ClassifiedFieldSpec, ClassifiedGroup, ClassifiedList } from './descriptor.js'
 export { ClassifiedConfigError } from './errors.js'
 

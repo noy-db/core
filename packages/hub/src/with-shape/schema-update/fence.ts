@@ -22,6 +22,13 @@ export interface FenceDoc {
   readonly schemaHash?: string
 }
 
+/**
+ * `FENCE_RECORD_ID` — PUBLISHED API, reachable from @noy-db/hub, @noy-db/hub/cover. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export const FENCE_RECORD_ID = 'schema-fence'
 const META_COLLECTION = '_meta'
 

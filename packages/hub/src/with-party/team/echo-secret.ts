@@ -46,7 +46,7 @@ import type { NoydbDeviceSeal } from './device-seal.js'
 import { WrongPromptError } from '../../kernel/errors.js'
 
 /** Same iteration floor as the KEK (spec resolved question 1). */
-export const ECHO_KDF_ITERATIONS = 600_000
+const ECHO_KDF_ITERATIONS = 600_000
 
 const VERIFIER_PLAINTEXT = new Uint8Array(32).fill(0x5a)
 

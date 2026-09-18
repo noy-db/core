@@ -21,7 +21,7 @@ import { buildRecordEnvelope, sha256Hex } from '../../capsule/index.js'
 import { ReadOnlyError } from '../../kernel/errors.js'
 import { resolveAccessibleCollections, buildAccessibleBundle } from './export-accessible.js'
 
-export const FROZEN_SNAPSHOTS_COLLECTION = '_frozen_snapshots'
+const FROZEN_SNAPSHOTS_COLLECTION = '_frozen_snapshots'
 const ENC = new TextEncoder()
 
 /** 24-hex-char random id (used for withdrawal ids + request ids). */

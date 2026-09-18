@@ -30,7 +30,7 @@ import { evaluateGeoClause, geoFieldClause, geoIndexProbe, type GeoWhereOperand 
 import type { Operator } from '../../kernel/query/predicate.js'
 
 /** The geo binder's config bag: field name → its descriptor. */
-export interface GeoBindingConfig {
+interface GeoBindingConfig {
   readonly geoFields: Record<string, GeoDescriptor>
 }
 

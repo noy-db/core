@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto'
 import { stringify as yamlStringify } from 'yaml'
 import type { VaultSchemaSnapshot } from '@noy-db/hub/introspection'
 import type { EncryptedEnvelope, NoydbStore, VaultSnapshot } from '@noy-db/hub/to'
-import { createNoydb, readPod, loadPersistedSchema, SCHEMAS_COLLECTION } from '@noy-db/hub'
+import { createNoydb, readPod, loadPersistedSchema } from '@noy-db/hub'
 import { ConflictError } from '@noy-db/hub/to'
 
 const VERSION = '0.1.0'
@@ -365,5 +365,3 @@ export async function runDescribe(argv: readonly string[]): Promise<number> {
   }
 }
 
-// Re-export for tests
-export { loadPersistedSchema, SCHEMAS_COLLECTION }

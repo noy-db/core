@@ -128,4 +128,11 @@ export class NoydbSnapshots {
   }
 }
 
+/**
+ * `NO_SNAPSHOTS` — PUBLISHED API, reachable from @noy-db/hub/snapshots. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export { NO_SNAPSHOTS }

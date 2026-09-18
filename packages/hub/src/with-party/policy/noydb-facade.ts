@@ -23,7 +23,7 @@ import { PERSONAL_POLICY, mergePolicy } from './presets.js'
 import { loadVaultPolicy, saveVaultPolicy } from './storage.js'
 import type { VaultPolicy, ReAuthOperation, NoydbPolicyApi, NoydbPolicyDeps, NoydbPolicyFactory } from '../../kernel/types.js'
 
-export class NoydbPolicy implements NoydbPolicyApi {
+class NoydbPolicy implements NoydbPolicyApi {
   constructor(private readonly deps: NoydbPolicyDeps) {}
 
   /**

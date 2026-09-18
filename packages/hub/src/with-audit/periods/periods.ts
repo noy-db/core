@@ -648,7 +648,7 @@ export async function hashStoredPeriod(period: PeriodRecord): Promise<string> {
  *
  * @internal
  */
-export async function verifyPeriodChain(records: readonly PeriodRecord[]): Promise<void> {
+async function verifyPeriodChain(records: readonly PeriodRecord[]): Promise<void> {
   const byKey = new Map<string, PeriodRecord>()
   for (const r of records) byKey.set(resolvePeriodKey(r.name, r.partition), r)
   for (const r of records) {

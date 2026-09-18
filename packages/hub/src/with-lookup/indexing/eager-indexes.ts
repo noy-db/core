@@ -100,7 +100,7 @@ export type IndexDef =
  * `orderBy(field).limit(n)`. A `'sorted'` declaration keeps the hash
  * index too — `==`/`in` stay O(1).
  */
-export type IndexKind = 'hash' | 'sorted'
+type IndexKind = 'hash' | 'sorted'
 
 /**
  * Normalize a declared `IndexDef[]` into a uniform `{ fields, unique? }`

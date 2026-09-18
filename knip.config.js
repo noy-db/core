@@ -31,7 +31,11 @@ const PATH_ADDRESSED_FIXTURES = '**/__tests__/fixtures/**'
 
 export default {
   $schema: 'https://unpkg.com/knip@6/schema.json',
-  tags: ['-seam'],
+  // `@seam`   — exported for a boundary, with no importer BY DESIGN (the tag
+  //             sits on the declaration and carries the reason).
+  // `@public`  — published API: a consumer imports it, which knip cannot see
+  //             because the import is not in this repo.
+  tags: ['-seam', '-public'],
   workspaces: {
     '.': {
       entry: ['scripts/*.mjs', 'scripts/__tests__/**/*.test.ts'],

@@ -20,6 +20,13 @@ import {
   PERIOD_REOPENS_COLLECTION,
 } from './window.js'
 
+/**
+ * `PERIODS_RESERVED_COLLECTIONS` — PUBLISHED API, reachable from @noy-db/hub/periods. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export const PERIODS_RESERVED_COLLECTIONS: ReadonlySet<string> = new Set([
   PERIODS_COLLECTION,
   PERIOD_FREEZES_COLLECTION,

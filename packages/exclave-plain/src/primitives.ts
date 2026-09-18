@@ -139,4 +139,3 @@ export const plainPrimitives: CapsulePrimitives = {
   bufferToBase64,
 }
 
-export { stamp, MAC_DOMAIN, nullKey }

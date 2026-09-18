@@ -15,7 +15,7 @@
  */
 
 /** One declared hop through an intermediate collection (#1277). */
-export interface MatchVia {
+interface MatchVia {
   /** The intermediate collection to resolve through. */
   readonly collection: string
   /** Field on the intermediate whose value equals `written[from]`. */
@@ -28,11 +28,6 @@ export interface MatchPair {
   readonly from: string
   readonly to: string
   readonly via?: MatchVia
-}
-
-/** True when any pair in this trigger resolves through an intermediate. */
-export function hasHop(match: ReadonlyArray<MatchPair>): boolean {
-  return match.some((p) => p.via !== undefined)
 }
 
 /** Every intermediate collection named by a trigger's pairs, deduplicated. */
@@ -153,5 +148,10 @@ export function sameTuple(
 
 /** Moved to the kernel (#1249) so `collection.ts` can import statically without
  *  dragging derivations code into the floor bundle; re-exported here for
- *  compatibility with existing consumers of this module. */
-export { recordMatchesPairs, findMatchingIdsByPairs } from '../../kernel/match-pairs.js'
+ *  compatibility with existing consumers of this module.
+ *
+ *  ⚠️ `findMatchingIdsByPairs` was re-exported here too and NOTHING took it
+ *  from this module (#55) — consumers import it from the kernel directly.
+ *  Dropped rather than kept as a compatibility shim for a consumer that does
+ *  not exist; the kernel module remains its home. */
+export { recordMatchesPairs } from '../../kernel/match-pairs.js'

@@ -173,11 +173,6 @@ export function isLookupCollectionName(name: string): boolean {
 // thin delegators call these directly; small always-on functions, not
 // behind the tree-shake seam (same bundling class as `isLookupCollectionName`
 // above, just too large to duplicate inline like that one is).
-/**
- * Engine helpers re-exported THROUGH the port: `kernel/vault.ts` may import only this module for lookup (header), never `via/lookup/*` — Check 14 bans the direct path.
- *
- * @seam
- */
 export { enforceStaticDictOnPut, resolveDictSource, updateReferencingRecords }
 /**
  * Engine type through the port — same boundary reason as the line above.
@@ -194,12 +189,14 @@ export { dictCollectionName } from '../../via/lookup/handle.js'
 // `collectLookupDictCompat`/`lookupToStaticDictCompat`) + the runtime
 // brand/shape predicates `via/compose.ts` needs to route `'lookup'`-branded
 // descriptors, mirroring `isI18nTextDescriptor`/`isDictKeyDescriptor` below.
+export { resolveLabelFromMap, collectLookupDictCompat }
 /**
- * Dict-compat helpers through the port — same boundary reason.
+ * Dict-compat helper through the port — same boundary reason; no importer
+ * takes it from here today.
  *
  * @seam
  */
-export { resolveLabelFromMap, collectLookupDictCompat, lookupToStaticDictCompat }
+export { lookupToStaticDictCompat }
 /**
  * Dict-compat type through the port — same boundary reason.
  *
@@ -214,12 +211,14 @@ export { reservedDictDepsOf }
 // #650 Task 3 — altKeys ingest normalization + open/closed vocabulary
 // governance: the declare/warm-time altIndex builder + the membership test
 // vault.ts's `membership`/`getAltIndex` closures delegate to.
+export { checkLookupMembership, buildLookupAltIndex }
 /**
- * Backing-table helpers through the port — same boundary reason.
+ * Backing-table helper through the port — same boundary reason; no importer
+ * takes it from here today.
  *
  * @seam
  */
-export { materializeBackingTable, checkLookupMembership, buildLookupAltIndex }
+export { materializeBackingTable }
 export type { MaterializedBacking }
 
 // #650 Task 5 — registers a collection's lookup-fields' cross-collection 'ref' graph edges.
@@ -241,12 +240,14 @@ export type { LookupSnapshot } from '../../via/lookup/snapshot.js'
 // backing-row-key resolve + referencing-value match) — every consumer (vault.ts,
 // with-shape/links/vault-facade.ts, kernel/via/dispatch.ts) routes through here,
 // never a bare `String()`, ending the dm12 dialect drift.
+export { coerceLookupKey, matchesReferencingValue }
 /**
- * Key-coercion helpers through the port — same boundary reason.
+ * Key-coercion helper through the port — same boundary reason; no importer
+ * takes it from here today.
  *
  * @seam
  */
-export { coerceLookupKey, resolveBackingRowKey, matchesReferencingValue }
+export { resolveBackingRowKey }
 
 /** Runtime predicate for detecting a `LookupDescriptor` (any of the three tiers). */
 export function isLookupDescriptor(x: unknown): x is LookupDescriptor {
@@ -276,12 +277,15 @@ export function isEnumDescriptor(x: unknown): x is LookupDescriptor {
  * @seam
  */
 export type { LookupHandle, DictEntry, DictionaryOptions } from '../../via/lookup/handle.js'
+export type { LookupDescriptor } from '../../via/lookup/descriptor.js'
 /**
- * Descriptor types through the port. The spine may not reach into `via/lookup/*` (Check 14), so these exist for the boundary, not for a current importer.
+ * Descriptor types through the port. The spine may not reach into
+ * `via/lookup/*` (Check 14), so these exist for the boundary, not for a
+ * current importer.
  *
  * @seam
  */
-export type { LookupDescriptor, Vocabulary, LookupBacking, OnDelete } from '../../via/lookup/descriptor.js'
+export type { Vocabulary, LookupBacking, OnDelete } from '../../via/lookup/descriptor.js'
 /**
  * Binding config through the port — same boundary reason as the descriptor types above.
  *

@@ -100,7 +100,7 @@ export async function search<T>(ctx: SearchContext<T>, field: string, query: str
 }
 
 /** L1 — build IndexDoc[] for the configured text fields over the live cache. */
-export function buildRetrievalDocs<T>(
+function buildRetrievalDocs<T>(
   ctx: SearchContext<T>,
   labelMaps: Map<string, Map<string, Record<string, string>>>,
   blobFilenames: Map<string, Map<string, string[]>>,
@@ -125,13 +125,13 @@ export function buildRetrievalDocs<T>(
  * `{ positions: [] }` keeps the no-opt-in path byte-identical to a caller that
  * never heard of positions.
  */
-export function positionBuildOptions<T>(ctx: SearchContext<T>): IndexBuildOptions | undefined {
+function positionBuildOptions<T>(ctx: SearchContext<T>): IndexBuildOptions | undefined {
   const fields = ctx.textIndexPositions
   return fields && fields.length > 0 ? { positions: fields } : undefined
 }
 
 /** L1 — true iff any configured text index is also a blob field (gates ALL slot I/O). */
-export function hasIndexedBlobFields<T>(ctx: SearchContext<T>, only?: readonly string[]): boolean {
+function hasIndexedBlobFields<T>(ctx: SearchContext<T>, only?: readonly string[]): boolean {
   if (!ctx.blobFields || !ctx.textIndexes) return false
   const fields = only ? ctx.textIndexes.filter((f) => only.includes(f)) : ctx.textIndexes
   return fields.some((f) => f in ctx.blobFields!)

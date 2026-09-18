@@ -60,7 +60,7 @@ import {
 import type { BrokerSeedCtx, BrokerConfig } from '../../port/with/broker-strategy.js'
 
 /** The `_broker/<brokerId>` record payload (spec §3). */
-export interface BrokerSeedRecord {
+interface BrokerSeedRecord {
   readonly brokerId: string
   /** base64(32 random bytes). */
   readonly seed: string

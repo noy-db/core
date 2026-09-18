@@ -21,7 +21,7 @@ import type { ReduceSpec } from '../../with-lookup/reduce/reduction.js'
  *  absent/empty means no field on this collection composes money with a virtual computed
  *  field on itself — the pre-#669 behavior (no `presentLate`, ordinary `present()` for
  *  every declared money field). */
-export interface MoneyBindingConfig {
+interface MoneyBindingConfig {
   readonly moneyFields: Record<string, MoneyDescriptor>
   readonly virtualMoneyFields?: ReadonlySet<string>
 }

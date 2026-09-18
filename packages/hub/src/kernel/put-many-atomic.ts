@@ -58,7 +58,7 @@ interface BulkTxContext {
 }
 
 /** @internal The slice of `Collection` both branches drive. */
-export interface PutManyAtomicHost<T> {
+interface PutManyAtomicHost<T> {
   put(id: string, record: T): Promise<void>
   _preparePut(id: string, record: T): Promise<PreparedPut<T>>
   _finalizePut(prepared: PreparedPut<T>): Promise<void>

@@ -60,7 +60,17 @@ export const MAGIC_LINK_GRANTS_COLLECTION = '_magic_link_grants'
 /** HKDF `info` for the AES-GCM content key. Version-namespaced. */
 export const MAGIC_LINK_CONTENT_INFO_PREFIX = 'noydb-magic-link-content-v1:'
 
-/** HKDF `info` for the AES-KW KEK. Matches `@noy-db/on-magic-link`. */
+/**
+ * HKDF `info` for the AES-KW KEK. Matches `@noy-db/on-magic-link`.
+ *
+ * No importer inside hub, and that is not a defect: this is one half of a
+ * CROSS-PACKAGE protocol constant. The satellite derives the same KEK from
+ * the same string, so the value has to be stated here to be reviewable
+ * against it. Deleting it would leave the wire format pinned in one repo
+ * only (#55).
+ *
+ * @seam
+ */
 export const MAGIC_LINK_KEK_INFO_PREFIX = 'noydb-magic-link-v1:'
 
 // ─── Types ──────────────────────────────────────────────────────────────

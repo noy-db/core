@@ -10,7 +10,7 @@ import { AttestationNotEnabledError } from '../../kernel/errors.js'
  * per-call context object for it, so the vault facade assembles this at call
  * time (reading `role` fresh).
  */
-export interface SignerLookupDeps {
+interface SignerLookupDeps {
   readonly adapter: NoydbStore
   readonly vault: string
   /** The invoking keyring's role, read fresh by the caller per call. */

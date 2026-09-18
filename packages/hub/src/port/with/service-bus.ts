@@ -130,7 +130,7 @@ export interface GateRegisterOptions {
  * itself out for a row carrying none of its closed periods' date fields, which
  * a collection-level question could never answer.
  */
-export type GateScope = (target: {
+type GateScope = (target: {
   readonly vault: string
   readonly collection: string
   readonly record?: Record<string, unknown>

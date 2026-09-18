@@ -20,6 +20,13 @@ import type { NoydbFormat, ImportPlan, ImportPolicy } from '../as/types.js'
 // directly — `port-layering` allows the spine to reach `port/with/` and
 // nothing else, and the strategy seam is the sanctioned bridge. Same shape as
 // blob-strategy.ts re-exporting what Collection needs.
+/**
+ * `ImportPolicy` — PUBLISHED API, reachable from @noy-db/hub/as. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export type { NoydbFormat, ImportPlan, ImportPolicy }
 import type { ExportChunk } from '../../kernel/types.js'
 import type { Vault } from '../../kernel/vault.js'
@@ -102,6 +109,13 @@ export interface FormatsContext {
 }
 
 /** Thrown by every method on {@link NO_FORMATS}. */
+/**
+ * `FormatsNotEnabledError` — PUBLISHED API, reachable from @noy-db/hub, @noy-db/hub/tiers. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export class FormatsNotEnabledError extends Error {
   constructor(op: string) {
     super(

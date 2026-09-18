@@ -17,6 +17,13 @@ import type { AttestationFieldSchema, RevocationList } from './types.js'
 import type { IssueContext } from './issue.js'
 import type { RevokeContext } from './revoke.js'
 import type { AttestationStrategy } from './strategy.js'
+/**
+ * `NO_ATTESTATION` — PUBLISHED API, reachable from @noy-db/hub/attestation. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export { NO_ATTESTATION, type AttestationStrategy } from './strategy.js'
 
 /** Everything the moving attestation methods touched on the vault's `this.*`. */

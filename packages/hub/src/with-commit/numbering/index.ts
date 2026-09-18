@@ -9,8 +9,8 @@ import { encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.
 import { isConflictError, NumberingUncertaintyError } from '../../kernel/errors.js'
 import type { DeferredNumberingConfig } from './descriptor.js'
 
-export const NUMBERING_HEAD_COLLECTION = '_numbering_head'
-export const NUMBERING_PENDING_COLLECTION = '_numbering_pending'
+const NUMBERING_HEAD_COLLECTION = '_numbering_head'
+const NUMBERING_PENDING_COLLECTION = '_numbering_pending'
 
 interface PendingEntry {
   series: string

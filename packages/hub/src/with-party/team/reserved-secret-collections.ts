@@ -39,7 +39,7 @@ export const BROKER_COLLECTION = '_broker'
  * directly-usable secrets. Membership here means: never served via
  * `vault.collection()`, never propagated to sub-admin grantees.
  */
-export const SECRET_BEARING_RESERVED_COLLECTIONS: ReadonlySet<string> = new Set([
+const SECRET_BEARING_RESERVED_COLLECTIONS: ReadonlySet<string> = new Set([
   SYNC_CREDENTIALS_COLLECTION,
   BROKER_COLLECTION,
 ])

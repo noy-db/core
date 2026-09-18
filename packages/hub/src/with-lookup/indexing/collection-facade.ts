@@ -174,7 +174,7 @@ const FIELD_IDX = '_fieldidx'
  * Takes a context THUNK for the same reason the search bridge does: it is
  * built from the `Collection` constructor, before `this.codec` is assigned.
  */
-export function buildFieldIndexCallbacks<T>(
+function buildFieldIndexCallbacks<T>(
   provideCtx: () => IndexingContext<T>,
   debounceMs?: number,
 ): FieldIndexCallbacks {

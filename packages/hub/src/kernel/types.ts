@@ -271,7 +271,7 @@ export interface Envelope {
    * value)`) without decrypting every record. Leaks equality as a known
    * side channel.
    */
-  readonly _det?: Record<string, string>
+  readonly _det?: Record<string, DeterministicCipher>
   /**
    * Structural group-encryption. Map of sensitive field name →
    * per-field sealed ciphertext in `iv:data` form (same shape as a `_det`
@@ -675,7 +675,7 @@ export interface CrossTierAccessEvent {
  * as `iv:data` (both base64, colon-separated) so a single string per
  * field keeps the envelope compact.
  */
-export type DeterministicCipher = string
+type DeterministicCipher = string
 
 // ─── Vault Snapshot ──────────────────────────────────────────────
 
@@ -996,7 +996,7 @@ export type VaultPolicyOnDisk = Record<string, unknown>
  *   `db.recoverSecret` against these throws
  *   {@link RecoveryProfileNotImplementedError}.
  */
-export type RecoveryEnrollment =
+type RecoveryEnrollment =
   | {
       readonly profile: 'paper'
       /** Number of single-use codes to print at enrollment. */
@@ -3985,6 +3985,13 @@ export type ActiveTier = 1 | 2 | 3
  * Structural mirror of `with-party/policy/engine.ts`'s `CheckGateContext` —
  * duplicated here (rather than imported) because the kernel spine may not
  * statically import a with-* service; see {@link PolicyCheckGateFn}.
+ */
+/**
+ * `PolicyCheckGateContext` — PUBLISHED API, reachable from @noy-db/hub, @noy-db/hub/policy. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
  */
 export interface PolicyCheckGateContext {
   /** Tier the active session currently holds. */

@@ -29,6 +29,13 @@ export { enforceStaticDictOnPut, resolveDictSource, updateReferencingRecords, ty
  */
 export { withLookup } from './active.js'
 // #650 Task 2 — the 'lookup' via binding + its three descriptor tiers.
+/**
+ * `LookupBacking` — PUBLISHED API, reachable from @noy-db/hub. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export { lookup, enumOf, enumOf as enum, dict, type LookupDescriptor, type Vocabulary, type LookupBacking, type OnDelete } from './descriptor.js'
 /**
  * Binding surface at the barrel — `lookupVia` is taken from here; its siblings are reached through the port.

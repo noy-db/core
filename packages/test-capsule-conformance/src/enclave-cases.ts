@@ -48,7 +48,7 @@ const REF = { collection: 'conformance', id: 'r1', version: 1 } as const
  * `K` is the opaque key type (`EnclaveKey` in noy-db's reference enclave).
  */
 /** A record's address, as every body door takes it. Structural: a fork's own type is accepted. */
-export interface RecordRefLike {
+interface RecordRefLike {
   readonly collection: string
   readonly id: string
 }

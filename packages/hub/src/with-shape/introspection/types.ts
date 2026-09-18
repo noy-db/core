@@ -161,7 +161,7 @@ export interface InternalCollectionStats {
  * documentation gate switching to the live report passes VACUOUSLY on a hub
  * too old to answer. Measured by a consumer attempting that adoption.
  */
-export type SnapshotReport = 'via' | 'stats'
+type SnapshotReport = 'via' | 'stats'
 
 export interface VaultSchemaSnapshot {
   readonly _noydb_snapshot: 2

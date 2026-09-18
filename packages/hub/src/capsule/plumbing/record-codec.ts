@@ -980,6 +980,13 @@ export class RecordCodecBase<T> {
  * The capsule-bound codec constructor: same shape callers have always used
  * (`new RecordCodec(ctx)`), with the capsule already closed over.
  */
+/**
+ * `BoundRecordCodec` — PUBLISHED API, reachable from @noy-db/hub/capsule. Flagged as unused because
+ * nothing inside hub imports it from this module; a consumer does. Do not narrow
+ * or delete without a seam change (#55).
+ *
+ * @public
+ */
 export type BoundRecordCodec =
   (new <T>(ctx: RecordCodecContext<T>) => RecordCodecBase<T>) &
   // The STATICS come along too. `buildPlaintextEnvelope` is called as

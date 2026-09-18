@@ -289,7 +289,7 @@ function rebuildI18nBinding(
  * combined them for this one call) — passed through so ONE binding rebuild covers both, exactly
  * like `compileVias` builds ONE 'i18n' binding from both maps at fresh construction.
  */
-export function reconcileI18nFields(
+function reconcileI18nFields(
   coll: ReconcilableCollection, vaultCtx: ViaReconcileVaultCtx, name: string,
   i18nFields: Record<string, I18nTextDescriptor> | undefined,
   dictKeyFields?: Record<string, DictKeyDescriptor | StaticDictDescriptor>,
@@ -307,7 +307,7 @@ export function reconcileI18nFields(
  * {@link reconcileI18nFields} (and, transitively, a no-op if that sibling function already
  * handled a combined i18nFields+dictKeyFields call for this collection).
  */
-export function reconcileDictKeyFields(
+function reconcileDictKeyFields(
   coll: ReconcilableCollection, vaultCtx: ViaReconcileVaultCtx, name: string,
   dictKeyFields: Record<string, DictKeyDescriptor | StaticDictDescriptor> | undefined,
 ): void {
@@ -340,7 +340,7 @@ export function reconcileDictKeyFields(
  * reference-check) — `ViaGraph.referencingEdgesOf` sees them immediately, so delete-time
  * restrict/cascade/nullify semantics are live post-attach too, same as a fresh declaration.
  */
-export function reconcileLookupFields(
+function reconcileLookupFields(
   coll: ReconcilableCollection, vaultCtx: ViaReconcileVaultCtx, graph: ViaGraph, name: string,
   lookupFields: Record<string, LookupDescriptor> | undefined,
 ): void {

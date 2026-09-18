@@ -243,7 +243,7 @@ async function verifyKeyringCanary(wrappedCanary: string, kek: EnclaveKey): Prom
  * file without a verifiable `roster_tag` would be worse than refusing, since
  * it is indistinguishable on the next load from a store having stripped it.
  */
-export function rosterKeyOf(keyring: UnlockedKeyring): EnclaveKey | null {
+function rosterKeyOf(keyring: UnlockedKeyring): EnclaveKey | null {
   return keyring.deks.get(ROSTER_KEY_ID) ?? null
 }
 
@@ -309,7 +309,7 @@ export async function deriveKekForKeyring(
 // case (`undefined`) and lets each caller keep its own decision.
 
 /** Parse a raw keyring envelope. Single sanctioned reader of `_data` for keyring files. */
-export function parseKeyringEnvelope(envelope: EncryptedEnvelope): KeyringFile {
+function parseKeyringEnvelope(envelope: EncryptedEnvelope): KeyringFile {
   return JSON.parse(envelope._data ?? '') as KeyringFile
 }
 
@@ -2554,10 +2554,10 @@ export async function ensureCollectionDEK(
  * at all. It is honoured in three places, and they must agree: the DEK wrapping
  * in `grant()`, and both permission checks below.
  */
-export const PERMISSION_WILDCARD = '*'
+const PERMISSION_WILDCARD = '*'
 
 /** Does this permission map hand over the whole vault? */
-export function permissionsAreWildcard(permissions: Permissions | undefined): boolean {
+function permissionsAreWildcard(permissions: Permissions | undefined): boolean {
   return permissions !== undefined && PERMISSION_WILDCARD in permissions
 }
 

@@ -25,7 +25,7 @@ import { NoydbError } from '../../kernel/errors.js'
 import { resolveAccessibleCollections, buildAccessibleBundle } from './export-accessible.js'
 import { freezeAndDeleteClosure, randomId, type FrozenSnapshotRef, type WithdrawResult } from './withdraw-accessible.js'
 
-export const WITHDRAWAL_REQUESTS_COLLECTION = '_user_withdrawal_requests'
+const WITHDRAWAL_REQUESTS_COLLECTION = '_user_withdrawal_requests'
 
 /** Raised when a request is missing, already decided, or expired. */
 export class WithdrawalRequestError extends NoydbError {
