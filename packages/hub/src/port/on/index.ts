@@ -22,6 +22,29 @@
  * that every package in the family binds it — `/to` already carries two
  * instance types, and nobody reads that as one contract.
  *
+ * ## The charter: contracts an unlock method implements AND the API a player calls
+ *
+ * Both halves, deliberately. A method implementer binds the callback types
+ * ({@link SlotRewrapCeremony}) and never drives a ceremony; an unlock *player*
+ * — the app running the anti-phishing echo flow — calls
+ * {@link beginEchoUnlock} and catches what it throws. Until 0.8.x the echo
+ * half lived on the root barrel alone, so a player naming an
+ * {@link EchoCeremony} still had to import the whole library to obtain one,
+ * and the seam removed nothing.
+ *
+ * ⛔ Do not re-narrow this to types-only. `/on` held no value export until
+ * now, which reads like a rule and was an accident of what the extraction
+ * happened to need — `/to` exports four, `/at` two, `/as` and `/by` one each.
+ * **A seam a consumer cannot bind alone is not a seam**, so the function and
+ * the errors a player catches belong here with the types.
+ *
+ * ⚠️ The three error classes are re-exported from the root barrel too, and
+ * `instanceof` must hold across both. That is exactly the case
+ * `tsup.config.ts`'s `splitting: true` protects: shared modules become one
+ * chunk with one class definition, so an `EchoCeremonyRequiredError` thrown
+ * through `dist/index.js` still matches the class imported from
+ * `dist/on/index.js`. Do not "simplify" that build flag.
+ *
  * ## Why it exists NOW and did not before
  *
  * `/on` shipped in 0.3.0 and was pruned in 0.4.0 for "zero importers",
@@ -52,3 +75,12 @@ export type {
 export type { KeyringAuthenticator } from '../../kernel/types.js'
 export type { UnlockedKeyring } from '../../with-party/team/keyring.js'
 export type { EnclaveKey } from '../../capsule/index.js'
+export type { EchoCeremony, BeginEchoUnlockOptions } from '../../with-party/team/echo-ceremony.js'
+
+// The player half. `beginEchoUnlock` is the only way to obtain an
+// `EchoCeremony`; without it the two types above would be nameable here and
+// unusable here. The three errors are what a player catches to tell
+// "re-prompt" from "abandon" — none is reachable by a method implementer who
+// never drives the ceremony.
+export { beginEchoUnlock } from '../../with-party/team/echo-ceremony.js'
+export { EchoCeremonyRequiredError, WrongPromptError, WrongEchoError } from '../../kernel/errors.js'

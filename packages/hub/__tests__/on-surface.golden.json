@@ -1,6 +1,13 @@
 {
-  "values": [],
+  "values": [
+    "EchoCeremonyRequiredError",
+    "WrongEchoError",
+    "WrongPromptError",
+    "beginEchoUnlock"
+  ],
   "types": [
+    "BeginEchoUnlockOptions",
+    "EchoCeremony",
     "EnclaveKey",
     "EnrollAuthenticatorOptions",
     "KeyringAuthenticator",

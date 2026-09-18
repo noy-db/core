@@ -8,12 +8,21 @@
  * root barrel — and a silent removal would send a third-party unlock method
  * back to importing all of `@noy-db/hub` to name one signature.
  *
+ * 0.8.x ADDED THE PLAYER HALF: `beginEchoUnlock`, its two types, and the three
+ * errors a player catches. Before that, `/on` had zero value exports and the
+ * echo ceremony was nameable only from the whole root barrel — so a player
+ * could name an `EchoCeremony` from here and still not obtain one. The
+ * `bindable alone` case below is what keeps that from silently regressing:
+ * freezing the type list alone would have passed throughout the defect.
+ *
  * MECHANISM — identical to `to-surface-golden.test.ts`.
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type {
+  BeginEchoUnlockOptions,
+  EchoCeremony,
   EnclaveKey,
   EnrollAuthenticatorOptions,
   KeyringAuthenticator,
@@ -64,9 +73,22 @@ describe('@noy-db/hub/on — golden export surface', () => {
     expect(baseline.types, 'the injected port instance').toContain('NoydbShamir')
     expect(baseline.types, 'the callback hub invokes').toContain('SlotRewrapCeremony')
   })
+
+  it('is bindable ALONE — the echo ceremony has its constructor here, not only its type', () => {
+    // The defect this closes: `EchoCeremony` nameable from `/on` while
+    // `beginEchoUnlock` stayed root-barrel-only. Both halves, or the seam
+    // removes nothing from a player's import list.
+    expect(baseline.types).toContain('EchoCeremony')
+    expect(baseline.values, 'the only way to obtain one').toContain('beginEchoUnlock')
+    for (const err of ['EchoCeremonyRequiredError', 'WrongPromptError', 'WrongEchoError']) {
+      expect(baseline.values, 'what a player catches').toContain(err)
+    }
+  })
 })
 
 type _FrozenTypes = [
+  BeginEchoUnlockOptions,
+  EchoCeremony,
   EnclaveKey,
   EnrollAuthenticatorOptions,
   KeyringAuthenticator,
