@@ -1,0 +1,6 @@
+{
+  "//": "One program per port, including ONE file, and extending the REPO BASE rather than hub's own tsconfig. Both halves matter. Separate programs: a shared one would let one fixture's imports satisfy another's, and 'bindable alone' would stop being what is measured. The base config: hub's tsconfig maps '#capsule' into ./src, which drags hub's whole source graph into the program and types the fixture against source — the opposite of a consumer's view. Extending the base leaves '#capsule' to resolve through package.json's imports map to ./dist, exactly as it does for an installed consumer.",
+  "extends": "../../../../../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node"], "skipLibCheck": true },
+  "include": ["to.ts"]
+}
