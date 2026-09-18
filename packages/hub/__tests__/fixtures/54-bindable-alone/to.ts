@@ -18,21 +18,28 @@ import {
   type VaultSnapshot,
   type StoreCapabilities,
   type StoreDescriptor,
+  type StoreAuth,
+  type StoreAuthKind,
 } from '@noy-db/hub/to'
+
+/**
+ * The annotated helper that could not be written before #54: `auth` is a
+ * REQUIRED field of `StoreCapabilities` and its type was root-barrel-only, so
+ * a store author could write the literal inline and nothing else — no helper,
+ * no re-export, no `satisfies`. This function is the regression test for BOTH
+ * names: it stops compiling the moment either `StoreAuth` or `StoreAuthKind`
+ * leaves this port. The parameter is not decoration — without it, removing
+ * `StoreAuthKind` from the port left this fixture green (measured), which is
+ * a frozen export list standing in for a consumer that never names the type.
+ */
+function staticAuth(kind: StoreAuthKind): StoreAuth {
+  return { kind, required: kind !== 'none', flow: 'static' }
+}
 
 /** The 6-method contract, implemented the way a `to-*` package implements it. */
 class MemoryishStore implements NoydbStore {
   readonly name = 'bindable-alone-fixture'
-  // ⚠️ MEASURED GAP, left in place deliberately: `auth` is REQUIRED on
-  // `StoreCapabilities`, its type `StoreAuth` (and `StoreAuthKind`) is on the
-  // ROOT BARREL only, and `/to` does not re-export either. A store author
-  // binding `/to` alone can still write the literal — structural typing — but
-  // cannot NAME the type: no annotated helper, no re-export, no `satisfies`.
-  // Reported rather than patched here; a subpath addition is the root's call.
-  readonly capabilities: StoreCapabilities = {
-    casAtomic: true,
-    auth: { kind: 'none', required: false, flow: 'static' },
-  }
+  readonly capabilities: StoreCapabilities = { casAtomic: true, auth: staticAuth('none') }
   readonly #rows = new Map<string, EncryptedEnvelope>()
 
   #key(vault: string, collection: string, id: string): string {

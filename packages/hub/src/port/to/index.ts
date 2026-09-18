@@ -25,6 +25,11 @@ export type {
   VaultSnapshot,
   TxOp,
   StoreCapabilities,
+  // #54 — `StoreCapabilities.auth` is REQUIRED and its type was root-barrel
+  // only, so a store author could write the literal and not name what they
+  // had written: no annotated helper, no re-export, no `satisfies`.
+  StoreAuth,
+  StoreAuthKind,
   StoreCredentials,
   StoreCredentialSource,
   StoreTime,
@@ -47,6 +52,12 @@ export {
 // exporting the predicate only from the root told store authors to use
 // something they could not import — and the obvious fallback, `instanceof
 // ConflictError`, is exactly the bug the predicate exists to prevent.
+//
+// ⭐ #54 generalised it: this applies to every symbol a `/to` implementer must
+// WRITE, not only to predicates. A required field whose TYPE lives elsewhere
+// fails the same way one step later — the literal compiles, and the author
+// still cannot name it. `StoreAuth`/`StoreAuthKind` above were exactly that,
+// four lines from this comment, for as long as this comment has existed.
 export { isConflictError } from '../../kernel/errors.js'
 
 export type {

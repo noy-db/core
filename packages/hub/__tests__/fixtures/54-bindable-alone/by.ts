@@ -4,12 +4,17 @@
  *
  * ⛔ One import line, and it must stay one. See `to.ts` for why.
  *
- * ⚠️ MEASURED GAP, left in place deliberately: `NoydbMesh.observeFence` and
- * `observePresence` both RETURN `Unsubscribe`, and `/by` does not export it
- * (root barrel only, `src/index.ts:671`). A transport author can still return
- * the arrow function — structural typing — but cannot name the return type,
- * so no annotated helper and no re-export. Same shape as `/to`'s `StoreAuth`.
- * Reported rather than patched here; a subpath addition is the root's call.
+ * ⭐ The two `Unsubscribe` return annotations are the regression test for the
+ * gap this fixture found: before #54 a transport author returned `() => {}`
+ * with nothing to annotate it against. They stop compiling if the type leaves
+ * this port again.
+ *
+ * ⛔ `fenceState: 'normal'` below stays a LITERAL, and that is the right
+ * answer rather than the remaining half of the gap. Exporting `FenceState`
+ * here would collide with the `FenceState → FenceDoc` codemod row, which is
+ * scoped to `./by` and disambiguates by import source — see the port's own
+ * header. A literal type-checks against `FenceDoc` and costs a `by-*` author
+ * nothing but the annotation.
  */
 import {
   isQuorum,
@@ -18,6 +23,7 @@ import {
   type WriterPresence,
   type FenceDoc,
   type DrainBarrierOptions,
+  type Unsubscribe,
 } from '@noy-db/hub/by'
 
 /** The contract a `by-*` package implements, written against the port alone. */
@@ -33,7 +39,7 @@ class LoopbackMesh implements NoydbMesh {
     return this.#fence
   }
 
-  observeFence(_vault: string, onChange: (f: FenceDoc) => void): () => void {
+  observeFence(_vault: string, onChange: (f: FenceDoc) => void): Unsubscribe {
     onChange(this.#fence)
     return () => {}
   }
@@ -42,7 +48,7 @@ class LoopbackMesh implements NoydbMesh {
     this.#writers.set(p.writerId, p)
   }
 
-  observePresence(_vault: string, onChange: (writers: readonly WriterPresence[]) => void): () => void {
+  observePresence(_vault: string, onChange: (writers: readonly WriterPresence[]) => void): Unsubscribe {
     onChange([...this.#writers.values()])
     return () => {}
   }

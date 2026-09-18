@@ -20,6 +20,8 @@
     "ListPageResult",
     "NoydbPodStore",
     "NoydbStore",
+    "StoreAuth",
+    "StoreAuthKind",
     "StoreBinding",
     "StoreCapabilities",
     "StoreClass",

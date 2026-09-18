@@ -44,6 +44,28 @@
  * sends a consumer — this is additive, and that row stays true.
  */
 export { isQuorum, runDrainBarrier } from './types.js'
+// #54 — `observeFence` and `observePresence` RETURN `Unsubscribe`, and it was
+// not nameable from here: a transport author returned `() => {}` with nothing
+// to annotate it against.
+export type { Unsubscribe } from '../with/write-hooks.js'
+
+// ⛔⛔ `FenceState` is DELIBERATELY NOT EXPORTED HERE, and the reason is not
+// the 0.6 hand-copy — it is the CODEMOD (#54, measured).
+//
+// `FenceDoc.fenceState` is a `FenceState`, so by the same argument as
+// `Unsubscribe` above this port "should" carry it. It must not.
+// `codemods/0.7.0-pre.json`'s `FenceState → FenceDoc` row is scoped to
+// `./by` + `./cargo` and disambiguates BY IMPORT SOURCE: an import of
+// `FenceState` from `@noy-db/hub/by` is the dead two-field interface and gets
+// rewritten; one from `@noy-db/hub` is the live string union and is left
+// alone. Exporting the union here would make a CORRECT new import
+// indistinguishable from the dead one, and the codemod would confidently
+// rewrite it into a different type. `codemod-map-0.7.test.ts`'s
+// "every hub `from` is genuinely GONE" fails the moment this is attempted —
+// that is how this was caught, not by review.
+//
+// A `by-*` author writes the literal (`'normal'`), which type-checks against
+// `FenceDoc`. Reopening this means retiring the codemod row first.
 export type {
   NoydbMesh,
   WriterPresence,

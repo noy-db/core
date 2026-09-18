@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url'
 import * as port from '../src/port/by/index.js'
 import type {
   DrainBarrierOptions,
+  Unsubscribe,
   FenceDoc,
   NoydbMesh,
   WriterPresence,
@@ -94,5 +95,16 @@ type _FrozenTypes = [
   DrainBarrierOptions,
   FenceDoc,
   NoydbMesh,
+  Unsubscribe,
   WriterPresence,
 ]
+
+/**
+ * ⛔ `FenceState` is absent from this baseline ON PURPOSE (#54). `/by`'s own
+ * header carries the full argument: the `FenceState → FenceDoc` codemod row
+ * is scoped to `./by` and disambiguates by IMPORT SOURCE, so exporting the
+ * root's string union here would make a correct import indistinguishable from
+ * the dead two-field one and hand the codemod a confident wrong edit.
+ * `codemod-map-0.7.test.ts` is the gate that says so; do not "complete" this
+ * surface by adding it.
+ */
