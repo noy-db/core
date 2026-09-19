@@ -93,14 +93,28 @@ export async function issueDelegation(
   }
   const tier = opts.tier
   const collectionName = opts.collection ?? null
-  const dekLookupCollection = collectionName ?? ''
+  // ⛔ COLLECTION-WIDE IS NOT IMPLEMENTED, and until core#56 it failed as if the
+  // grantor merely lacked a key. The `collection: null` form wants a DEK keyed
+  // `__any#<tier>`, and the ONLY writer of that key is `loadActiveDelegations`
+  // below — which is called by nothing. So the key never exists, for anyone,
+  // and this branch has never once succeeded. Say that, rather than implying a
+  // missing grant the caller could go and obtain.
+  if (!collectionName) {
+    throw new DelegationTargetMissingError(
+      opts.toUser,
+      `issueDelegation({ collection: undefined }) — delegating EVERY collection at a ` +
+      `tier is not implemented. It needs a "__any#${tier}" DEK, which only ` +
+      `loadActiveDelegations() writes, and nothing calls it (core#56). Pass an ` +
+      `explicit \`collection\`.`,
+    )
+  }
   // Tier DEK to delegate — fetched from the grantor's own keyring.
-  const sourceDek = collectionName
-    ? grantor.deks.get(dekKey(collectionName, tier))
-    : undefined
+  const sourceDek = grantor.deks.get(dekKey(collectionName, tier))
   if (!sourceDek) {
     throw new DelegationTargetMissingError(
-      `grantor cannot find tier ${tier} DEK for ${dekLookupCollection || '(any)'}`,
+      opts.toUser,
+      `grantor holds no tier-${tier} DEK for collection "${collectionName}", so there ` +
+      `is nothing to delegate. Obtain the tier grant first.`,
     )
   }
   const wrappedDek = await wrapKey(sourceDek, targetKek)
