@@ -1855,8 +1855,19 @@ function checkSourcesTracked() {
   try {
     out = execFileSync(
       'git',
+      // ⛔ `:(glob)` IS LOAD-BEARING, not tidiness. In a DEFAULT git pathspec `*`
+      // MATCHES `/`, so `packages/*/src/**` also matches
+      // `packages/in-rest/coverage/src/index.html` — the star swallows
+      // `in-rest/coverage`. The comment above says build output and "real
+      // coverage reports are ignored ON PURPOSE"; without this magic the code
+      // did the opposite of its own stated rule, and flagged 87 of them.
+      // ⭐ Unreachable until core#55: `test:ci` passed `--coverage` but the
+      // provider was in no lockfile, so coverage had never once run and the
+      // artefacts that trip this never existed. Installing the provider is what
+      // made it reachable. `:(glob)` confines `*` to one path segment.
       ['ls-files', '--others', '--ignored', '--exclude-standard',
-       '--', 'packages/*/src/**', 'packages/*/__tests__/**', 'test-harnesses/*/src/**'],
+       '--', ':(glob)packages/*/src/**', ':(glob)packages/*/__tests__/**',
+       ':(glob)test-harnesses/*/src/**'],
       { cwd: ROOT, encoding: 'utf8' },
     )
   } catch {
