@@ -48,7 +48,7 @@ import { PermissionDeniedError } from '../../kernel/errors.js'
 import { wrapKey } from '../../capsule/index.js'
 import { createOwnerKeyring, requireRosterKey } from '../team/keyring.js'
 import { mintRosterTag, assertRosterTagValid } from '../team/roster-tag.js'
-import { nextRosterEpoch } from '../team/roster-epoch.js'
+import { stampAuthority } from '../team/roster-tag.js'
 import type { FrozenSnapshotRef } from '../../with-audit/portability/withdraw-accessible.js'
 import { freezeSnapshotOnly } from '../../with-audit/portability/withdraw-accessible.js'
 import { loadDeedMarker, saveDeedMarker } from '../team/deed.js'
@@ -143,7 +143,7 @@ export async function liberateVault(
   const merged: KeyringFile = { ...keyringFile, deks: mergedDeks }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...merged, roster_epoch: nextRosterEpoch(keyringFile.roster_epoch) }
+  const withEpoch = stampAuthority(merged, keyringFile.roster_epoch)
   const mergedFile: KeyringFile = { ...withEpoch, roster_tag: await mintRosterTag(withEpoch, rosterKey) }
   await adapter.put(vaultName, '_keyring', opts.newOwnerId, { ...env, _data: JSON.stringify(mergedFile) })
 

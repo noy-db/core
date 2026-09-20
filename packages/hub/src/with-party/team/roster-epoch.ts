@@ -87,3 +87,4 @@ export function assertRosterEpochCurrent(
 export function nextRosterEpoch(current: number | undefined): number {
   return Number.isFinite(current) ? (current as number) + 1 : 1
 }
+

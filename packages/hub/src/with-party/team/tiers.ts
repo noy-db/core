@@ -28,38 +28,58 @@ import { dekKey } from '../../kernel/tier-visibility.js'
 export { dekKey }
 
 /**
- * Returns the user's effective clearance for a given collection: the
- * maximum tier for which their keyring holds a DEK. Falls back to 0
- * when the user has only the tier-0 DEK (or none — the getDEK caller
- * will raise separately).
+ * The user's effective clearance for ONE collection: the maximum tier for which
+ * their keyring holds a DEK. `0` when only the tier-0 DEK is held (or none —
+ * the `getDEK` caller raises separately).
  *
- * ## ⚠️ Called by nothing, and it is HALF of a pair (core#58)
+ * Takes DEK SLOT NAMES rather than an `UnlockedKeyring` (core#58), because the
+ * callers that need this are the ones BUILDING a `KeyringFile`, where the slot
+ * names exist and an unlocked keyring may not. Not published from any entry, so
+ * the signature is free to say what it means.
  *
- * The other half is `KeyringFile.clearance` (`kernel/types.ts`), a persisted,
- * optional, explicitly advisory field whose own docstring describes this
- * computation — *"Owners and admins default to the highest tier they have DEKs
- * for at grant time"*. Measured: **nothing in the tree reads or writes it**,
- * and nothing calls this function. So the format poses a per-collection
- * clearance question that no code answers, on either side.
- *
- * ⛔ Do not delete this on a "no callers" signal alone. It is the only
- * implementation of what the persisted field means, and removing it leaves the
- * field with no definition at all. Do not delete the field either without
- * deciding what a keyring that already carries one should do.
- *
- * ⚠️ `kernel/vault.ts`'s `elevate()` scan is NOT this predicate and cannot be
- * replaced by a call to it: that asks whether ANY collection has a DEK at ONE
- * tier (`#N` suffix match); this asks the MAXIMUM tier for ONE collection
- * (`name#` prefix match). See core#58 for the table.
+ * ⚠️ `kernel/vault.ts`'s `elevate()` scan is NOT this predicate: that asks
+ * whether ANY collection has a DEK at ONE tier (`#N` suffix match); this asks
+ * the MAXIMUM tier for ONE collection (`name#` prefix match).
  */
-export function effectiveClearance(keyring: UnlockedKeyring, collection: string): number {
+export function effectiveClearance(dekSlots: Iterable<string>, collection: string): number {
   let max = 0
   const prefix = `${collection}#`
-  for (const key of keyring.deks.keys()) {
+  for (const key of dekSlots) {
     if (!key.startsWith(prefix)) continue
-    const suffix = key.slice(prefix.length)
-    const n = Number.parseInt(suffix, 10)
+    const n = Number.parseInt(key.slice(prefix.length), 10)
     if (Number.isFinite(n) && n > max) max = n
+  }
+  return max
+}
+
+/**
+ * The whole keyring's clearance: the highest tier held for ANY collection.
+ *
+ * ## What this is, and the one thing it must never become (core#58)
+ *
+ * This is the value persisted as `KeyringFile.clearance`. It is **derived**,
+ * not independent — a pure function of the DEK slot names written into the same
+ * file — and that is deliberate on two counts:
+ *
+ *  1. `dek_slots` is already bound into the roster tag (#1115), so a clearance
+ *     computed from it carries no authority the tag does not already cover. A
+ *     store that forges one contradicts data it cannot forge.
+ *  2. Being derived at every write is what stops it drifting. A value computed
+ *     once at grant time and carried forward goes stale the moment a tier DEK
+ *     is added or revoked.
+ *
+ * ⛔ **It is ADVISORY and must stay advisory.** The real check is whether the
+ * DEK map carries a `collection#tier` entry — `assertTierAccess` is the gate,
+ * and access in this system IS the key. Never branch a privilege decision on
+ * this number: it would be a second, weaker representation of access sitting
+ * beside the authoritative one, which is how the two come to disagree.
+ */
+export function keyringClearance(dekSlots: Iterable<string>): number {
+  const slots = [...dekSlots]
+  let max = 0
+  for (const collection of new Set(slots.map((s) => s.split('#')[0] as string))) {
+    const c = effectiveClearance(slots, collection)
+    if (c > max) max = c
   }
   return max
 }
