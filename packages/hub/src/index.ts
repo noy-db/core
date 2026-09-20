@@ -66,9 +66,9 @@
  * | `@noy-db/to-aws-dynamo` | DynamoDB single-table store *(noy-db-to)* |
  * | `@noy-db/to-aws-s3` | S3 object store *(noy-db-to)* |
  * | `@noy-db/to-postgres` | PostgreSQL store *(noy-db-to)* |
- * | `@noy-db/in-vue` | Vue 3 composables |
- * | `@noy-db/in-pinia` | Pinia store integration |
- * | `@noy-db/in-nuxt` | Nuxt 4 module |
+ * | `@noy-db/in-vue` | Vue 3 composables *(noy-db/in)* |
+ * | `@noy-db/in-pinia` | Pinia store integration *(noy-db/in)* |
+ * | `@noy-db/in-nuxt` | Nuxt 4 module *(noy-db/in)* |
  * | `@noy-db/on-webauthn` | Hardware-key / passkey unlock |
  * | `@noy-db/on-oidc` | OIDC / federated login unlock |
  *

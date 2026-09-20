@@ -240,7 +240,7 @@ pnpm add @noy-db/hub @noy-db/to-file
 # Browser app with IndexedDB
 pnpm add @noy-db/hub @noy-db/to-browser-idb
 
-# Nuxt 4 + Pinia — the happy path
+# Nuxt 4 + Pinia — the happy path (framework bindings: github.com/noy-db/in)
 pnpm add @noy-db/in-nuxt @noy-db/in-pinia @noy-db/hub @noy-db/to-browser-idb @pinia/nuxt pinia
 
 # React / Next.js

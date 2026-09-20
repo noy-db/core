@@ -1,7 +1,5 @@
 ---
 '@noy-db/by-peer': patch
-'@noy-db/in-pinia': patch
-'@noy-db/in-nuxt': patch
 ---
 
 **Three shipped examples named a symbol they never imported, and the gate that should have caught them was ignoring exactly that case.**

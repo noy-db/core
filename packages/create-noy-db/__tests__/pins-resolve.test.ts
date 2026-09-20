@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { applyTokens, ownVersion, templateDir } from '../src/wizard/render.js'
+import { NOYDB_IN_VERSION, applyTokens, ownVersion, templateDir } from '../src/wizard/render.js'
 
 const run = promisify(execFile)
 const TEMPLATES = ['nuxt-default', 'vite-vue', 'vanilla', 'electron'] as const
@@ -41,6 +41,7 @@ async function renderedManifest(name: string): Promise<Record<string, Record<str
   return JSON.parse(applyTokens(raw, {
     PROJECT_NAME: 'pins-probe', ADAPTER: 'browser', DEVTOOLS: 'false', SEED_INVOICES: '[]',
     NOYDB_VERSION: await ownVersion(),
+    NOYDB_IN_VERSION,
   }))
 }
 
@@ -58,6 +59,13 @@ describe('the real {{NOYDB_VERSION}} resolves (#1313)', () => {
   it.each(TEMPLATES)('%s: every rendered pin names the workspace version of the package it pins', async (name) => {
     const own = await ownVersion()
     for (const [dep, range] of noydbDeps(await renderedManifest(name))) {
+      if (dep.startsWith('@noy-db/in-')) {
+        // Not in this workspace since 2026-09-21 (noy-db/in). The structural
+        // gate can only check the token was applied; the registry gate below
+        // is what proves NOYDB_IN_VERSION exists on npm.
+        expect(range, `${name}: ${dep}`).toBe(`^${NOYDB_IN_VERSION}`)
+        continue
+      }
       expect(range, `${name}: ${dep}`).toBe(`^${own}`)
       const dir = dep === 'create-noy-db' ? 'create-noy-db' : dep.slice('@noy-db/'.length)
       const pinned = JSON.parse(await readFile(path.join(PACKAGES_DIR, dir, 'package.json'), 'utf8'))

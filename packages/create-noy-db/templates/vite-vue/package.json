@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@noy-db/hub": "^{{NOYDB_VERSION}}",
-    "@noy-db/in-pinia": "^{{NOYDB_VERSION}}",
-    "@noy-db/in-vue": "^{{NOYDB_VERSION}}",
+    "@noy-db/in-pinia": "^{{NOYDB_IN_VERSION}}",
+    "@noy-db/in-vue": "^{{NOYDB_IN_VERSION}}",
     "@noy-db/to-browser-idb": "^{{NOYDB_VERSION}}",
     "pinia": "^2.2.0",
     "vue": "^3.5.0"

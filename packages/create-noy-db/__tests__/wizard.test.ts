@@ -95,6 +95,7 @@ describe('applyTokens', () => {
     DEVTOOLS: 'true',
     SEED_INVOICES: '[]',
     NOYDB_VERSION: '0.0.0-test.0',
+    NOYDB_IN_VERSION: '0.0.0-test.0',
   }
 
   it('substitutes known tokens', () => {
@@ -139,6 +140,7 @@ describe('renderTemplate', () => {
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
+      NOYDB_IN_VERSION: '0.0.0-test.0',
     })
 
     // Expected file set — sorted, relative to project root.
@@ -162,6 +164,7 @@ describe('renderTemplate', () => {
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
+      NOYDB_IN_VERSION: '0.0.0-test.0',
     })
     const pkg = JSON.parse(await readFile(path.join(tmp, 'package.json')))
     expect(pkg.name).toBe('my-special-app')
@@ -179,6 +182,7 @@ describe('renderTemplate', () => {
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
+      NOYDB_IN_VERSION: '0.0.0-test.0',
     })
     const config = await readFile(path.join(tmp, 'nuxt.config.ts'))
     expect(config).toContain(`adapter: 'memory'`)
@@ -192,6 +196,7 @@ describe('renderTemplate', () => {
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
+      NOYDB_IN_VERSION: '0.0.0-test.0',
     })
     // .gitignore exists, _gitignore does not.
     await expect(fs.access(path.join(tmp, '.gitignore'))).resolves.toBeUndefined()
@@ -205,6 +210,7 @@ describe('renderTemplate', () => {
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
+      NOYDB_IN_VERSION: '0.0.0-test.0',
     })
     const store = await readFile(path.join(tmp, 'app/stores/invoices.ts'))
     expect(store).toContain('DEFAULT_INVOICES: Invoice[] = []')
@@ -217,6 +223,7 @@ describe('renderTemplate', () => {
       DEVTOOLS: 'true',
       SEED_INVOICES: '[\n    { "id": "inv-1", "client": "X" }\n  ]',
       NOYDB_VERSION: '0.0.0-test.0',
+      NOYDB_IN_VERSION: '0.0.0-test.0',
     })
     const store = await readFile(path.join(tmp, 'app/stores/invoices.ts'))
     expect(store).toContain('"id": "inv-1"')
@@ -439,7 +446,8 @@ describe('runWizard — template selection (v0.17.1 )', () => {
 //
 // Every template ships `@noy-db/*` (and its own `create-noy-db` devDep)
 // pinned via the `{{NOYDB_VERSION}}` token, substituted at scaffold time
-// from this package's own version. Literal version pins in templates are
+// from this package's own version (`{{NOYDB_IN_VERSION}}` for the in-*
+// bindings, which version on noy-db/in's line). Literal version pins in templates are
 // how #703 happened (pins referencing versions that never existed on npm,
 // so every scaffolded app failed `pnpm install`).
 
@@ -454,7 +462,9 @@ describe('template dependency pins (#703)', () => {
     const noydbDeps = Object.entries(deps).filter(([k]) => PINNED.test(k))
     expect(noydbDeps.length).toBeGreaterThan(0)
     for (const [dep, range] of noydbDeps) {
-      expect(range, `${name}: ${dep}`).toBe('^{{NOYDB_VERSION}}')
+      // in-* versions on noy-db/in's own line since 2026-09-21 — its own token.
+      const token = dep.startsWith('@noy-db/in-') ? 'NOYDB_IN_VERSION' : 'NOYDB_VERSION'
+      expect(range, `${name}: ${dep}`).toBe(`^{{${token}}}`)
     }
   })
 
@@ -474,9 +484,11 @@ describe('template dependency pins (#703)', () => {
         DEVTOOLS: 'true',
         SEED_INVOICES: '[]',
         NOYDB_VERSION: '9.9.9-pre.9',
+        NOYDB_IN_VERSION: '8.8.8-pre.8',
       })
       const raw = await readFile(path.join(tmp2, 'package.json'))
       expect(raw).not.toContain('{{NOYDB_VERSION}}')
+      expect(raw).not.toContain('{{NOYDB_IN_VERSION}}')
       const pkg = JSON.parse(raw)
       expect(pkg.dependencies['@noy-db/hub']).toBe('^9.9.9-pre.9')
       expect(pkg.devDependencies['create-noy-db']).toBe('^9.9.9-pre.9')
