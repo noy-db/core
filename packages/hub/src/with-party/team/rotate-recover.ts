@@ -50,7 +50,7 @@ import {
 import type { UnlockedKeyring } from './keyring.js'
 import { mintKeyringCanary, deriveKekForKeyring, readKeyringFile } from './keyring.js'
 import { assertRosterAuthenticated, mintRosterTag } from './roster-tag.js'
-import { nextRosterEpoch } from './roster-epoch.js'
+import { stampAuthority } from './roster-tag.js'
 import { ROSTER_KEY_ID } from '../../kernel/constants.js'
 import { buildEchoBlock } from './echo-secret.js'
 import type { NoydbDeviceSeal } from './device-seal.js'
@@ -405,7 +405,7 @@ export async function rotateSecret(
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...rebuilt, roster_epoch: nextRosterEpoch(found?.file.roster_epoch) }
+  const withEpoch = stampAuthority(rebuilt, found?.file.roster_epoch)
   const next: KeyringFile = {
     ...withEpoch,
     roster_tag: await mintRosterTag(withEpoch, requireRecoveredRosterKey(deks)),
@@ -726,7 +726,7 @@ async function recoverViaPaperCode(
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...rebuilt, roster_epoch: nextRosterEpoch(found?.file.roster_epoch) }
+  const withEpoch = stampAuthority(rebuilt, found?.file.roster_epoch)
   const next: KeyringFile = {
     ...withEpoch,
     roster_tag: await mintRosterTag(withEpoch, requireRecoveredRosterKey(deks)),
@@ -906,7 +906,7 @@ async function recoverViaShamir(
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...rebuilt, roster_epoch: nextRosterEpoch(file.roster_epoch) }
+  const withEpoch = stampAuthority(rebuilt, file.roster_epoch)
   const next: KeyringFile = {
     ...withEpoch,
     roster_tag: await mintRosterTag(withEpoch, requireRecoveredRosterKey(recoveredDeks)),

@@ -41,7 +41,7 @@ import { assertStrongSecret, type SecretPolicy } from '../../kernel/validation.j
 import type { UnlockedKeyring } from './keyring.js'
 import { mintKeyringCanary, readKeyringFile, requireRosterKey } from './keyring.js'
 import { mintRosterTag, assertRosterTagValid } from './roster-tag.js'
-import { nextRosterEpoch } from './roster-epoch.js'
+import { stampAuthority } from './roster-tag.js'
 
 // FR-6: 'custodian' is deliberately ABSENT — an admin cannot peer-recover a
 // custodian (mirrors ADMIN_GRANTABLE_TARGETS: custodians are owner-managed
@@ -218,7 +218,7 @@ export async function recoverUser(
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...edited, roster_epoch: nextRosterEpoch(target.roster_epoch) }
+  const withEpoch = stampAuthority(edited, target.roster_epoch)
   // #1096 — a restamp is REQUIRED here, not merely uniform: `granted_by`
   // becomes the recoverer and `role` may change, so the carried tag no longer
   // describes the file. The recovered user's own copy of the roster key was

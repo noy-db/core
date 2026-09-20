@@ -15,7 +15,7 @@ import { TransferSealError, AdoptionStateError, ValidationError } from '../kerne
 import type { NoydbStore, VaultSnapshot, KeyringFile } from '../kernel/types.js'
 import { createOwnerKeyring, requireRosterKey } from '../with-party/team/keyring.js'
 import { mintRosterTag } from '../with-party/team/roster-tag.js' // #1115
-import { nextRosterEpoch } from '../with-party/team/roster-epoch.js' // #1097
+import { stampAuthority } from '../with-party/team/roster-tag.js'
 import { resolveManagedSecret } from '../with-party/team/managed-secret.js'
 import type { NoydbSealer } from '../with-party/team/managed-secret.js'
 import type { NoydbShamir } from '../with-party/team/noydb-shamir.js'
@@ -307,7 +307,7 @@ export async function createOwnerOnAdoptedPartition(
     const merged: KeyringFile = { ...keyringFile, deks: mergedDeks }
     // #1097 — stamped BEFORE the tag is minted, so it lands inside the
     // authenticated canonical and a store can neither edit nor strip it.
-    const withEpoch = { ...merged, roster_epoch: nextRosterEpoch(keyringFile.roster_epoch) }
+    const withEpoch = stampAuthority(merged, keyringFile.roster_epoch)
     const rosterKey = requireRosterKey(unlocked, 'adoptPartition')
     const mergedFile: KeyringFile = { ...withEpoch, roster_tag: await mintRosterTag(withEpoch, rosterKey) }
     await store.put(vaultName, '_keyring', userId, { ...env, _data: JSON.stringify(mergedFile) })

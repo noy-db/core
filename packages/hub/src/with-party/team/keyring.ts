@@ -1,6 +1,6 @@
 import type { NoydbStore, KeyringFile, KeyringAuthenticator, Role, Permissions, GrantOptions, RevokeOptions, UpdateUserOptions, UserInfo, EncryptedEnvelope, ExportCapability, ExportFormat, ImportCapability, VaultPolicyOnDisk, UserEnvelope } from '../../kernel/types.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
-import { nextRosterEpoch } from './roster-epoch.js'
+import { stampAuthority } from './roster-tag.js'
 import { USER_ENVELOPE_COLLECTION, ROSTER_KEY_ID, BLOB_ADDRESS_KEY_ID } from '../../kernel/constants.js'
 import { parseDekKey } from '../../kernel/tier-visibility.js' // #1125 — a tier slot names a key, not a collection
 import {
@@ -618,7 +618,7 @@ export async function createOwnerKeyring(
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...authorityWithDeks, roster_epoch: nextRosterEpoch(undefined) }
+  const withEpoch = stampAuthority(authorityWithDeks, undefined)
   const keyringFile: KeyringFile = {
     _noydb_keyring: NOYDB_KEYRING_VERSION,
     ...withEpoch,
@@ -860,7 +860,7 @@ export async function grant(
   const authorityWithDeks = { ...authority, deks: wrappedDeks } // #1115
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...authorityWithDeks, roster_epoch: nextRosterEpoch(previousGrantFound?.file.roster_epoch) }
+  const withEpoch = stampAuthority(authorityWithDeks, previousGrantFound?.file.roster_epoch)
   const keyringFile: KeyringFile = {
     _noydb_keyring: NOYDB_KEYRING_VERSION,
     ...withEpoch,
@@ -1480,7 +1480,7 @@ export async function updateKeyringIdentity(
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...edited, roster_epoch: nextRosterEpoch(target.roster_epoch) }
+  const withEpoch = stampAuthority(edited, target.roster_epoch)
   const next: KeyringFile = { ...withEpoch, roster_tag: await mintRosterTag(withEpoch, rosterKey) }
 
   await writeKeyringFile(store, vault, options.userId, next)
@@ -1925,7 +1925,7 @@ export async function rotateKeys(
     }
     // #1097 — stamped BEFORE the tag is minted, so it lands inside the
     // authenticated canonical and a store can neither edit nor strip it.
-    const withEpoch = { ...edited, roster_epoch: nextRosterEpoch(userKeyringFile.roster_epoch) }
+    const withEpoch = stampAuthority(edited, userKeyringFile.roster_epoch)
     const updatedKeyring: KeyringFile = {
       ...withEpoch,
       roster_tag: await mintRosterTag(withEpoch, callerRosterKey),
@@ -2016,7 +2016,7 @@ export async function changeSecret(
   const authorityWithDeks = { ...authority, deks: wrappedDeks } // #1115
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...authorityWithDeks, roster_epoch: nextRosterEpoch(existingAuthority?.roster_epoch) }
+  const withEpoch = stampAuthority(authorityWithDeks, existingAuthority?.roster_epoch)
   const keyringFile: KeyringFile = {
     _noydb_keyring: NOYDB_KEYRING_VERSION,
     ...withEpoch,
@@ -2196,7 +2196,7 @@ export async function buildRecipientKeyringFile(
   const authorityWithDeks = { ...authority, deks: wrappedDeks } // #1115
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...authorityWithDeks, roster_epoch: nextRosterEpoch(undefined) }
+  const withEpoch = stampAuthority(authorityWithDeks, undefined)
   return {
     _noydb_keyring: NOYDB_KEYRING_VERSION,
     ...withEpoch,
@@ -2667,7 +2667,7 @@ export async function persistKeyring(
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
-  const withEpoch = { ...authorityWithDeks, roster_epoch: nextRosterEpoch(existingFound?.file.roster_epoch) }
+  const withEpoch = stampAuthority(authorityWithDeks, existingFound?.file.roster_epoch)
   const keyringFile: KeyringFile = {
     _noydb_keyring: NOYDB_KEYRING_VERSION,
     ...withEpoch,

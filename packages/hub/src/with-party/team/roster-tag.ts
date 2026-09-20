@@ -45,6 +45,8 @@ import { ROSTER_KEY_ID } from '../../kernel/constants.js'
 import { KeyringTamperedError } from '../../kernel/errors.js'
 import type { KeyringTamperedReason } from '../../kernel/errors.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
+import { keyringClearance } from './tiers.js'
+import { nextRosterEpoch } from './roster-epoch.js'
 
 export interface RosterTag { readonly iv: string; readonly data: string }
 
@@ -53,7 +55,9 @@ export type RosterAuthorityFields = Pick<KeyringFile,
   // #1115 — the DEK key SETS. Names only; see `rosterCanonical`.
   | 'deks' | 'pending_deks'
   // #1097 — the monotonic roster epoch, bound CONDITIONALLY (see below).
-  | 'roster_epoch'>
+  | 'roster_epoch'
+  // core#58 — the advisory clearance, bound CONDITIONALLY for the same reason.
+  | 'clearance'>
 
 /** Stable stringify — sorts object keys recursively so key order never splits the tag. */
 function stable(value: unknown): string {
@@ -113,6 +117,23 @@ export function rosterCanonical(file: RosterAuthorityFields): string {
     // no-epoch shape. It can only replay a file that genuinely never had one,
     // which is why absence must read as UNKNOWN rather than as zero.
     ...(file.roster_epoch !== undefined ? { roster_epoch: file.roster_epoch } : {}),
+    // core#58 — the advisory clearance, bound ONLY WHEN PRESENT.
+    //
+    // ⛔ The conditional spread is mandatory here for the identical reason
+    // given for `roster_epoch` directly above: `file.clearance ?? null` would
+    // change the canonical string for every keyring written before this field
+    // existed, fail every one of their tags, and render every existing vault
+    // unopenable. Do not "tidy" it into the `?? null` shape the older optional
+    // fields use.
+    //
+    // ⚠️ Why bind it at all, when it is DERIVED from `dek_slots` which is
+    // already bound? Because "derived" is a property of how WE write it, not of
+    // what a store must send back. Binding it costs one conditional and makes a
+    // forged value fail the tag instead of merely disagreeing with the slots —
+    // which is the difference between a caught tamper and a silent one, for a
+    // reader who trusted the cheap number. It is defence in depth for a field
+    // whose whole risk is being read instead of the DEK map.
+    ...(file.clearance !== undefined ? { clearance: file.clearance } : {}),
   })
 }
 
@@ -236,4 +257,50 @@ function mismatchReason(file: KeyringFile): KeyringTamperedReason {
   if (file.roster_tag == null) return 'roster-tag-missing'
   if (file._noydb_keyring !== NOYDB_KEYRING_VERSION) return 'format-superseded'
   return 'roster-tag-mismatch'
+}
+
+/**
+ * ⚠️ MOVED HERE from `roster-epoch.ts` (core#58), and the move is the point.
+ *
+ * That module carries an output-domain invariant — every function it exports
+ * must reach a published entry point — because its CALLER API
+ * (`assertRosterEpochCurrent`) once shipped reachable from nowhere (#1097).
+ * `stampAuthority` is writer-side plumbing and has no business on the published
+ * surface, so satisfying that invariant by exporting it would have been the
+ * wrong repair.
+ *
+ * It belongs here regardless: it stamps the derived fields that
+ * `rosterCanonical` below BINDS, and the two must change together. Adding a
+ * derived field means editing both functions in this one file.
+ */
+/**
+ * Stamp a keyring's authority half with BOTH derived fields at once — the next
+ * roster epoch and the advisory clearance (core#58).
+ *
+ * ## Why one helper and not two call sites
+ *
+ * There are thirteen places that build a `KeyringFile`'s authority half, across
+ * `keyring.ts`, `rotate-recover.ts`, `peer-recover.ts`, `custody/liberate.ts`
+ * and `with-cargo/adopt-partition.ts`. Every one of them must stamp every
+ * derived field, or the field FLICKERS: present after a grant, absent after the
+ * next rotate or partition adopt, with no error anywhere.
+ *
+ * ⛔ That is not a hypothetical — it is the exact failure `clearance` already
+ * had in a weaker form, and adding a fourteenth call site is how it would come
+ * back. **Adding a derived field means adding it HERE**, which makes covering
+ * all thirteen sites the default rather than a thing to remember.
+ *
+ * `clearance` is derived from the DEK slot names in the very object being
+ * stamped, so it cannot disagree with them; see `keyringClearance` for why it
+ * is advisory and must stay so.
+ */
+export function stampAuthority<T extends { readonly deks?: Record<string, string> }>(
+  authority: T,
+  previousEpoch: number | undefined,
+): T & { roster_epoch: number; clearance: number } {
+  return {
+    ...authority,
+    roster_epoch: nextRosterEpoch(previousEpoch),
+    clearance: keyringClearance(Object.keys(authority.deks ?? {})),
+  }
 }
