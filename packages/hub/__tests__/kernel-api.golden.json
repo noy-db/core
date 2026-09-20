@@ -125,6 +125,7 @@
     "purgePeriodTargets",
     "rebuildSubjectIndex",
     "reclosePeriod",
+    "refreshDelegations",
     "refreshView",
     "reopenPeriod",
     "resolveDictSource",

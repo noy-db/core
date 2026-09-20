@@ -2891,13 +2891,8 @@ export class Vault {
    */
   async delegate(opts: IssueDelegationOptions): Promise<DelegationToken> {
     const { issueDelegation, DELEGATIONS_COLLECTION } = await import('../with-party/team/delegation.js')
-    // The target user's KEK is derived from THEIR keyring — we read
-    // the keyring file to pick up the wrapped DEKs and their KEK salt,
-    // but we cannot derive their KEK from our side (we don't have
-    // their secret). For the delegation wraps against the
-    // grantor's own KEK as a simpler first cut; swapping to a proper
-    // per-target KEK exchange (via `on-magic-link` or OIDC) is a
-    // follow-up tracked in the design doc.
+    // ⚠️ Wraps against the GRANTOR's KEK, so cross-user delegation does not work
+    // yet — see `issueDelegation` in `with-party/team/delegation.js`.
     if (!this.keyring.kek) {
       throw new ValidationError(
         'issueDelegation: keyring.kek is null — issuing a delegation requires ' +
@@ -2914,6 +2909,11 @@ export class Vault {
       delegationsDek,
       opts,
     )
+  }
+
+  /** Merge live delegations into the keyring — core#56's read half. Explicit, not automatic; cross-user delegation does not work yet. Both reasons: `with-party/team/delegation.ts`. */
+  async refreshDelegations(now?: Date): Promise<DelegationToken[]> {
+    return this.strategies.tiers.refreshDelegations({ vault: this.name, adapter: this.adapter, keyring: this.keyring }, now)
   }
 
   /**
