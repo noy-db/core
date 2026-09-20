@@ -36,5 +36,23 @@ export function withTiers(): TiersStrategy {
       const { checkUniqueAcrossTiers } = await import('./index.js')
       return checkUniqueAcrossTiers(ctx, id, record)
     },
+    async refreshDelegations(ctx, now) {
+      const { loadActiveDelegations, DELEGATIONS_COLLECTION } =
+        await import('../../with-party/team/delegation.js')
+
+      // Nothing written: no DEK lookup, no keyring mutation, no mint. This is
+      // what makes calling it on every vault open cheap.
+      const ids = await ctx.adapter.list(ctx.vault, DELEGATIONS_COLLECTION)
+      if (ids.length === 0) return []
+
+      // ⛔ Deliberately NOT `getDEK`. That MINTS a DEK when absent and persists
+      // the keyring — a write on a read path — and on a vault whose shared
+      // `_delegations` DEK this user does not hold it would mint a WRONG one and
+      // then fail to decrypt every token under it. No key, no read.
+      const delegationsDek = ctx.keyring.deks.get(DELEGATIONS_COLLECTION)
+      if (!delegationsDek) return []
+
+      return loadActiveDelegations(ctx.adapter, ctx.vault, ctx.keyring, delegationsDek, now)
+    },
   }
 }

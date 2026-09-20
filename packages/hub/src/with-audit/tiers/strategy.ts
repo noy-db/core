@@ -10,6 +10,9 @@
 import type { GhostRecord } from '../../kernel/types.js'
 import type { TiersContext, TierMoveResult } from './index.js'
 import { TiersNotEnabledError } from '../../kernel/errors.js'
+import type { DelegationToken } from '../../with-party/team/delegation.js'
+import type { UnlockedKeyring } from '../../with-party/team/keyring.js'
+import type { NoydbStore } from '../../kernel/types.js'
 
 // #779 — re-exported so kernel-spine callers (e.g. `Vault._elevatedPut`) can reference the
 // result shape via this grandfathered strategy.js seam instead of statically importing
@@ -36,6 +39,23 @@ export interface TiersStrategy {
    * A tier the writer cannot read is outside the guarantee.
    */
   checkUnique<T>(ctx: TiersContext<T>, id: string, record: T): Promise<void>
+  /**
+   * core#56 — the delegation READ half. VAULT-scoped, not collection-scoped,
+   * so it takes its own narrow context rather than a `TiersContext`.
+   *
+   * It lives on this strategy rather than in the kernel because delegation IS a
+   * tier feature (the tokens carry tier DEKs and the gate they satisfy is
+   * `assertTierAccess`), and because a consumer who never opts into tiers has no
+   * delegations to read — so this should tree-shake away for them.
+   */
+  refreshDelegations(ctx: DelegationReadContext, now?: Date): Promise<DelegationToken[]>
+}
+
+/** The vault-scoped slice the delegation read half needs (core#56). */
+export interface DelegationReadContext {
+  readonly vault: string
+  readonly adapter: NoydbStore
+  readonly keyring: UnlockedKeyring
 }
 
 /**
@@ -56,4 +76,10 @@ export const NO_TIERS: TiersStrategy = {
   // to scan and the tier-0 mirror is already the whole truth. Throwing here
   // would break plain `put()` on such a collection for no gain.
   async checkUnique() { /* no tier engine ⇒ every record is at tier 0 */ },
+  // ⛔ ALSO not a throw, and for a different reason than `checkUnique` above.
+  // "Are there delegations for me?" is a legitimate question on a vault with no
+  // tier engine, and its honest answer is none — no engine means no tier DEK
+  // was ever minted, so no token could have been issued. Throwing would stop a
+  // caller who merely polls for delegations from running without `withTiers()`.
+  async refreshDelegations() { return [] },
 }

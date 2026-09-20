@@ -58,12 +58,45 @@ export interface DelegationToken {
   readonly toUser: string
   readonly fromUser: string
   readonly tier: number
-  /** Collection name or `null` for all collections. */
+  /**
+   * Collection name, or `null` for a COLLECTION-WIDE token — see
+   * {@link DelegationToken.wrappedDeks} for what that means and what it cannot
+   * mean.
+   */
   readonly collection: string | null
   /** Optional specific record id scope. */
   readonly record?: string
   readonly until: string
-  readonly wrappedDek: string
+  /**
+   * The delegated tier DEK for {@link DelegationToken.collection}, wrapped
+   * under the target's KEK. Present on a per-collection token; absent on a
+   * collection-wide one, which carries {@link DelegationToken.wrappedDeks}.
+   */
+  readonly wrappedDek?: string
+  /**
+   * A collection-wide token's payload: `<collection>#<tier>` → wrapped DEK, one
+   * entry per collection the grantor held at that tier (core#56).
+   *
+   * ## ⛔ Why a MAP and not one key
+   *
+   * Every collection has its OWN tier DEK — measured, `docs#1` and `ledger#1`
+   * are different keys. The original design tried to express "every collection"
+   * as a single DEK under a wildcard slot `__any#<tier>`, which cannot work: one
+   * key decrypts one collection. A wildcard accepted at the access gate would
+   * have passed the check and then failed decryption — a gate that says yes
+   * followed by a crypto error. `__any#` is gone; every entry here merges under
+   * its REAL `<collection>#<tier>` key, so `assertTierAccess` needs no wildcard
+   * and gains no new privilege surface.
+   *
+   * ## ⚠️ "Every collection" means "every collection AS OF ISSUE TIME"
+   *
+   * This is a SNAPSHOT. A collection created after the token was issued is not
+   * in it and will not be granted by it — the grantor did not hold its DEK to
+   * wrap. That is a real limit of the shape, not an oversight, and it is stated
+   * here because a caller who reads "all collections" will otherwise assume
+   * otherwise.
+   */
+  readonly wrappedDeks?: Readonly<Record<string, string>>
   readonly createdAt: string
 }
 
@@ -93,31 +126,38 @@ export async function issueDelegation(
   }
   const tier = opts.tier
   const collectionName = opts.collection ?? null
-  // ⛔ COLLECTION-WIDE IS NOT IMPLEMENTED, and until core#56 it failed as if the
-  // grantor merely lacked a key. The `collection: null` form wants a DEK keyed
-  // `__any#<tier>`, and the ONLY writer of that key is `loadActiveDelegations`
-  // below — which is called by nothing. So the key never exists, for anyone,
-  // and this branch has never once succeeded. Say that, rather than implying a
-  // missing grant the caller could go and obtain.
-  if (!collectionName) {
-    throw new DelegationTargetMissingError(
-      opts.toUser,
-      `issueDelegation({ collection: undefined }) — delegating EVERY collection at a ` +
-      `tier is not implemented. It needs a "__any#${tier}" DEK, which only ` +
-      `loadActiveDelegations() writes, and nothing calls it (core#56). Pass an ` +
-      `explicit \`collection\`.`,
-    )
+
+  // Collection-wide: wrap EVERY tier DEK the grantor holds at this tier, each
+  // under its own real slot key. See `wrappedDeks` for why this is a map and
+  // for the as-of-issue-time limit it carries.
+  let wrappedDek: string | undefined
+  let wrappedDeks: Record<string, string> | undefined
+  if (collectionName === null) {
+    const suffix = `#${tier}`
+    const entries: Record<string, string> = {}
+    for (const [slot, dek] of grantor.deks) {
+      if (slot.endsWith(suffix)) entries[slot] = await wrapKey(dek, targetKek)
+    }
+    if (Object.keys(entries).length === 0) {
+      throw new DelegationTargetMissingError(
+        opts.toUser,
+        `grantor holds no tier-${tier} DEK for ANY collection, so a collection-wide ` +
+        `delegation would grant nothing. Obtain a tier grant first, or name a ` +
+        `\`collection\`.`,
+      )
+    }
+    wrappedDeks = entries
+  } else {
+    const sourceDek = grantor.deks.get(dekKey(collectionName, tier))
+    if (!sourceDek) {
+      throw new DelegationTargetMissingError(
+        opts.toUser,
+        `grantor holds no tier-${tier} DEK for collection "${collectionName}", so there ` +
+        `is nothing to delegate. Obtain the tier grant first.`,
+      )
+    }
+    wrappedDek = await wrapKey(sourceDek, targetKek)
   }
-  // Tier DEK to delegate — fetched from the grantor's own keyring.
-  const sourceDek = grantor.deks.get(dekKey(collectionName, tier))
-  if (!sourceDek) {
-    throw new DelegationTargetMissingError(
-      opts.toUser,
-      `grantor holds no tier-${tier} DEK for collection "${collectionName}", so there ` +
-      `is nothing to delegate. Obtain the tier grant first.`,
-    )
-  }
-  const wrappedDek = await wrapKey(sourceDek, targetKek)
 
   const until = typeof opts.until === 'string' ? opts.until : opts.until.toISOString()
   const token: DelegationToken = {
@@ -128,7 +168,8 @@ export async function issueDelegation(
     collection: collectionName,
     ...(opts.record && { record: opts.record }),
     until,
-    wrappedDek,
+    ...(wrappedDek !== undefined && { wrappedDek }),
+    ...(wrappedDeks !== undefined && { wrappedDeks }),
     createdAt: new Date().toISOString(),
   }
 
@@ -142,6 +183,30 @@ export async function issueDelegation(
   await store.put(vault, DELEGATIONS_COLLECTION, token.id, envelope)
   return token
 }
+
+/**
+ * ## Why the vault calls this EXPLICITLY, and never from `openVault` (core#56)
+ *
+ * The module header above describes a runtime that scans on every open. Doing
+ * that automatically would call `getDEK('_delegations')`, which MINTS a DEK when
+ * absent and persists the keyring — so merely opening a vault would write to it.
+ * Worse, on a vault whose shared `_delegations` DEK this user does not hold, it
+ * would mint a WRONG one and then fail to decrypt every token under it.
+ *
+ * ⛔ A read path must not have that side effect. `Vault.refreshDelegations()`
+ * therefore lists first, returns `[]` when nothing is written, and looks the DEK
+ * up WITHOUT minting — which also makes the module header's "at each open"
+ * cheap to honour, and its "periodic intervals (tracked by the caller)" is what
+ * an explicit method is.
+ *
+ * ## ⚠️ Cross-user delegation does not work yet
+ *
+ * `Vault.delegate()` wraps against the GRANTOR's own KEK — its own comment calls
+ * that "a simpler first cut" pending a per-target KEK exchange. A token issued
+ * to somebody else cannot be unwrapped by them, and this function skips it. What
+ * works today is a token whose target shares the issuing KEK. That limit belongs
+ * to `delegate()`; do not "fix" it here.
+ */
 
 /**
  * Enumerate every live (non-expired) delegation addressed to `toUser`
@@ -177,16 +242,29 @@ export async function loadActiveDelegations(
     // — those were wrapped under the user's KEK at issue time. Skip
     // this token; the consumer reaches it again at tier-1 unlock.
     if (!user.kek) continue
-    let dek: EnclaveKey
-    try {
-      dek = await unwrapKey(token.wrappedDek, user.kek)
-    } catch {
-      continue
+
+    // ⭐ Every merged key lands under its REAL `<collection>#<tier>` slot, which
+    // is exactly what `assertTierAccess` and `getDEK` already look up. There is
+    // no wildcard slot and no lookup change anywhere — see `wrappedDeks`.
+    const wraps: Record<string, string> = token.collection
+      ? (token.wrappedDek ? { [dekKey(token.collection, token.tier)]: token.wrappedDek } : {})
+      : { ...(token.wrappedDeks ?? {}) }
+    if (Object.keys(wraps).length === 0) continue
+
+    let anyMerged = false
+    for (const [slot, wrapped] of Object.entries(wraps)) {
+      let dek: EnclaveKey
+      try {
+        dek = await unwrapKey(wrapped, user.kek)
+      } catch {
+        // One unusable entry must not discard the rest of a collection-wide
+        // token — a revoked or re-wrapped collection is the expected case.
+        continue
+      }
+      user.deks.set(slot, dek)
+      anyMerged = true
     }
-    const k = token.collection
-      ? dekKey(token.collection, token.tier)
-      : `__any#${token.tier}`
-    user.deks.set(k, dek)
+    if (!anyMerged) continue
     merged.push(token)
   }
   return merged

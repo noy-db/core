@@ -21,7 +21,11 @@
  * Internal service — not exported as a `@noy-db/hub/*` subpath.
  */
 export { withTiers } from './active.js'
-export { NO_TIERS, type TiersStrategy } from './strategy.js'
+// core#56 — `DelegationReadContext` rides alongside because it appears in
+// `TiersStrategy.refreshDelegations`'s signature: anyone implementing or
+// wrapping the strategy has to be able to NAME it. A parameter type reachable
+// from no entry is the `isConflictError` / #57 shape one step earlier.
+export { NO_TIERS, type TiersStrategy, type DelegationReadContext } from './strategy.js'
 export { TiersNotEnabledError } from '../../kernel/errors.js'
 import { recordAadFor, type RecordIdentity, buildRecordAad, buildRecordEnvelope, encrypt, decrypt, unwrapCek, rewrapBodyToDek, applyRewrappedBody, isDeleteMarker, isTombstoneShape, type RecordCodec, type EnclaveKey, type SealedShredSlot } from '../../capsule/index.js'
 import { TierDemoteDeniedError, UnsupportedTierCompositionError, PersistedIndexCompensationError, UniqueConstraintError } from '../../kernel/errors.js'

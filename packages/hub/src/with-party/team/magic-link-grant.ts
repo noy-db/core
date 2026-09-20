@@ -159,20 +159,30 @@ export async function writeMagicLinkGrant(
   opts: IssueMagicLinkGrantOptions,
 ): Promise<MagicLinkGrantRecord> {
   const collectionName = opts.collection ?? null
-  // ⛔ Same unimplemented branch as `issueDelegation` (core#56). `__any#<tier>`
-  // is written ONLY by `loadActiveDelegations`, which nothing calls, so the
-  // omit-`collection` form has never succeeded for any caller. Measured with a
-  // scoped control that gets PAST this lookup, so it is the key and not the
-  // call. ⚠️ The real consumer is `@noy-db/on-magic-link`'s
-  // `issueMagicLinkDelegation()` in the `on` repo — an accurate message is the
-  // only thing that tells them which side the fault is on.
+  // ⛔ COLLECTION-WIDE IS NOT SUPPORTED HERE, and after core#56 the reason is
+  // specific to this function rather than shared with `issueDelegation`.
+  //
+  // A magic-link grant wraps ONE source DEK under ONE derived grant KEK. "Every
+  // collection" needs one wrapped DEK PER COLLECTION, because each collection
+  // has its own tier DEK — measured, `docs#1` and `ledger#1` are different
+  // keys. `issueDelegation` now expresses that with a `wrappedDeks` MAP; this
+  // record shape carries a single `wrappedDek` and cannot.
+  //
+  // ⚠️ The wildcard slot `__any#<tier>` this branch used to read is GONE. It
+  // could never have worked: one key cannot decrypt two collections, so a
+  // wildcard accepted at the gate would pass the check and then fail
+  // decryption. Do not reintroduce it here.
+  //
+  // The real consumer is `@noy-db/on-magic-link`'s `issueMagicLinkDelegation()`
+  // in the `on` repo, so this message is the only thing telling them which side
+  // the fault is on and what the supported shape is.
   if (!collectionName) {
     throw new DelegationTargetMissingError(
       opts.toUser,
-      `writeMagicLinkGrant({ collection: undefined }) — granting EVERY collection ` +
-      `at a tier is not implemented. It needs a "__any#${opts.tier}" DEK, which ` +
-      `only loadActiveDelegations() writes, and nothing calls it (core#56). Pass ` +
-      `an explicit \`collection\`.`,
+      `writeMagicLinkGrant({ collection: undefined }) — a magic-link grant carries a ` +
+      `single wrapped DEK and cannot express "every collection", because each ` +
+      `collection has its own tier-${opts.tier} DEK. Pass an explicit \`collection\`, ` +
+      `or use a collection-wide delegation token (core#56).`,
     )
   }
   const sourceDek = grantor.deks.get(dekKey(collectionName, opts.tier))

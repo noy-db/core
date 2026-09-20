@@ -1,5 +1,12 @@
 /**
- * core#56 — the two `collection: undefined` write paths refuse HONESTLY.
+ * core#56 — `writeMagicLinkGrant({ collection: undefined })` refuses HONESTLY.
+ *
+ * ⚠️ HALF OF THIS FILE'S ORIGINAL PREMISE IS GONE, deliberately.
+ * `issueDelegation` no longer refuses the collection-wide form: it now issues a
+ * MULTI-DEK token (one wrapped DEK per collection) and the read half merges
+ * them under their real slots. That case moved to
+ * `delegation-read-half.test.ts`, which asserts it SUCCEEDS. What is left here
+ * is the magic-link path, which genuinely cannot express the shape.
  *
  * ## What was measured, and how
  *
@@ -87,29 +94,11 @@ async function freshVault() {
 const until = (): string => new Date(Date.now() + 60_000).toISOString()
 
 describe('core#56 — collection-wide grants refuse honestly', () => {
-  it('the grantor holds a per-collection tier DEK but never __any# (the premise)', async () => {
+  it('no `__any#` slot exists anywhere — the wildcard is gone for good', async () => {
     const { vault } = await freshVault()
     const keys = [...(vault as unknown as { keyring: { deks: Map<string, unknown> } }).keyring.deks.keys()]
     expect(keys).toContain('docs#1')
     expect(keys.some((k) => k.startsWith('__any#'))).toBe(false)
-  })
-
-  it('issueDelegation without a collection names the unimplemented branch', async () => {
-    const { vault } = await freshVault()
-
-    // Control: the scoped form gets past this point (it succeeds outright).
-    await expect(vault.delegate({
-      toUser: 'owner', tier: 1, collection: 'docs', until: until(),
-    })).resolves.toBeTruthy()
-
-    const err = await vault.delegate({ toUser: 'owner', tier: 1, until: until() })
-      .then(() => null, (e: unknown) => e as DelegationTargetMissingError)
-
-    expect(err).toBeInstanceOf(DelegationTargetMissingError)
-    expect(err?.toUser).toBe('owner')          // a real user id, not a sentence
-    expect(err?.message).toMatch(/not implemented/)
-    expect(err?.message).toMatch(/core#56/)
-    expect(err?.message).not.toMatch(/has no keyring in this vault/)
   })
 
   it('writeMagicLinkGrant without a collection names the unimplemented branch', async () => {
@@ -123,9 +112,12 @@ describe('core#56 — collection-wide grants refuse honestly', () => {
 
     expect(err).toBeInstanceOf(DelegationTargetMissingError)
     expect(err?.toUser).toBe('bob')
-    expect(err?.message).toMatch(/not implemented/)
-    expect(err?.message).toMatch(/__any#1/)
-    expect(err?.message).toMatch(/core#56/)
+    // ⭐ The reason is now SPECIFIC to this function rather than shared: a
+    // magic-link record carries a single wrapped DEK, and "every collection"
+    // needs one per collection because each has its own tier DEK.
+    expect(err?.message).toMatch(/single wrapped DEK/)
+    expect(err?.message).toMatch(/each\s+collection has its own tier-1 DEK/)
+    expect(err?.message).not.toMatch(/__any#/)
   })
 
   it('a grantor missing the per-collection DEK gets a DIFFERENT, accurate message', async () => {
