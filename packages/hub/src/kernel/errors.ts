@@ -1370,10 +1370,22 @@ export class TierDemoteDeniedError extends NoydbError {
 export class DelegationTargetMissingError extends NoydbError {
   readonly toUser: string
 
-  constructor(toUser: string) {
+  /**
+   * ⚠️ `reason` exists because two call sites were passing a SENTENCE as
+   * `toUser` (core#56), rendering as:
+   *
+   *     Delegation target user "grantor cannot find tier 1 DEK for (any)"
+   *     has no keyring in this vault
+   *
+   * — which names a target user that is not a user, and states a cause that is
+   * not the cause. A grantor-side failure is not a missing target; the class is
+   * kept for both only because it is PUBLISHED and consumers catch it. Pass the
+   * real `toUser` and put the explanation in `reason`.
+   */
+  constructor(toUser: string, reason?: string) {
     super(
       'DELEGATION_TARGET_MISSING',
-      `Delegation target user "${toUser}" has no keyring in this vault`,
+      reason ?? `Delegation target user "${toUser}" has no keyring in this vault`,
     )
     this.name = 'DelegationTargetMissingError'
     this.toUser = toUser

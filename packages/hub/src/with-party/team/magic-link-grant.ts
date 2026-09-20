@@ -159,13 +159,28 @@ export async function writeMagicLinkGrant(
   opts: IssueMagicLinkGrantOptions,
 ): Promise<MagicLinkGrantRecord> {
   const collectionName = opts.collection ?? null
-  const sourceKey = collectionName
-    ? dekKey(collectionName, opts.tier)
-    : `__any#${opts.tier}`
-  const sourceDek = grantor.deks.get(sourceKey)
+  // ⛔ Same unimplemented branch as `issueDelegation` (core#56). `__any#<tier>`
+  // is written ONLY by `loadActiveDelegations`, which nothing calls, so the
+  // omit-`collection` form has never succeeded for any caller. Measured with a
+  // scoped control that gets PAST this lookup, so it is the key and not the
+  // call. ⚠️ The real consumer is `@noy-db/on-magic-link`'s
+  // `issueMagicLinkDelegation()` in the `on` repo — an accurate message is the
+  // only thing that tells them which side the fault is on.
+  if (!collectionName) {
+    throw new DelegationTargetMissingError(
+      opts.toUser,
+      `writeMagicLinkGrant({ collection: undefined }) — granting EVERY collection ` +
+      `at a tier is not implemented. It needs a "__any#${opts.tier}" DEK, which ` +
+      `only loadActiveDelegations() writes, and nothing calls it (core#56). Pass ` +
+      `an explicit \`collection\`.`,
+    )
+  }
+  const sourceDek = grantor.deks.get(dekKey(collectionName, opts.tier))
   if (!sourceDek) {
     throw new DelegationTargetMissingError(
-      `grantor cannot find tier ${opts.tier} DEK for ${collectionName ?? '(any)'}`,
+      opts.toUser,
+      `grantor holds no tier-${opts.tier} DEK for collection "${collectionName}", ` +
+      `so there is nothing to grant. Obtain the tier grant first.`,
     )
   }
   const wrappedDek = await wrapKey(sourceDek, grantKek)
