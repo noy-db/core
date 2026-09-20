@@ -302,8 +302,25 @@ describe('v0.18 hierarchical access', () => {
      * "via a prior grant or an active delegation" — the second clause has no
      * implementation.
      *
-     * ⭐ **When the read half lands, this test SHOULD fail** — that is its job.
-     * Flip it to assert bob reads the record; do not delete it.
+     * ⚠️ **UPDATED (core#56): the read half HAS landed, and this still passes —
+     * for a DIFFERENT REASON than the one above.**
+     *
+     * `Vault.refreshDelegations()` now merges delegated tier DEKs, so the
+     * "nothing consumes a token" gap this was written for is closed. What keeps
+     * bob out now is that `delegate()` wraps against the GRANTOR's KEK — its own
+     * comment calls that "a simpler first cut" pending a per-target KEK
+     * exchange — so a token addressed to somebody else cannot be unwrapped by
+     * them at all.
+     *
+     * ⛔ So do not read this test's green as "delegation still does nothing".
+     * It measures the CROSS-USER gap. The mechanism is proven working, for a
+     * same-KEK target, in `delegation-read-half.test.ts`.
+     *
+     * ⭐ **When the per-target KEK exchange lands, THIS test should fail** —
+     * flip it to assert bob reads the record; do not delete it. (The previous
+     * version of this note said the same about the read half, and was wrong
+     * about which change would trip it. A test that predicts its own failure
+     * has to name the RIGHT cause, or its green is misread.)
      */
     it('a delegated recipient still cannot read the tier — the read half is absent (#56)', async () => {
       const store = memoryStore()
