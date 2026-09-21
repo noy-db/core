@@ -11,7 +11,7 @@
  * contract, two implementations measured by it — which is the only arrangement
  * where "conforms" means the same thing for both.
  */
-import { runCapsuleConformance } from '@noy-db/test-capsule-conformance'
+import { runCapsuleConformance } from '@noy-db/ports/capsule'
 import * as exclave from '../src/index.js'
 
 runCapsuleConformance(exclave as never, { name: '@noy-db/exclave-plain' })

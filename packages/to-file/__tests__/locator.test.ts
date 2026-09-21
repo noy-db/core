@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createStoreLocator } from '@noy-db/hub/to'
 import type { StoreDescriptor } from '@noy-db/hub/to'
-import { runStoreConformanceTests } from '@noy-db/test-adapter-conformance'
+import { runStoreConformanceTests } from '@noy-db/ports/to'
 import { registerFileStore, fileStoreDescriptor } from '../src/index.js'
 
 describe('to-file store-locator descriptor', () => {

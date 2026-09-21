@@ -6,7 +6,7 @@
  * by-tabs run over one — so this exercises the real coordination code, with
  * only the wire swapped for an in-process pair.
  */
-import { runMeshConformanceTests } from '@noy-db/test-mesh-conformance'
+import { runMeshConformanceTests } from '@noy-db/ports/by'
 import { pairInMemory } from '../src/channel.js'
 import { channelMesh } from '../src/coordination.js'
 

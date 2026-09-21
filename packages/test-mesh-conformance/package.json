@@ -1,7 +1,7 @@
 {
   "name": "@noy-db/test-mesh-conformance",
   "version": "0.8.0",
-  "description": "Parameterized contract tests for noy-db by-* transports — the conformance suite every NoydbMesh implementation must pass",
+  "description": "Parameterized contract tests for noy-db by-* transports \u2014 the conformance suite every NoydbMesh implementation must pass \u2014 now a re-export of @noy-db/ports/by; deprecated in favour of it",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/test-mesh-conformance#readme",
@@ -54,5 +54,8 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@noy-db/ports": "workspace:^"
   }
 }

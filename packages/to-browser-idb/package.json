@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@noy-db/hub": "workspace:*",
-    "@noy-db/test-adapter-conformance": "workspace:*",
+    "@noy-db/ports": "workspace:*",
     "fake-indexeddb": "^6.2.5"
   },
   "keywords": [

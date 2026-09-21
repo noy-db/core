@@ -1,0 +1,27 @@
+{
+  "//": "Typechecks the CAPSULE test files only (the other ports: tsconfig.tests.json), which `tsconfig.json` (include: [\"src\"]) never saw \u2014 vitest transpiles without checking, so until this existed they were checked by nothing (family#28). It is also what makes `__tests__/contract-drift.test.ts` load-bearing: those assertions fail by not COMPILING, so without this config they are inert text. \u26d4 `types` is [] and not [\"node\"] \u2014 this package declares no @types/node, and the repo-wide-types trap cuts both ways: never default it, never blanket-[] a package that does declare it. \u26d4 `rootDir` is ../.. because these tests compile against @noy-db/hub SOURCE across the package boundary, so the program spans two packages. \u26d4 THE `#capsule` PATHS ENTRY IS THE LOAD-BEARING ONE: hub's package.json `imports` maps #capsule to ./dist/capsule/enclave-aes/index.js, so hub's own SOURCE reaches for hub's BUILD OUTPUT, and compiling hub's source from outside the package gives every shared type two nominal identities (hub/src/.../Lru vs hub/dist/.../Lru). Mapping @noy-db/hub alone does NOT fix it \u2014 measured 2026-09-16: 398 errors at rootDir '.', 10 with the package specifier mapped, 6 once #capsule is mapped too, and those 6 were real contract drift (core#42). Remove that entry and the program goes red for reasons that have nothing to do with these tests. The `exclude` list is a burn-down: add a file that fails today, delete the entry when fixed; new test files are covered from day one because they were never listed.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "noEmit": true,
+    "types": [],
+    "noImplicitAny": false,
+    "baseUrl": ".",
+    "paths": {
+      "@noy-db/hub": [
+        "../hub/src/index.ts"
+      ],
+      "@noy-db/hub/*": [
+        "../hub/src/*"
+      ],
+      "#capsule": [
+        "../hub/src/capsule/enclave-aes/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/capsule",
+    "__tests__/capsule"
+  ],
+  "exclude": []
+}

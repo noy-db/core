@@ -1,7 +1,7 @@
 {
   "name": "@noy-db/test-format-conformance",
   "version": "0.8.0",
-  "description": "Parameterized contract tests for noy-db as-* formats — the export-gate suite every plaintext projection must pass",
+  "description": "Parameterized contract tests for noy-db as-* formats \u2014 the export-gate suite every plaintext projection must pass \u2014 now a re-export of @noy-db/ports/as; deprecated in favour of it",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/test-format-conformance#readme",
@@ -54,5 +54,8 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@noy-db/ports": "workspace:^"
   }
 }

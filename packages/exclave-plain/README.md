@@ -98,7 +98,7 @@ That ratio is the seam working as intended: a capsule is a cipher, not a re-impl
 
 ## Conformance
 
-This package runs `@noy-db/test-capsule-conformance`, the same suite `enclave-aes` runs. The kit asserts the **prefix rule from the package name**: an `exclave-*` must refuse `authenticate` and `seal`, and an `enclave-*` must support them. That is what makes the prefix a trust posture rather than a naming convention.
+This package runs `@noy-db/ports/capsule`, the same suite `enclave-aes` runs. The kit asserts the **prefix rule from the package name**: an `exclave-*` must refuse `authenticate` and `seal`, and an `enclave-*` must support them. That is what makes the prefix a trust posture rather than a naming convention.
 
 ## License
 
