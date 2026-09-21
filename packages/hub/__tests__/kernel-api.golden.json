@@ -36,6 +36,7 @@
     "push",
     "quarantineKeyring",
     "queryAcross",
+    "realign",
     "resetSessionTimer",
     "restoreSnapshot",
     "revoke",

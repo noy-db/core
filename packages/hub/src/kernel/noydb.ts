@@ -10,6 +10,7 @@ import type {
   UserInfo,
   PushResult,
   PullResult,
+  RealignResult,
   PushOptions,
   PullOptions,
   SyncStatus,
@@ -708,6 +709,7 @@ export class Noydb {
       engine.setReservedLookupSource({ collections: () => comp._reservedLookupCollectionNames() }) // #650 Task 4
       engine.setReservedDictExpander(names => comp._reservedDictDepsOf(names)) // #653
       engine.setPeriodPullSource({ periods: () => comp.listPeriods() }) // #807 period-scoped pull windows
+      engine.setRosterReload({ userId: this.options.user, reload: () => comp._reloadKeyringAfterSync() }) // core#82
     })
     // Initialise the optional guard + derivation registries via dynamic-import — no-ops when the
     // corresponding strategies array is empty/unset, keeping the service code out of the floor bundle.
@@ -1306,6 +1308,11 @@ export class Noydb {
     return engine.pull(options)
   }
 
+  /** core#82 — replace every local envelope that fails to authenticate with the primary target's healthy copy; see `SyncEngine.realign`. */
+  async realign(vault: string): Promise<RealignResult> {
+    return this.getSyncEngine(vault).realign()
+  }
+
   /**
    * Bidirectional sync: pull then push for all targets.
    * `sync-peer` targets do pull+push; `backup`/`archive` targets do push-only.
@@ -1518,9 +1525,9 @@ export class Noydb {
     const targets: SyncTargetStatus[] = []
     for (const [key, engine] of this.syncEngines) {
       if (key !== vault && !key.startsWith(`${vault}::`)) continue
-      const { dirty, lastPush, lastPull } = engine.status()
+      const { dirty, lastPush, lastPull, inFlight } = engine.status()
       const { label, role } = engine
-      targets.push({ label, role, dirty, lastPush, lastPull, caughtUp: dirty === 0 })
+      targets.push({ label, role, dirty, lastPush, lastPull, caughtUp: dirty === 0, ...(inFlight ? { inFlight } : {}) })
     }
     return targets
   }
