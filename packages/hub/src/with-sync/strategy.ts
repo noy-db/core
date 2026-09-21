@@ -63,6 +63,13 @@ export interface BuildSyncEngineOptions {
  */
 export interface SyncStrategy {
   buildSyncEngine(opts: BuildSyncEngineOptions): SyncEngine
+  /**
+   * core#75 — open-path roster bootstrap: an EMPTY local store is not a new
+   * vault when a `sync-peer` already carries the roster. Runs inside keyring
+   * resolution, BEFORE any engine exists; the un-opted-in stub is a no-op
+   * (no sync ⇒ no target to bootstrap from).
+   */
+  bootstrapKeyrings(local: NoydbStore, peer: NoydbStore | undefined, vault: string): Promise<void>
   buildSyncTransaction(vault: Vault, engine: SyncEngine): SyncTransaction
   buildPresence<P>(opts: PresenceHandleOpts): PresenceHandle<P>
 }
@@ -85,6 +92,7 @@ function notEnabled(op: string): Error {
  */
 export const NO_SYNC: SyncStrategy = {
   buildSyncEngine() { throw notEnabled('SyncEngine') },
+  async bootstrapKeyrings() { /* no sync ⇒ nothing to bootstrap from */ },
   buildSyncTransaction() { throw notEnabled('SyncTransaction') },
   buildPresence() { throw notEnabled('collection.presence()') },
 }

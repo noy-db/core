@@ -1822,7 +1822,11 @@ const KERNEL_SURFACE_BUDGET = {
   // logic made ASKABLE from outside rather than new behaviour; without it the
   // only question available was "is anything registered anywhere", which is
   // never what a caller means.
-  'packages/hub/src/kernel/noydb.ts': 2240,  // see the #1121 note above
+  // Bumped 2240→2248 (2026-09-21, core#75 keyring replication): the mirror itself
+  // is src/with-sync/keyring-mirror.ts + the engine's push/pull hooks. What lands here
+  // is only what cannot live elsewhere — the open-path bootstrap (it runs BEFORE any
+  // engine exists, inside keyring resolution) and revoke's dirty-log fan-out.
+  'packages/hub/src/kernel/noydb.ts': 2248,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

@@ -777,7 +777,11 @@ export class Noydb {
     options: RevokeOptions,
     factors?: FactorProofBundle,
   ): Promise<void> {
-    return this.strategies.team.revoke(this.team, vault, options, factors)
+    await this.strategies.team.revoke(this.team, vault, options, factors)
+    // core#75 — a revocation travels through the dirty log (no file is left for the epoch mirror to compare).
+    for (const [key, engine] of this.syncEngines) {
+      if (key === vault || key.startsWith(`${vault}::`)) await engine.trackChange('_keyring', options.userId, 'delete', 1)
+    }
   }
 
   /**
@@ -2136,6 +2140,9 @@ export class Noydb {
       this.keyringCache.set(vault, keyring)
       return keyring
     }
+
+    // core#75 — an empty local is not a new vault when a sync-peer carries the roster (with-sync/keyring-mirror.ts).
+    await this.strategies.sync.bootstrapKeyrings(this.options.store, normalizeSyncTargets(this.options.sync).find(t => t.role === 'sync-peer')?.store, vault)
 
     // Pre-gate: refuse to self-provision into a vault held by other
     // principals; create-on-open only for a genuinely-new vault. Runs BEFORE

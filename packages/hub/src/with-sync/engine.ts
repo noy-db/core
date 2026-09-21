@@ -17,6 +17,7 @@ import type {
 } from '../kernel/types.js'
 import { NOYDB_SYNC_VERSION } from '../kernel/types.js'
 import { isConflictError, ValidationError } from '../kernel/errors.js'
+import { KEYRING_COLLECTION, mirrorKeyrings, pullKeyrings } from './keyring-mirror.js'
 import type { MergeAuthority } from '../port/with/merge-authority.js'
 import {
   PERIOD_SUMMARY_COLLECTIONS,
@@ -419,6 +420,19 @@ export class SyncEngine {
       this.dirty.splice(i, 1)
     }
 
+    // core#75 — the target is a FULL replica only if it carries the roster.
+    // Keyring files are written outside the dirty log, so they are mirrored
+    // here by epoch (higher wins, absent receives), every push, every role:
+    // a `backup` must be restorable too. Revocations travel through the
+    // dirty loop above as `('_keyring', userId, 'delete')`.
+    if (!filter) {
+      try {
+        pushed += (await mirrorKeyrings(this.local, this.remote, this.vault)).copied
+      } catch (err) {
+        errors.push(err instanceof Error ? err : new Error(String(err)))
+      }
+    }
+
     this.recordOutcome('push', errors)
     try {
       await this.persistMeta()
@@ -442,6 +456,22 @@ export class SyncEngine {
     const conflicts: Conflict[] = []
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
+
+    // core#75 — the roster comes FIRST, before any record: a device that
+    // bootstrapped from this target on open already holds its own file, but a
+    // grant or narrowing made elsewhere since must land before the records it
+    // gates. A local file the remote lacks is a revocation — unless the remote
+    // has never carried keyrings at all, or a pending local grant protects it.
+    if (!options?.collections) {
+      try {
+        const protectedUsers = new Set(
+          this.dirty.filter(d => d.collection === KEYRING_COLLECTION && d.action === 'put').map(d => d.id),
+        )
+        await pullKeyrings(this.remote, this.local, this.vault, protectedUsers)
+      } catch (err) {
+        errors.push(err instanceof Error ? err : new Error(String(err)))
+      }
+    }
 
     // ── #807 period-scoped pull: validate the option, sync the period summaries
     // (`_periods` + companions — the navigation index, ALWAYS pulled in full,
