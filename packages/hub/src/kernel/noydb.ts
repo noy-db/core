@@ -294,6 +294,7 @@ export class Noydb {
       checkGate: (vault, gate, factors) => this.checkGate(vault, gate, factors),
       checkPolicyOperation: (vault, op) => this.checkPolicyOperation(vault, op),
       getKeyringInternal: (vault, opts) => this._getKeyringInternal(vault, opts),
+      enrolBrokerMember: (vault, member) => this.#enrolBrokerMember(vault, member),
       assertRecoveryEnrolled: (vault, policy, opts) =>
         this.assertRecoveryEnrolled(vault, policy, opts),
       openVault: (vault, opts) => this.openVault(vault, opts),
@@ -759,7 +760,13 @@ export class Noydb {
     options: GrantOptions,
     factors?: FactorProofBundle,
   ): Promise<void> {
-    return this.strategies.team.grant(this.team, vault, options, factors)
+    await this.strategies.team.grant(this.team, vault, options, factors)
+    await this.#enrolBrokerMember(vault, { userId: options.userId, secret: options.secret })
+  }
+
+  /** core#73 — register a (re-)granted or recovered sub-admin member with the broker host; a no-op without a broker. */
+  async #enrolBrokerMember(vault: string, member: { readonly userId: string; readonly secret: string }): Promise<void> {
+    await this.strategies.broker.enrolMember({ store: this.options.store, vault, keyring: await this._getKeyringInternal(vault) }, member)
   }
 
   /**
@@ -782,6 +789,8 @@ export class Noydb {
     for (const [key, engine] of this.syncEngines) {
       if (key === vault || key.startsWith(`${vault}::`)) await engine.trackChange('_keyring', options.userId, 'delete', 1)
     }
+    // core#73 — de-register the member with the broker host (no-op without a broker).
+    await this.strategies.broker.revokeMember({ store: this.options.store, vault, keyring: await this._getKeyringInternal(vault) }, options.userId)
   }
 
   /**

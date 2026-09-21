@@ -1826,7 +1826,13 @@ const KERNEL_SURFACE_BUDGET = {
   // is src/with-sync/keyring-mirror.ts + the engine's push/pull hooks. What lands here
   // is only what cannot live elsewhere — the open-path bootstrap (it runs BEFORE any
   // engine exists, inside keyring resolution) and revoke's dirty-log fan-out.
-  'packages/hub/src/kernel/noydb.ts': 2248,  // see the #1121 note above
+  // Bumped 2248→2256 (2026-09-21, core#73 member broker credentials): grant(),
+  // revoke() and the team facade's recoverUser (via one deps hook) each reach the
+  // broker strategy port (enrolMember / revokeMember). The kernel is the only
+  // place that holds the grantee's secret at the moment the member's DEK can be
+  // opened; everything else is in with-party/broker/seed.ts behind the existing
+  // dynamic-import seam.
+  'packages/hub/src/kernel/noydb.ts': 2256,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

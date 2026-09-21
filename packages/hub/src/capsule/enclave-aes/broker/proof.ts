@@ -75,8 +75,24 @@ const subtle = globalThis.crypto.subtle
 /** HKDF salt domain for the broker proof key — also the first `info` array element. */
 export const BROKER_PROOF_DOMAIN = 'noydb-broker-proof'
 
-/** MAC version tag — the first element of the `canonical` array signed/verified. */
+/** MAC version tag — the first element of the `canonical` array signed/verified (admin shared seed). */
 export const BROKER_PROOF_VERSION = 'noydb-broker-proof-v1'
+
+/**
+ * MAC version tag for a MEMBER proof (core#73): the canonical additionally
+ * binds `userId` and `role` right after `brokerId`, so the host verifies WHO
+ * proved and at WHICH role with the key it registered for that member — a
+ * member cannot claim another user's key or a wider role than the roster
+ * granted. Selected by the presence of `member` on the canonical parts; the
+ * admin canonical (v1) is byte-for-byte unchanged.
+ */
+const BROKER_PROOF_MEMBER_VERSION = 'noydb-broker-proof-v2'
+
+/** The member identity bound into a v2 canonical and into the HKDF info (core#73). */
+export interface BrokerMemberIdentity {
+  readonly userId: string
+  readonly role: string
+}
 
 /** Default challenge TTL (spec §2 step 2: "TTL ≤ 60 s"). */
 const DEFAULT_CHALLENGE_TTL_MS = 60_000
@@ -84,6 +100,8 @@ const DEFAULT_CHALLENGE_TTL_MS = 60_000
 /** The canonical-binding fields a client supplies alongside `vaultId`/`brokerId` (spec §2 step 3). */
 export interface BrokerProofCanonicalParts {
   readonly endpointOrigin: string
+  /** Present ⇒ a member proof (canonical v2, member-scoped HKDF); absent ⇒ the admin shared seed (v1). */
+  readonly member?: BrokerMemberIdentity | undefined
   readonly profile?: string | undefined
   readonly instancePid?: string | undefined
   readonly challenge: string
@@ -109,6 +127,8 @@ export interface VerifyBrokerProofArgs {
   readonly vaultId: string
   readonly endpointOrigin: string
   readonly brokerId: string
+  /** The member the `registeredProofKey` was registered FOR; the host supplies its own record, never the client's claim. */
+  readonly member?: BrokerMemberIdentity | undefined
   readonly profile?: string | undefined
   readonly instancePid?: string | undefined
   readonly challenge: string
@@ -119,6 +139,20 @@ export interface VerifyBrokerProofArgs {
 
 /** Build the canonical MAC input verbatim — never reparses/reformats a field (F8). */
 function buildCanonical(vaultId: string, brokerId: string, parts: BrokerProofCanonicalParts): string {
+  if (parts.member) {
+    return JSON.stringify([
+      BROKER_PROOF_MEMBER_VERSION,
+      vaultId,
+      parts.endpointOrigin,
+      brokerId,
+      parts.member.userId,
+      parts.member.role,
+      parts.profile ?? '',
+      parts.instancePid ?? '',
+      parts.challenge,
+      parts.expiresAt,
+    ])
+  }
   return JSON.stringify([
     BROKER_PROOF_VERSION,
     vaultId,
@@ -141,10 +175,15 @@ export async function deriveBrokerProofBits(
   seed: Uint8Array,
   vaultId: string,
   brokerId: string,
+  memberUserId?: string,
 ): Promise<Uint8Array> {
   const hkdfKey = await subtle.importKey('raw', seed as BufferSource, 'HKDF', false, ['deriveBits'])
   const salt = new TextEncoder().encode(BROKER_PROOF_DOMAIN)
-  const info = new TextEncoder().encode(JSON.stringify([BROKER_PROOF_DOMAIN, vaultId, brokerId]))
+  // core#73: a member key is domain-separated per user as well — a fourth
+  // element, so an admin info tag and a member info tag can never collide.
+  const info = new TextEncoder().encode(JSON.stringify(
+    memberUserId === undefined ? [BROKER_PROOF_DOMAIN, vaultId, brokerId] : [BROKER_PROOF_DOMAIN, vaultId, brokerId, memberUserId],
+  ))
   const bits = await subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, hkdfKey, 256)
   return new Uint8Array(bits)
 }
@@ -159,8 +198,9 @@ export async function deriveBrokerProofKey(
   seed: Uint8Array,
   vaultId: string,
   brokerId: string,
+  memberUserId?: string,
 ): Promise<EnclaveKey> {
-  const proofBits = await deriveBrokerProofBits(seed, vaultId, brokerId)
+  const proofBits = await deriveBrokerProofBits(seed, vaultId, brokerId, memberUserId)
   try {
     return await subtle.importKey('raw', proofBits as BufferSource, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   } finally {
@@ -191,7 +231,7 @@ export async function computeBrokerProof(
       )
     }
     const canonical = buildCanonical(vaultId, brokerId, canonicalParts)
-    const key = await deriveBrokerProofKey(seed, vaultId, brokerId)
+    const key = await deriveBrokerProofKey(seed, vaultId, brokerId, canonicalParts.member?.userId)
     const mac = await subtle.sign('HMAC', key, new TextEncoder().encode(canonical) as BufferSource)
     return bufferToBase64(new Uint8Array(mac))
   } finally {
@@ -236,6 +276,7 @@ export async function verifyBrokerProof(args: VerifyBrokerProofArgs): Promise<bo
 
   const canonical = buildCanonical(args.vaultId, args.brokerId, {
     endpointOrigin: args.endpointOrigin,
+    member: args.member,
     profile: args.profile,
     instancePid: args.instancePid,
     challenge: args.challenge,

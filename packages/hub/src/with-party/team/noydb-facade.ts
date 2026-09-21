@@ -104,6 +104,8 @@ export interface TeamFacadeDeps {
     vault: string,
     opts?: { create: boolean },
   ): Promise<UnlockedKeyring>
+  /** core#73 — re-enrol a recovered member with the broker host (kernel-resident; no-op without a broker). */
+  enrolBrokerMember(vault: string, member: { readonly userId: string; readonly secret: string }): Promise<void>
   /** Managed-recovery enrolment check (kernel-resident). */
   assertRecoveryEnrolled(
     vault: string,
@@ -968,6 +970,8 @@ export class TeamFacade {
     await this.deps.checkGate(vault, 'peer-recover-user', factors)
     const callerKeyring = await this.deps.getKeyringInternal(vault)
     await keyringRecoverUser(this.deps.options.store, vault, callerKeyring, options)
+    // core#73 — recovery minted a fresh `_broker_member` DEK; the old enrolment is dead.
+    await this.deps.enrolBrokerMember(vault, { userId: options.userId, secret: options.secret })
     // If the caller is recovering THEIR OWN keyring (rare but
     // possible — e.g. a self-recovery flow that bypasses the password
     // ceremony), the keyringCache entry is now stale. Drop it so the
