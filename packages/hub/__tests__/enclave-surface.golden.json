@@ -101,6 +101,7 @@
     "writeEnvelopeBody"
   ],
   "types": [
+    "BrokerMemberIdentity",
     "BrokerProofCanonicalParts",
     "DeterministicContext",
     "EchoSecretParts",

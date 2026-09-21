@@ -25,7 +25,7 @@ export { BrokerNotEnabledError, BrokerEnrolmentError, BrokerProofError } from '.
 
 // ─── Host helpers (verify side — for a reference broker host) ───
 import { issueChallenge as issueChallengeRaw, verifyBrokerProof } from '../../capsule/index.js'
-import type { IssuedChallenge, VerifyBrokerProofArgs } from '../../capsule/index.js'
+import type { IssuedChallenge, VerifyBrokerProofArgs, BrokerMemberIdentity } from '../../capsule/index.js'
 
 /**
  * Floor — a challenge TTL must survive network latency + clock drift
@@ -50,7 +50,7 @@ export function issueChallenge(opts?: { ttlMs?: number }): IssuedChallenge {
   return issueChallengeRaw({ ttlMs: clamped })
 }
 export { verifyBrokerProof }
-export type { VerifyBrokerProofArgs }
+export type { VerifyBrokerProofArgs, BrokerMemberIdentity }
 
 // #837 — issueChallenge's return type must be nameable from this entry.
 export type { IssuedChallenge } from '../../capsule/index.js'

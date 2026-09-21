@@ -35,7 +35,8 @@
  */
 import type { NoydbStore, KeyringFile, Role } from '../../kernel/types.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
-import { buildRecordEnvelope, deriveKey, generateSalt, wrapKey, bufferToBase64 } from '../../capsule/index.js'
+import { buildRecordEnvelope, deriveKey, generateSalt, wrapKey, bufferToBase64, generateDEK } from '../../capsule/index.js'
+import { BROKER_MEMBER_COLLECTION } from './reserved-secret-collections.js'
 import { NoAccessError, PermissionDeniedError, PrivilegeEscalationError } from '../../kernel/errors.js'
 import { assertStrongSecret, type SecretPolicy } from '../../kernel/validation.js'
 import type { UnlockedKeyring } from './keyring.js'
@@ -155,7 +156,12 @@ export async function recoverUser(
   //    access to must be in the caller's DEK set — the recoverer
   //    cannot give the recovered user access to a collection the
   //    recoverer themselves can't read. Mirrors `grant()`'s check.
+  //    core#73 — `_broker_member` is the one DEK a keyring holds that its
+  //    grantor never did: minted per grantee at grant time. It is not carried
+  //    over (the caller cannot unwrap it) but MINTED AFRESH below, and the
+  //    kernel re-enrols the member with the broker host under the new key.
   for (const coll of Object.keys(target.deks)) {
+    if (coll === BROKER_MEMBER_COLLECTION) continue
     if (!callerKeyring.deks.has(coll)) {
       throw new PrivilegeEscalationError(coll)
     }
@@ -173,7 +179,11 @@ export async function recoverUser(
   const newKek = await deriveKey(options.secret, newSalt)
 
   const wrappedDeks: Record<string, string> = {}
+  if (targetRole !== 'owner' && targetRole !== 'admin') {
+    wrappedDeks[BROKER_MEMBER_COLLECTION] = await wrapKey(await generateDEK(), newKek) // core#73
+  }
   for (const coll of Object.keys(target.deks)) {
+    if (coll === BROKER_MEMBER_COLLECTION) continue
     const callerDek = callerKeyring.deks.get(coll)
     if (!callerDek) {
       // Already caught by the anti-privilege-escalation loop above.

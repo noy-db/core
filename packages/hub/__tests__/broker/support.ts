@@ -60,15 +60,17 @@ export interface TestHost {
   fetch: typeof fetch
   /** Number of distinct proof keys ever registered for (vaultId, brokerId) — grace-window visibility. */
   registeredKeyCount: (vaultId: string, brokerId: string) => number
+  /** core#73 — the host's own record for a member, or undefined when not (or no longer) registered. */
+  member: (vaultId: string, brokerId: string, userId: string) => { proofKey: string; role: string } | undefined
   /** Spy-friendly counters. */
-  calls: { enroll: number; challenge: number; credentials: number }
+  calls: { enroll: number; challenge: number; credentials: number; revoke: number }
 }
 
 export interface TestHostOptions {
   /** Require a bearer attestation header on /enroll (V10). */
   requireAttestation?: boolean
-  /** Credentials payload /credentials returns on a verified proof (vaultId/brokerId in scope so a test can mint distinct creds per vault). */
-  credentials?: (vaultId: string, brokerId: string) => Record<string, unknown>
+  /** Credentials payload /credentials returns on a verified proof (vaultId/brokerId in scope so a test can mint distinct creds per vault; `member` is the host's record for a member proof, undefined for the admin shared seed). */
+  credentials?: (vaultId: string, brokerId: string, member?: { userId: string; role: string }) => Record<string, unknown>
   /** Force /credentials to always 401 (simulates a down/misconfigured host, distinct from a network failure). */
   rejectProofs?: boolean
 }
@@ -82,11 +84,20 @@ export interface TestHostOptions {
  */
 export function makeTestHost(opts: TestHostOptions = {}): TestHost {
   const registered = new Map<string, Set<string>>() // `${vaultId}:${brokerId}` -> base64 proof keys
+  // core#73 — one record per member, REPLACED on re-registration (a narrowed role must not keep its old key alive).
+  const members = new Map<string, { proofKey: string; role: string }>() // `${vaultId}:${brokerId}:${userId}`
   const challengeExpiry = new Map<string, string>() // challenge -> expiresAt (verbatim, as issued)
-  const calls = { enroll: 0, challenge: 0, credentials: 0 }
+  const calls = { enroll: 0, challenge: 0, credentials: 0, revoke: 0 }
 
   function keyFor(vaultId: string, brokerId: string): string {
     return `${vaultId}:${brokerId}`
+  }
+  function memberKey(vaultId: string, brokerId: string, userId: string): string {
+    return `${vaultId}:${brokerId}:${userId}`
+  }
+  function attested(init?: RequestInit): boolean {
+    if (!opts.requireAttestation) return true
+    return new Headers(init?.headers).get('authorization') !== null
   }
 
   async function burnChallenge(challenge: string): Promise<boolean> {
@@ -99,9 +110,12 @@ export function makeTestHost(opts: TestHostOptions = {}): TestHost {
 
     if (url.pathname === '/enroll') {
       calls.enroll++
-      if (opts.requireAttestation) {
-        const headers = new Headers(init?.headers)
-        if (!headers.get('authorization')) return new Response(null, { status: 401 })
+      if (!attested(init)) return new Response(null, { status: 401 })
+      if (typeof body.userId === 'string') {
+        members.set(memberKey(body.vaultId as string, body.brokerId as string, body.userId), {
+          proofKey: body.proofKey as string, role: body.role as string,
+        })
+        return new Response(null, { status: 200 })
       }
       const key = keyFor(body.vaultId as string, body.brokerId as string)
       let set = registered.get(key)
@@ -119,6 +133,13 @@ export function makeTestHost(opts: TestHostOptions = {}): TestHost {
       })
     }
 
+    if (url.pathname === '/revoke') {
+      calls.revoke++
+      if (!attested(init)) return new Response(null, { status: 401 })
+      members.delete(memberKey(body.vaultId as string, body.brokerId as string, body.userId as string))
+      return new Response(null, { status: 200 })
+    }
+
     if (url.pathname === '/credentials') {
       calls.credentials++
       if (opts.rejectProofs) return new Response(null, { status: 401 })
@@ -127,7 +148,15 @@ export function makeTestHost(opts: TestHostOptions = {}): TestHost {
       const expiresAt = challengeExpiry.get(challenge)
       const fresh = await burnChallenge(challenge)
       const key = keyFor(body.vaultId as string, body.brokerId as string)
-      const candidates = registered.get(key) ?? new Set<string>()
+      // core#73 — a member proof verifies against the host's OWN record for that
+      // userId (key AND role): the client's role claim never enters the canonical.
+      const memberRec = typeof body.userId === 'string'
+        ? members.get(memberKey(body.vaultId as string, body.brokerId as string, body.userId))
+        : undefined
+      const member = memberRec && typeof body.userId === 'string' ? { userId: body.userId, role: memberRec.role } : undefined
+      const candidates = typeof body.userId === 'string'
+        ? new Set(memberRec ? [memberRec.proofKey] : [])
+        : registered.get(key) ?? new Set<string>()
 
       let ok = false
       if (fresh && expiresAt !== undefined) {
@@ -138,6 +167,7 @@ export function makeTestHost(opts: TestHostOptions = {}): TestHost {
             vaultId: body.vaultId as string,
             endpointOrigin: url.origin,
             brokerId: body.brokerId as string,
+            member,
             ...(body.profile !== undefined ? { profile: body.profile as string } : {}),
             challenge,
             expiresAt,
@@ -147,7 +177,7 @@ export function makeTestHost(opts: TestHostOptions = {}): TestHost {
         }
       }
       if (!ok) return new Response(null, { status: 401 })
-      const creds = opts.credentials?.(body.vaultId as string, body.brokerId as string) ?? {
+      const creds = opts.credentials?.(body.vaultId as string, body.brokerId as string, member) ?? {
         kind: 'aws',
         accessKeyId: 'AKIDTEST',
         secretAccessKey: 'secret',
@@ -163,6 +193,7 @@ export function makeTestHost(opts: TestHostOptions = {}): TestHost {
   return {
     fetch: fetchImpl,
     registeredKeyCount: (vaultId, brokerId) => registered.get(keyFor(vaultId, brokerId))?.size ?? 0,
+    member: (vaultId, brokerId, userId) => members.get(memberKey(vaultId, brokerId, userId)),
     calls,
   }
 }

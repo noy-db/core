@@ -37,8 +37,8 @@
  */
 import type { NoydbStore, EncryptedEnvelope, StoreCredentials } from '../../kernel/types.js'
 import type { UnlockedKeyring } from '../../with-party/team/keyring.js'
-import { ensureCollectionDEK } from '../../with-party/team/keyring.js'
-import { BROKER_COLLECTION } from '../../with-party/team/reserved-secret-collections.js'
+import { ensureCollectionDEK, loadKeyring } from '../../with-party/team/keyring.js'
+import { BROKER_COLLECTION, BROKER_MEMBER_COLLECTION } from '../../with-party/team/reserved-secret-collections.js'
 import {
   buildSealedRecordEnvelope,
   openEnvelopeJson,
@@ -48,7 +48,7 @@ import {
   deriveBrokerProofBits,
   computeBrokerProof,
 } from '../../capsule/index.js'
-import type { EnclaveKey } from '../../capsule/index.js'
+import type { EnclaveKey, BrokerMemberIdentity } from '../../capsule/index.js'
 import {
   PermissionDeniedError,
   ValidationError,
@@ -56,6 +56,7 @@ import {
   NetworkError,
   BrokerEnrolmentError,
   BrokerProofError,
+  TamperedError,
 } from '../../kernel/errors.js'
 import type { BrokerSeedCtx, BrokerConfig } from '../../port/with/broker-strategy.js'
 
@@ -68,6 +69,28 @@ interface BrokerSeedRecord {
   readonly createdAt: string
   /** `true` only once `/enroll` has returned a 2xx for this seed (I9). */
   readonly registered: boolean
+}
+
+/**
+ * The `_broker_member/<userId>` record payload (core#73): one per sub-admin
+ * member, encrypted under the DEK `grant()` minted for that grantee alone.
+ * The host holds the HKDF-derived proof key for `(vault, brokerId, userId)`
+ * together with the role it was registered at; the seed itself never leaves
+ * the record.
+ */
+interface BrokerMemberRecord {
+  readonly brokerId: string
+  readonly userId: string
+  /** The role registered with the host — informational; the host's own record is what verifies. */
+  readonly role: string
+  /** base64(32 random bytes). */
+  readonly seed: string
+  readonly endpoint: string
+  readonly createdAt: string
+}
+
+function isAdminRole(keyring: UnlockedKeyring): boolean {
+  return keyring.role === 'owner' || keyring.role === 'admin'
 }
 
 function requireAdminAccess(keyring: UnlockedKeyring): void {
@@ -187,25 +210,35 @@ async function ensureSeedRecord(store: NoydbStore, vault: string, keyring: Unloc
   }
 }
 
-async function postEnroll(config: BrokerConfig, vault: string, proofBits: Uint8Array): Promise<void> {
+/** Attested POST to the host (`/enroll`, `/revoke`) — the two calls only an owner/admin makes. */
+async function postAttested(config: BrokerConfig, path: string, body: Record<string, unknown>, what: string): Promise<void> {
   const fetchFn = config.fetch ?? globalThis.fetch
   const attestation = config.attestation ? await config.attestation() : undefined
   let res: Response
   try {
-    res = await fetchFn(`${config.endpoint}/enroll`, {
+    res = await fetchFn(`${config.endpoint}${path}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         ...(attestation !== undefined ? { authorization: `Bearer ${attestation}` } : {}),
       },
-      body: JSON.stringify({ vaultId: vault, brokerId: config.brokerId, proofKey: bufferToBase64(proofBits) }),
+      body: JSON.stringify(body),
     })
   } catch (err) {
-    throw new BrokerEnrolmentError(`broker /enroll request failed: ${(err as Error).message}`)
+    throw new BrokerEnrolmentError(`broker ${path} request failed: ${(err as Error).message}`)
   }
   if (!res.ok) {
-    throw new BrokerEnrolmentError(`broker refused enrolment (status ${res.status}) — attestation likely missing or invalid`)
+    throw new BrokerEnrolmentError(`broker refused ${what} (status ${res.status}) — attestation likely missing or invalid`)
   }
+}
+
+async function postEnroll(config: BrokerConfig, vault: string, proofBits: Uint8Array, member?: BrokerMemberIdentity): Promise<void> {
+  await postAttested(config, '/enroll', {
+    vaultId: vault, brokerId: config.brokerId, proofKey: bufferToBase64(proofBits),
+    // core#73 — a member registration carries WHO and at WHICH role; the host
+    // stores both and binds them into the canonical it verifies against.
+    ...(member ? { userId: member.userId, role: member.role } : {}),
+  }, 'enrolment')
 }
 
 /**
@@ -283,6 +316,104 @@ export async function rotateSeed(ctx: BrokerSeedCtx): Promise<void> {
 }
 
 /**
+ * core#73 — enrol a freshly granted MEMBER with the host under its own key.
+ * Called by the kernel right after `grant()`, while the grantor still holds
+ * the grantee's secret: that secret opens the grantee's keyring, whose
+ * `_broker_member` DEK (minted by `grant()` for this grantee alone) is the
+ * only key that can seal the member record. Register-first, then persist,
+ * so a record on disk always means a registered member (the same order as
+ * `rotateSeed`). Owner/admin grantees use the shared seed and are skipped.
+ *
+ * A re-grant (role change) lands here again with a NEW DEK and mints a NEW
+ * seed, so the host's record for this userId is REPLACED — key and role — and
+ * a device still holding the previous enrolment is refused from then on.
+ */
+export async function enrolMemberSeed(ctx: BrokerSeedCtx, member: { readonly userId: string; readonly secret: string }): Promise<void> {
+  const { store, vault, keyring, config } = ctx
+  requireAdminAccess(keyring)
+  const grantee = await loadKeyring(store, vault, { userId: member.userId, secret: member.secret })
+  if (isAdminRole(grantee)) return
+  const dek = grantee.deks.get(BROKER_MEMBER_COLLECTION)
+  if (!dek) {
+    throw new BrokerEnrolmentError(
+      `grant() did not mint a _broker_member DEK for "${member.userId}" — the keyring predates member enrolment; re-grant the user.`,
+    )
+  }
+
+  const seedBytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
+  const identity: BrokerMemberIdentity = { userId: member.userId, role: grantee.role }
+  const proofBits = await deriveBrokerProofBits(seedBytes, vault, config.brokerId, member.userId)
+  try {
+    await postEnroll(config, vault, proofBits, identity)
+  } finally {
+    proofBits.fill(0)
+  }
+
+  const record: BrokerMemberRecord = {
+    brokerId: config.brokerId,
+    userId: member.userId,
+    role: grantee.role,
+    seed: bufferToBase64(seedBytes),
+    endpoint: config.endpoint,
+    createdAt: new Date().toISOString(),
+  }
+  seedBytes.fill(0)
+  const existing = await store.get(vault, BROKER_MEMBER_COLLECTION, member.userId)
+  const expectedVersion = existing?._v ?? 0
+  const envelope = await buildSealedRecordEnvelope(
+    { collection: BROKER_MEMBER_COLLECTION, id: member.userId, by: keyring.userId, version: expectedVersion + 1 },
+    (id) => writeEnvelopeBody(id, JSON.stringify(record), dek),
+    {},
+  )
+  await store.put(vault, BROKER_MEMBER_COLLECTION, member.userId, envelope, expectedVersion)
+}
+
+/**
+ * core#73 — de-register a member with the host and drop its record. Called
+ * by the kernel right after `revoke()`; the local record goes first (cheap,
+ * always succeeds), then the host — a host failure surfaces as
+ * {@link BrokerEnrolmentError} AFTER the keyring revocation has completed,
+ * so the caller retries the host half, never the revocation.
+ */
+export async function revokeMemberSeed(ctx: BrokerSeedCtx, userId: string): Promise<void> {
+  const { store, vault, keyring, config } = ctx
+  requireAdminAccess(keyring)
+  await store.delete(vault, BROKER_MEMBER_COLLECTION, userId)
+  await postAttested(config, '/revoke', { vaultId: vault, brokerId: config.brokerId, userId }, 'member revocation')
+}
+
+/** Read this member's own seed: the caller's `_broker_member` DEK opens only the caller's record. */
+async function readMemberSeed(store: NoydbStore, vault: string, keyring: UnlockedKeyring, config: BrokerConfig): Promise<Uint8Array> {
+  const dek = keyring.deks.get(BROKER_MEMBER_COLLECTION)
+  const envelope = dek ? await store.get(vault, BROKER_MEMBER_COLLECTION, keyring.userId) : null
+  if (!dek || !envelope) {
+    throw new BrokerEnrolmentError(
+      `User "${keyring.userId}" (${keyring.role}) is not enrolled as a broker member for "${config.brokerId}" — ` +
+        'the owner must re-grant the user with a broker configured (enrolment happens at grant time).',
+    )
+  }
+  let json: string
+  try {
+    json = await openEnvelopeJson({ collection: BROKER_MEMBER_COLLECTION, id: keyring.userId }, envelope, dek)
+  } catch (err) {
+    // A re-grant minted a NEW `_broker_member` DEK and re-sealed the record
+    // under it; a session still holding the previous keyring cannot open it.
+    // That is a superseded enrolment, not a tampered store — name it so.
+    if (err instanceof TamperedError) {
+      throw new BrokerEnrolmentError(
+        `User "${keyring.userId}"'s broker enrolment was replaced by a re-grant — reopen the vault to load the current keyring.`,
+      )
+    }
+    throw err
+  }
+  const record = JSON.parse(json) as BrokerMemberRecord
+  if (record.brokerId !== config.brokerId) {
+    throw new BrokerEnrolmentError(`User "${keyring.userId}" is enrolled with broker "${record.brokerId}", not "${config.brokerId}".`)
+  }
+  return base64ToBuffer(record.seed)
+}
+
+/**
  * The challenge/response round trip: `POST /challenge`, derive+sign the
  * proof from the decrypted seed, `POST /credentials`. One network round
  * trip per call — the single-flight/cache wrapping lives in `active.ts`.
@@ -293,26 +424,38 @@ export async function rotateSeed(ctx: BrokerSeedCtx): Promise<void> {
  */
 export async function mintStoreCredentials(ctx: BrokerSeedCtx, profile?: string): Promise<StoreCredentials> {
   const { store, vault, keyring, config } = ctx
-  requireAdminAccess(keyring)
-  const dek = await brokerDek(store, vault, keyring)
 
-  const found = await readRecord(store, vault, config.brokerId, dek)
-  if (!found) throw new BrokerEnrolmentError(`No _broker seed enrolled for brokerId "${config.brokerId}" — call enroll() first.`)
-  if (!found.record.registered) {
-    throw new BrokerEnrolmentError(
-      `The _broker seed for "${config.brokerId}" has not completed enrolment with the broker host — call enroll() again.`,
-    )
+  // core#73 — two seeds, one round trip. An owner/admin proves with the shared
+  // `_broker` seed (canonical v1, no identity); every other role proves with
+  // its OWN `_broker_member` seed (canonical v2: userId + role inside the MAC,
+  // verified by the host against the record it registered at grant time).
+  let seedBytes: Uint8Array
+  let member: BrokerMemberIdentity | undefined
+  if (isAdminRole(keyring)) {
+    const dek = await brokerDek(store, vault, keyring)
+    const found = await readRecord(store, vault, config.brokerId, dek)
+    if (!found) throw new BrokerEnrolmentError(`No _broker seed enrolled for brokerId "${config.brokerId}" — call enroll() first.`)
+    if (!found.record.registered) {
+      throw new BrokerEnrolmentError(
+        `The _broker seed for "${config.brokerId}" has not completed enrolment with the broker host — call enroll() again.`,
+      )
+    }
+    seedBytes = base64ToBuffer(found.record.seed)
+  } else {
+    seedBytes = await readMemberSeed(store, vault, keyring, config)
+    member = { userId: keyring.userId, role: keyring.role }
   }
 
   const fetchFn = config.fetch ?? globalThis.fetch
   const endpointOrigin = new URL(config.endpoint).origin
+  const who = member ? { userId: member.userId, role: member.role } : {}
 
   let challengeRes: Response
   try {
     challengeRes = await fetchFn(`${config.endpoint}/challenge`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ vaultId: vault, brokerId: config.brokerId }),
+      body: JSON.stringify({ vaultId: vault, brokerId: config.brokerId, ...who }),
     })
   } catch (err) {
     throw new NetworkError(`broker /challenge request failed: ${(err as Error).message}`)
@@ -320,15 +463,14 @@ export async function mintStoreCredentials(ctx: BrokerSeedCtx, profile?: string)
   if (!challengeRes.ok) throw new NetworkError(`broker /challenge failed with status ${challengeRes.status}`)
   const { challenge, expiresAt } = (await challengeRes.json()) as { challenge: string; expiresAt: string }
 
-  const seedBytes = base64ToBuffer(found.record.seed)
-  const proof = await computeBrokerProof(seedBytes, vault, config.brokerId, { endpointOrigin, profile, challenge, expiresAt })
+  const proof = await computeBrokerProof(seedBytes, vault, config.brokerId, { endpointOrigin, member, profile, challenge, expiresAt })
 
   let credsRes: Response
   try {
     credsRes = await fetchFn(`${config.endpoint}/credentials`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ vaultId: vault, brokerId: config.brokerId, challenge, proof, ...(profile !== undefined ? { profile } : {}) }),
+      body: JSON.stringify({ vaultId: vault, brokerId: config.brokerId, ...who, challenge, proof, ...(profile !== undefined ? { profile } : {}) }),
     })
   } catch (err) {
     throw new NetworkError(`broker /credentials request failed: ${(err as Error).message}`)

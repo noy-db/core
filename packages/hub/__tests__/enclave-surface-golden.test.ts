@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import * as enclave from '../src/capsule/enclave-aes/index.js'
 import type { DeterministicContext, EnclaveKey, EnclaveKeyPair, SecretKeyUsage, SealingContext } from '../src/capsule/enclave-aes/index.js'
-import type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from '../src/capsule/enclave-aes/index.js'
+import type { BrokerProofCanonicalParts, BrokerMemberIdentity, VerifyBrokerProofArgs, IssuedChallenge } from '../src/capsule/enclave-aes/index.js'
 
 interface Surface {
   readonly values: readonly string[]
@@ -103,6 +103,7 @@ type _FrozenTypes = [
   EnclaveKeyPair,
   SecretKeyUsage,
   SealingContext,
+  BrokerMemberIdentity,
   BrokerProofCanonicalParts,
   VerifyBrokerProofArgs,
   IssuedChallenge,

@@ -221,7 +221,7 @@ export {
   issueChallenge,
   verifyBrokerProof,
 } from './broker/proof.js'
-export type { BrokerProofCanonicalParts, VerifyBrokerProofArgs, IssuedChallenge } from './broker/proof.js'
+export type { BrokerProofCanonicalParts, BrokerMemberIdentity, VerifyBrokerProofArgs, IssuedChallenge } from './broker/proof.js'
 
 // ─── sign ─────────────────────────────────────────────────────────────
 export { generateSigningKeyPair, signBytes, verifyBytes } from '../plumbing/sign.js'

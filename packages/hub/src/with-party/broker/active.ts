@@ -60,6 +60,14 @@ export function withBroker(config: BrokerConfig): BrokerStrategy {
       const { rotateSeed } = await import('./seed.js')
       return rotateSeed({ ...ctx, config })
     },
+    async enrolMember(ctx, member) {
+      const { enrolMemberSeed } = await import('./seed.js')
+      return enrolMemberSeed({ ...ctx, config }, member)
+    },
+    async revokeMember(ctx, userId) {
+      const { revokeMemberSeed } = await import('./seed.js')
+      return revokeMemberSeed({ ...ctx, config }, userId)
+    },
     credentialSource(ctx: BrokerCtx, profile?: string): StoreCredentialSource {
       const key = `${ctx.vault}\0${profile ?? ''}`
       return async () => {

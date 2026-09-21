@@ -39,7 +39,7 @@ import {
   loadUserEnvelope as loadUserEnvelopeFn,
   deleteUserEnvelope,
 } from '../directory/user-envelope/index.js'
-import { isSecretBearingReservedCollection } from './reserved-secret-collections.js'
+import { isSecretBearingReservedCollection, BROKER_MEMBER_COLLECTION } from './reserved-secret-collections.js'
 
 // ─── Roles that can grant/revoke ───────────────────────────────────────
 
@@ -846,6 +846,17 @@ export async function grant(
     if (!callerKeyring.deks.has(collName)) {
       throw new PrivilegeEscalationError(collName)
     }
+  }
+
+  // core#73 — every sub-admin grantee receives its OWN `_broker_member` DEK:
+  // minted here and wrapped once, because a DEK can only ever be wrapped at
+  // grant time. Deliberately AFTER the escalation check — this key is not
+  // taken from the grantor's set (the grantor never holds it), it is made for
+  // the grantee. Owner/admin use the shared `_broker` seed instead. Cheap and
+  // unconditional: whether a broker is configured is the kernel's business,
+  // and a grantee enrolled later must already hold the slot.
+  if (!granteeMayHoldSecrets) {
+    wrappedDeks[BROKER_MEMBER_COLLECTION] = await wrapKey(await generateDEK(), newKek)
   }
 
   const canary = await mintKeyringCanary(newKek)

@@ -27,12 +27,21 @@
 export const SYNC_CREDENTIALS_COLLECTION = '_sync_credentials'
 
 /**
- * Reserved (pre-allocated) name for the future credential broker (#479).
- * Not yet implemented — reserved now so that neither the public collection
- * handle nor grant propagation can ever expose it before its dedicated,
- * role-gated API lands.
+ * Reserved collection holding the credential broker's SHARED seed (#479):
+ * one record per `brokerId`, owner/admin only.
  */
 export const BROKER_COLLECTION = '_broker'
+
+/**
+ * Reserved collection holding each MEMBER's own broker seed (core#73): one
+ * record per `userId`, each encrypted under a DEK minted for that grantee
+ * alone at `grant()` time. Secret-bearing like `_broker`, with one twist the
+ * propagation loops must honour: the grantor never HOLDS this DEK (it is
+ * per-grantee, minted and wrapped in one step), so there is nothing to
+ * withhold — the guard exists so the name can never be served by
+ * `vault.collection()`.
+ */
+export const BROKER_MEMBER_COLLECTION = '_broker_member'
 
 /**
  * The set of reserved collection names whose record contents are
@@ -42,6 +51,7 @@ export const BROKER_COLLECTION = '_broker'
 const SECRET_BEARING_RESERVED_COLLECTIONS: ReadonlySet<string> = new Set([
   SYNC_CREDENTIALS_COLLECTION,
   BROKER_COLLECTION,
+  BROKER_MEMBER_COLLECTION,
 ])
 
 /** True when `name` is a secret-bearing reserved collection. */

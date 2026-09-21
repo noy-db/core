@@ -72,6 +72,17 @@ export interface BrokerStrategy {
   enroll(ctx: BrokerCtx): Promise<void>
   rotate(ctx: BrokerCtx): Promise<void>
   credentialSource(ctx: BrokerCtx, profile?: string): StoreCredentialSource
+  /**
+   * core#73 — called by the kernel right after `grant()`: register the
+   * grantee with the broker host under its own per-member key. Needs the
+   * grantee's `secret` because the member's `_broker_member` DEK can only be
+   * opened with it, and only at this moment does the grantor hold it. A
+   * no-op for owner/admin grantees (they use the shared seed) and for the
+   * floor stub (no broker ⇒ nothing to register).
+   */
+  enrolMember(ctx: BrokerCtx, member: { readonly userId: string; readonly secret: string }): Promise<void>
+  /** core#73 — called by the kernel right after `revoke()`: de-register the member with the host and drop its record. */
+  revokeMember(ctx: BrokerCtx, userId: string): Promise<void>
 }
 
 /**
@@ -84,6 +95,10 @@ export const NO_BROKER: BrokerStrategy = {
   async enroll() { throw new BrokerNotEnabledError() },
   async rotate() { throw new BrokerNotEnabledError() },
   credentialSource() { throw new BrokerNotEnabledError() },
+  // grant()/revoke() must keep working without a broker — these two are the
+  // only members of this stub that do NOT throw.
+  async enrolMember() { /* no broker configured */ },
+  async revokeMember() { /* no broker configured */ },
 }
 
 /**

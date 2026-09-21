@@ -122,6 +122,7 @@ export {
 } from '#capsule'
 
 export type {
+  BrokerMemberIdentity,
   BrokerProofCanonicalParts,
   DeterministicContext,
   EchoSecretParts,
