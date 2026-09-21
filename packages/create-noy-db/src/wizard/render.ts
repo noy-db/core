@@ -50,7 +50,23 @@ export interface RenderTokens {
    * workspace version of every package the templates pin.
    */
   NOYDB_VERSION: string
+  /**
+   * The version every `@noy-db/in-*` dependency is pinned to, written as
+   * `^{{NOYDB_IN_VERSION}}`. The framework bindings left the core monorepo
+   * for `noy-db/in` on 2026-09-21 and version on their OWN line, so
+   * `ownVersion()` no longer speaks for them. Filled from
+   * `NOYDB_IN_VERSION` below.
+   */
+  NOYDB_IN_VERSION: string
 }
+
+/**
+ * The published `noy-db/in` line the templates pin. Not derivable from this
+ * workspace — the packages are not in it — so it is a constant, bumped when
+ * `noy-db/in` cuts. `__tests__/pins-resolve.test.ts`'s registry test
+ * (`NOYDB_SCAFFOLD_INSTALL=1`) is what proves the value resolves on npm.
+ */
+export const NOYDB_IN_VERSION = '0.8.0'
 
 /**
  * Walks `src` recursively and copies every file into `dest`, substituting

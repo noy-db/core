@@ -7,7 +7,8 @@
  * mutates.
  *
  * Framework-agnostic by design — core never depends on a UI
- * framework. The binding that wraps a `LiveQuery` is
+ * framework. The framework bindings live in the `noy-db/in` repo
+ * (extracted 2026-09-21). The one that wraps a `LiveQuery` is
  * `@noy-db/in-vue`'s `useLiveQuery(live)`: it subscribes once,
  * mirrors `value` into a `ShallowRef`, re-reads `error` on every
  * notification, and disposes via `onScopeDispose`.
