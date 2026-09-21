@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { runStoreConformanceTests } from '@noy-db/test-adapter-conformance'
+import { runStoreConformanceTests } from '@noy-db/ports/to'
 import { IDBFactory } from 'fake-indexeddb'
 import { toBrowserIdb } from '../src/index.js'
 

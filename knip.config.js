@@ -120,9 +120,7 @@ export default {
     'test-harnesses/simulation-filesystem': {
       ignoreDependencies: ['@noy-db/hub'],
     },
-    'packages/test-adapter-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
-    'packages/test-ceremony-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
-    'packages/test-format-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
-    'packages/test-mesh-conformance': { ignore: [PATH_ADDRESSED_FIXTURES] },
+    // The fixtures moved with the kits into ports (one level deeper: __tests__/<port>/fixtures).
+    'packages/ports': { ignore: ['**/__tests__/*/fixtures/**'] },
   },
 }

@@ -1,0 +1,76 @@
+{
+  "name": "@noy-db/ports",
+  "version": "0.8.0",
+  "description": "The conformance suites for every noy-db port, one subpath per port: bind @noy-db/hub/<port>, prove it with @noy-db/ports/<port>",
+  "license": "Apache-2.0",
+  "author": "vLannaAi <vicio@lanna.ai>",
+  "homepage": "https://github.com/noy-db/core/tree/main/packages/ports#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noy-db/core.git",
+    "directory": "packages/ports"
+  },
+  "bugs": {
+    "url": "https://github.com/noy-db/core/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./to": {
+      "types": "./dist/to/index.d.ts",
+      "default": "./dist/to/index.js"
+    },
+    "./as": {
+      "types": "./dist/as/index.d.ts",
+      "default": "./dist/as/index.js"
+    },
+    "./at": {
+      "types": "./dist/at/index.d.ts",
+      "default": "./dist/at/index.js"
+    },
+    "./on": {
+      "types": "./dist/on/index.d.ts",
+      "default": "./dist/on/index.js"
+    },
+    "./by": {
+      "types": "./dist/by/index.d.ts",
+      "default": "./dist/by/index.js"
+    },
+    "./capsule": {
+      "types": "./dist/capsule/index.d.ts",
+      "default": "./dist/capsule/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.tests.capsule.json"
+  },
+  "peerDependencies": {
+    "@noy-db/hub": "workspace:^",
+    "vitest": "^3.0.0"
+  },
+  "devDependencies": {
+    "@noy-db/hub": "workspace:*",
+    "vitest": "^3.0.0"
+  },
+  "keywords": [
+    "noy-db",
+    "conformance",
+    "ports",
+    "testing"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
