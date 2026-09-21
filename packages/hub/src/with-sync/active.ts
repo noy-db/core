@@ -36,9 +36,11 @@ import type { Vault } from '../kernel/vault.js'
 import { SyncEngine } from './engine.js'
 import { SyncTransaction } from './transaction.js'
 import { PresenceHandle } from './presence.js'
+import { bootstrapKeyrings } from './keyring-mirror.js'
 
 export function withSync(): SyncStrategy {
   return {
+    bootstrapKeyrings,
     buildSyncEngine(opts: BuildSyncEngineOptions): SyncEngine {
       return new SyncEngine(opts)
     },

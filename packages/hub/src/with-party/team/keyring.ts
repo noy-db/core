@@ -309,7 +309,8 @@ export async function deriveKekForKeyring(
 // case (`undefined`) and lets each caller keep its own decision.
 
 /** Parse a raw keyring envelope. Single sanctioned reader of `_data` for keyring files. */
-function parseKeyringEnvelope(envelope: EncryptedEnvelope): KeyringFile {
+/** Parse a keyring envelope's body. Exported for `keyring-mirror.ts` (core#75) — the one non-crypto reader. */
+export function parseKeyringEnvelope(envelope: EncryptedEnvelope): KeyringFile {
   return JSON.parse(envelope._data ?? '') as KeyringFile
 }
 
