@@ -14,10 +14,12 @@ import type {
   SyncMetadata,
   SyncTargetRole,
   ErasureEnforcement,
+  SyncProgress,
+  RealignResult,
 } from '../kernel/types.js'
 import { NOYDB_SYNC_VERSION } from '../kernel/types.js'
 import { isConflictError, ValidationError } from '../kernel/errors.js'
-import { KEYRING_COLLECTION, mirrorKeyrings, pullKeyrings } from './keyring-mirror.js'
+import { pushReserved, pullReserved } from './reserved-mirror.js'
 import type { MergeAuthority } from '../port/with/merge-authority.js'
 import {
   PERIOD_SUMMARY_COLLECTIONS,
@@ -139,11 +141,42 @@ export class SyncEngine {
     this.periodPullSource = source
   }
 
+  /** core#82 — when a pull replaces the caller's OWN keyring file, the vault reloads it in place. */
+  private rosterReload?: { userId: string; reload: () => Promise<void> }
+
+  /** Wire the roster-reload seam (core#82). Same injection pattern as `setCacheInvalidator`. */
+  setRosterReload(seam: { userId: string; reload: () => Promise<void> }): void {
+    this.rosterReload = seam
+  }
+
+  /** core#81 — the running sync's latest progress sample; `null` when idle. Read by `status()`. */
+  private inFlight: SyncProgress | null = null
+  private progressLastEmit = 0
+  private progressLastRecords = 0
+
+  /** Emit `sync:progress` no more than every 25 records or ~250 ms; `force` for the final sample. */
+  private progress(sample: SyncProgress, force = false): void {
+    this.inFlight = sample
+    const now = Date.now()
+    if (!force && sample.records - this.progressLastRecords < 25 && now - this.progressLastEmit < 250) return
+    this.progressLastEmit = now
+    this.progressLastRecords = sample.records
+    this.emitter.emit('sync:progress', sample)
+  }
+
+  private progressDone(): void {
+    this.inFlight = null
+    this.progressLastEmit = 0
+    this.progressLastRecords = 0
+  }
+
   /** #807: KPI accumulator `applyRemote` feeds during a period-scoped `pull()` — pointed at the
    *  active phase's counters (summaries → records) and cleared before pull returns. Approximate
    *  by design: a push interleaved mid-pull on the same engine would attribute its converge
    *  applies to the open phase; the counters are a download-budget KPI, not an audit source. */
   private pullByteSink: { records: number; bytes: number } | null = null
+  /** core#81 — ciphertext bytes applied by the running pull, for `sync:progress`. */
+  private pullBytes = 0
 
   constructor(opts: {
     local: NoydbStore
@@ -306,6 +339,8 @@ export class SyncEngine {
     const expanded = options?.collections ? (this.pairExpander?.(options.collections) ?? options.collections) : null
     const filter = expanded ? new Set([...expanded, ...(this.reservedDictExpander?.(expanded) ?? [])]) : null
 
+    const pushTotal = filter ? this.dirty.filter(d => filter.has(d.collection)).length : this.dirty.length
+    let pushBytes = 0
     for (let i = 0; i < this.dirty.length; i++) {
       const entry = this.dirty[i]!
 
@@ -313,6 +348,7 @@ export class SyncEngine {
       if (filter && !filter.has(entry.collection)) {
         continue
       }
+      this.progress({ direction: 'push', phase: 'records', records: pushed, bytes: pushBytes, total: { records: pushTotal } })
 
       try {
         if (entry.action === 'delete') {
@@ -346,6 +382,7 @@ export class SyncEngine {
             )
             completed.push(i)
             pushed++
+            pushBytes += envelopeBodySize(envelope) // core#81
           } catch (err) {
             if (isConflictError(err)) {
               const remoteEnvelope = await this.remote.get(this.vault, entry.collection, entry.id)
@@ -420,19 +457,23 @@ export class SyncEngine {
       this.dirty.splice(i, 1)
     }
 
-    // core#75 — the target is a FULL replica only if it carries the roster.
-    // Keyring files are written outside the dirty log, so they are mirrored
-    // here by epoch (higher wins, absent receives), every push, every role:
-    // a `backup` must be restorable too. Revocations travel through the
-    // dirty loop above as `('_keyring', userId, 'delete')`.
+    // core#75 / core#83 — the target is a FULL replica only if it carries the
+    // roster and the other declared reserved records (see reserved-mirror.ts).
+    // They are written outside the dirty log, so they are mirrored here by
+    // their own ordering (higher wins, absent receives), every push, every
+    // role: a `backup` must be restorable too. Revocations travel through the
+    // dirty loop above as `(collection, id, 'delete')`.
     // Not counted in `pushed`: that is a RECORD count, and consumers assert on it.
     if (!filter) {
+      this.progress({ direction: 'push', phase: 'reserved', records: pushed, bytes: pushBytes, total: { records: pushTotal } })
       try {
-        await mirrorKeyrings(this.local, this.remote, this.vault)
+        await pushReserved(this.local, this.remote, this.vault)
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
     }
+    this.progress({ direction: 'push', phase: 'records', records: pushed, bytes: pushBytes, total: { records: pushTotal } }, true)
+    this.progressDone()
 
     this.recordOutcome('push', errors)
     try {
@@ -458,17 +499,26 @@ export class SyncEngine {
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
 
-    // core#75 — the roster comes FIRST, before any record: a device that
-    // bootstrapped from this target on open already holds its own file, but a
-    // grant or narrowing made elsewhere since must land before the records it
-    // gates. A local file the remote lacks is a revocation — unless the remote
-    // has never carried keyrings at all, or a pending local grant protects it.
+    // core#75 / core#83 — the reserved set comes FIRST, before any record: a
+    // device that bootstrapped from this target on open already holds its own
+    // keyring file, but a grant or narrowing made elsewhere since must land
+    // before the records it gates, and an invite audit doc before the accept
+    // that needs it. A local record the remote lacks is a revocation — unless
+    // the remote has never carried that collection, or a pending local write
+    // protects it. If the caller's OWN keyring file was replaced, the vault
+    // reloads it in place (core#82) — no reopen.
     if (!options?.collections) {
+      this.progress({ direction: 'pull', phase: 'reserved', records: 0, bytes: 0 })
       try {
-        const protectedUsers = new Set(
-          this.dirty.filter(d => d.collection === KEYRING_COLLECTION && d.action === 'put').map(d => d.id),
-        )
-        await pullKeyrings(this.remote, this.local, this.vault, protectedUsers)
+        const protectedIds = new Map<string, Set<string>>()
+        for (const d of this.dirty) {
+          if (d.action !== 'put') continue
+          let set = protectedIds.get(d.collection)
+          if (!set) { set = new Set(); protectedIds.set(d.collection, set) }
+          set.add(d.id)
+        }
+        const { keyringsCopied } = await pullReserved(this.remote, this.local, this.vault, protectedIds)
+        if (this.rosterReload && keyringsCopied.includes(this.rosterReload.userId)) await this.rosterReload.reload()
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
@@ -535,6 +585,16 @@ export class SyncEngine {
 
     try {
       const remoteSnapshot = await this.remote.loadAll(this.vault)
+      // core#81 — the total is known once the snapshot is down; progress from
+      // here measures the APPLY phase (the long one on an indexed store).
+      let pullTotal = 0
+      for (const [collName, records] of Object.entries(remoteSnapshot)) {
+        if (filter && !filter.has(collName)) continue
+        pullTotal += Object.keys(records).length
+      }
+      const pullSample = (): SyncProgress => ({
+        direction: 'pull', phase: 'records', records: pulled, bytes: this.pullBytes, total: { records: pullTotal },
+      })
 
       for (const [collName, records] of Object.entries(remoteSnapshot)) {
         // Partial sync: skip collections not in the filter
@@ -543,6 +603,7 @@ export class SyncEngine {
         }
 
         for (const [id, remoteEnvelope] of Object.entries(records)) {
+          this.progress(pullSample())
           // Partial sync: modifiedSince filter — arriving tombstones are exempt (#590):
           // an erasure must never be skipped by partial sync.
           if (
@@ -725,6 +786,9 @@ export class SyncEngine {
       errors.push(err instanceof Error ? err : new Error(String(err)))
     }
 
+    this.progress({ direction: 'pull', phase: 'records', records: pulled, bytes: this.pullBytes, total: { records: pulled } }, true)
+    this.progressDone()
+    this.pullBytes = 0
     this.recordOutcome('pull', errors)
     try {
       await this.persistMeta()
@@ -897,6 +961,47 @@ export class SyncEngine {
   }
 
   /** Get current sync status. */
+  /**
+   * core#82 — re-align a CORRUPTED local from the target. An ordinary pull
+   * cannot repair a damaged local envelope: it keeps its `_v`, so it wins
+   * (or ties) against the target's healthy copy. Here every local
+   * user-collection envelope is verified with the same `MergeAuthority`
+   * check pull runs on remote envelopes; one that fails is replaced by the
+   * target's copy when THAT verifies, and the dirty log is dropped (a dirty
+   * entry over a damaged record would push the damage). Records at a tier
+   * the caller holds no key for pass unverified, as in pull — this repairs
+   * what the caller can read. Requires a `MergeAuthority` (a vault-attached
+   * engine on an encrypted vault).
+   */
+  async realign(): Promise<RealignResult> {
+    await this.ensureLoaded()
+    if (!this.mergeAuthority) throw new ValidationError('realign: requires a vault-attached engine on an encrypted vault (no MergeAuthority).')
+    const errors: Error[] = []
+    let checked = 0
+    let replaced = 0
+    let unrecoverable = 0
+    const local = await this.local.loadAll(this.vault)
+    for (const [collection, records] of Object.entries(local)) {
+      for (const [id, envelope] of Object.entries(records)) {
+        checked++
+        if (isTombstoneShape(envelope) || isDeleteMarker(envelope)) continue
+        if (await this.mergeAuthority.verify(collection, id, envelope)) continue
+        const remote = await this.remote.get(this.vault, collection, id)
+        if (remote && (await this.mergeAuthority.verify(collection, id, remote))) {
+          await this.local.put(this.vault, collection, id, remote)
+          await this.cacheInvalidator?.(collection, id, 'put')
+          replaced++
+        } else {
+          unrecoverable++
+          errors.push(new ValidationError(`realign: "${collection}/${id}" fails to authenticate locally and the target holds no healthy copy.`))
+        }
+      }
+    }
+    this.dirty = []
+    await this.persistMeta()
+    return { checked, replaced, unrecoverable, errors }
+  }
+
   status(): SyncStatus {
     // #809 — readiness rides the status surface that already exists rather than
     // a second accessor, so an app asks one question to learn everything about
@@ -906,6 +1011,7 @@ export class SyncEngine {
       dirty: this.dirty.length,
       lastPush: this.lastPush,
       lastPull: this.lastPull,
+      ...(this.inFlight ? { inFlight: this.inFlight } : {}),
       online: this.isOnline,
       ...(this.lastError ? { lastError: this.lastError } : {}),
       ...(scheduled && scheduled.readiness.size > 0
@@ -1020,6 +1126,7 @@ export class SyncEngine {
       )
     }
     await this.local.put(this.vault, collection, id, envelope)
+    this.pullBytes += envelopeBodySize(envelope) // core#81
     if (this.pullByteSink !== null) {
       // #807: KPI — one applied envelope; bytes ≈ ciphertext payload size.
       this.pullByteSink.records++

@@ -1635,7 +1635,11 @@ const KERNEL_SURFACE_BUDGET = {
   // finer reporting of existing facts, but the PATTERN is the thing this table
   // is meant to make visible. If a fourth arrives, the right response is to ask
   // whether `forget()` should move out of the kernel, not to raise again.
-  'packages/hub/src/kernel/vault.ts': 3760,
+  // Bumped 3760→3768 (2026-09-21, core#82 in-session keyring reload): one public
+  // seam, `_reloadKeyringAfterSync`, over the reload logic the pod-restore path
+  // already had privately. Sync pulled a newer copy of THIS user's keyring file;
+  // the vault must adopt it in place or every widened grant needs a reopen.
+  'packages/hub/src/kernel/vault.ts': 3768,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
@@ -1823,7 +1827,7 @@ const KERNEL_SURFACE_BUDGET = {
   // only question available was "is anything registered anywhere", which is
   // never what a caller means.
   // Bumped 2240→2248 (2026-09-21, core#75 keyring replication): the mirror itself
-  // is src/with-sync/keyring-mirror.ts + the engine's push/pull hooks. What lands here
+  // is src/with-sync/reserved-mirror.ts + the engine's push/pull hooks. What lands here
   // is only what cannot live elsewhere — the open-path bootstrap (it runs BEFORE any
   // engine exists, inside keyring resolution) and revoke's dirty-log fan-out.
   // Bumped 2248→2256 (2026-09-21, core#73 member broker credentials): grant(),
@@ -1832,7 +1836,11 @@ const KERNEL_SURFACE_BUDGET = {
   // place that holds the grantee's secret at the moment the member's DEK can be
   // opened; everything else is in with-party/broker/seed.ts behind the existing
   // dynamic-import seam.
-  'packages/hub/src/kernel/noydb.ts': 2256,  // see the #1121 note above
+  // Bumped 2256→2264 (2026-09-21, Hot replica milestone: core#81/#82/#83): the
+  // roster-reload wiring (one line beside the other engine seams), `realign()`
+  // as a sibling of push/pull, and `inFlight` on syncTargetStatus(). The
+  // mechanisms are in with-sync/{engine,reserved-mirror}.ts.
+  'packages/hub/src/kernel/noydb.ts': 2264,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

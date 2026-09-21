@@ -105,6 +105,8 @@ export type {
   PullOptions,
   PushResult,
   PullResult,
+  SyncProgress,
+  RealignResult,
   SyncTransactionResult,
   SyncStatus,
   SyncTargetStatus,

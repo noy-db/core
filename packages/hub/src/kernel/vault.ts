@@ -2923,8 +2923,8 @@ export class Vault {
   async revokeDelegation(id: string): Promise<void> {
     const { revokeDelegation, DELEGATIONS_COLLECTION } = await import('../with-party/team/delegation.js')
     await revokeDelegation(this.adapter, this.name, id)
-    // Trigger store to note the delete.
-    void DELEGATIONS_COLLECTION
+    // core#83 — a revocation is a raw delete; it reaches the sync target through the dirty log.
+    await this.onDirty?.(DELEGATIONS_COLLECTION, id, 'delete', 1)
   }
 
   // ─── Scoped tier elevation ───────────────────────────
@@ -3389,6 +3389,12 @@ export class Vault {
    * collection-cache clear, ledger-store reset) that `load()` performs on this
    * Vault's private state.
    */
+  /** core#82 — sync pulled a newer copy of THIS user's keyring file: reload it in place, rebuild the DEK resolver, drop cached collections. */
+  async _reloadKeyringAfterSync(): Promise<void> {
+    await this.backupContext().reloadKeyringAndRebuildDEK()
+    this.collectionCache.clear()
+  }
+
   private backupContext() {
     return {
       adapter: this.adapter,

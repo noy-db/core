@@ -1598,6 +1598,34 @@ export interface PushResult {
   readonly erasures?: ErasureEnforcement[]
 }
 
+/**
+ * core#81 — a progress sample during a pull or push. Emitted as
+ * `sync:progress`, throttled (every 25 records or ~250 ms, whichever first),
+ * and mirrored on `SyncTargetStatus.inFlight` for a UI that polls. `total`
+ * is present once the engine knows it: for a pull, after the remote snapshot
+ * has been downloaded (progress then measures the APPLY phase, which is the
+ * long one on an indexed store); for a push, from the first sample (the
+ * dirty log is local). `bytes` approximates ciphertext payload size.
+ */
+export interface SyncProgress {
+  readonly direction: 'pull' | 'push'
+  readonly phase: 'reserved' | 'summaries' | 'records'
+  readonly records: number
+  readonly bytes: number
+  readonly total?: { readonly records: number; readonly bytes?: number }
+}
+
+/** core#82 — result of `db.realign(vault)`. */
+export interface RealignResult {
+  /** Local user-collection envelopes examined. */
+  readonly checked: number
+  /** Envelopes that failed to authenticate locally and were replaced from the target. */
+  readonly replaced: number
+  /** Envelopes that failed locally AND the target's copy failed or was absent — left as they were, listed in `errors`. */
+  readonly unrecoverable: number
+  readonly errors: Error[]
+}
+
 export interface PullResult {
   readonly pulled: number
   readonly conflicts: Conflict[]
@@ -1637,6 +1665,8 @@ export interface SyncStatus {
   readonly lastPush: string | null
   /** As {@link SyncStatus.lastPush}, for pulls: last pull that had no errors. */
   readonly lastPull: string | null
+  /** core#81 — the running sync's latest progress sample, or absent when idle. */
+  readonly inFlight?: SyncProgress
   /**
    * Whether the **browser** reports network connectivity — driven solely by the
    * global `online`/`offline` events (#1034). It is NOT target reachability: an
@@ -1738,6 +1768,8 @@ export interface SyncTargetStatus {
    * not pulled.
    */
   readonly caughtUp: boolean
+  /** core#81 — the running sync's latest progress sample, or absent when nothing is in flight. */
+  readonly inFlight?: SyncProgress
 }
 
 export interface SyncTargetInfo {
@@ -1777,6 +1809,8 @@ export interface NoydbEventMap {
   'schema:fence-changed': { vault: string; currentSchemaVersion: number; fenceState: 'normal' | 'draining' | 'migrating' | 'complete' }
   'sync:push': PushResult
   'sync:pull': PullResult
+  /** core#81 — emitted while a pull/push runs (throttled); `sync:push`/`sync:pull` stay the terminal events. */
+  'sync:progress': SyncProgress
   'sync:erasure': ErasureEnforcement
   'sync:conflict': Conflict
   'write:conflict': WriteConflict
