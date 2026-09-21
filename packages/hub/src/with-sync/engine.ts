@@ -425,9 +425,10 @@ export class SyncEngine {
     // here by epoch (higher wins, absent receives), every push, every role:
     // a `backup` must be restorable too. Revocations travel through the
     // dirty loop above as `('_keyring', userId, 'delete')`.
+    // Not counted in `pushed`: that is a RECORD count, and consumers assert on it.
     if (!filter) {
       try {
-        pushed += (await mirrorKeyrings(this.local, this.remote, this.vault)).copied
+        await mirrorKeyrings(this.local, this.remote, this.vault)
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
