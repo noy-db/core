@@ -110,6 +110,8 @@ export type {
   SyncApplied,
   SyncRejection,
   SyncRejectedApi,
+  ReplaceRemoteResult,
+  SyncEpochRecord,
   SyncTransactionResult,
   SyncStatus,
   SyncTargetStatus,
