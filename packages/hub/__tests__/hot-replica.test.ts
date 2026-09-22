@@ -198,3 +198,56 @@ describe('core#82(1) — realign a corrupted local from the survivor', () => {
     expect(dbA2.syncTargetStatus('firm')[0]!.dirty).toBe(0)
   })
 })
+
+describe('core#81 — paged pull: bounded memory, a total before the first apply', () => {
+  async function seeded(n: number) {
+    const remote = memoryStore()
+    const dbA = await open(memoryStore(), remote, 'owner', S)
+    const vA = await dbA.openVault('firm')
+    for (let i = 0; i < n; i++) await vA.collection<Inv>('invoices').put(`inv-${i}`, { n: i })
+    for (let i = 0; i < 30; i++) await vA.collection<Inv>('notes').put(`n-${i}`, { n: i })
+    await dbA.push('firm')
+    return { remote, dbA }
+  }
+
+  it('pull({ paged: true }) over a listPage store converges like a full pull and knows the total from the first records sample', async () => {
+    const { remote } = await seeded(250)
+    const dbB = await open(memoryStore(), remote, 'owner', S)
+    const vB = await dbB.openVault('firm')
+    const events: SyncProgress[] = []
+    dbB.on('sync:progress', (p) => { events.push(p) })
+    const r = await dbB.pull('firm', { paged: true })
+    expect(r.pulled).toBe(280)
+    expect(await vB.collection<Inv>('invoices').get('inv-249')).toEqual({ n: 249 })
+    const first = events.find(e => e.phase === 'records')!
+    expect(first.total?.records).toBe(280)
+    expect(events.at(-1)!.records).toBe(280)
+  })
+
+  it('pull({ paged: true }) over a store WITHOUT listPage still converges (list + get fallback)', async () => {
+    const { remote } = await seeded(120)
+    const { listPage: _drop, ...noPage } = remote as NoydbStore & { listPage?: unknown }
+    const dbB = await open(memoryStore(), noPage as NoydbStore, 'owner', S)
+    const vB = await dbB.openVault('firm')
+    const r = await dbB.pull('firm', { paged: true })
+    expect(r.pulled).toBe(150)
+    expect(await vB.collection<Inv>('notes').get('n-29')).toEqual({ n: 29 })
+  })
+
+  it('scope, stated: paged mode walks the collections this keyring names — a member with no key for a collection does not pull it', async () => {
+    const remote = memoryStore()
+    const dbO = await open(memoryStore(), remote, 'owner', S)
+    const vO = await dbO.openVault('firm')
+    await vO.collection<Inv>('invoices').put('inv-1', { n: 1 })
+    await vO.collection<Inv>('notes').put('n-1', { n: 1 })
+    await dbO.grant('firm', { userId: 'u1', displayName: 'U', role: 'operator', secret: U, permissions: { notes: 'rw' } })
+    await dbO.push('firm')
+
+    const localU = memoryStore()
+    const dbU = await open(localU, remote, 'u1', U)
+    await dbU.openVault('firm')
+    await dbU.pull('firm', { paged: true })
+    expect(await localU.list('firm', 'notes')).toEqual(['n-1'])
+    expect(await localU.list('firm', 'invoices')).toEqual([]) // a full pull would carry the ciphertext; paged mode cannot enumerate it
+  })
+})

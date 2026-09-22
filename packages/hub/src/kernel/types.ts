@@ -1567,6 +1567,20 @@ export interface PullOptions {
   /** Only pull these collections. Omit to pull all. */
   collections?: string[]
   /**
+   * core#81 — walk the remote page by page instead of `loadAll()`: memory is
+   * bounded by one page, and the total is known BEFORE the first record is
+   * applied (one `list()` per collection), so `sync:progress` is real from
+   * the start. Uses the store's `listPage` when it offers one, else
+   * `list` + `get` in batches.
+   *
+   * ⚠️ Scope, stated: the store contract cannot enumerate collections, so a
+   * paged pull walks the collections THIS keyring names (its DEK map) plus
+   * any `collections` filter — the ones the caller can open. A full pull
+   * also carries ciphertext for collections the caller holds no key for;
+   * paged mode cannot. Default `false`.
+   */
+  paged?: boolean
+  /**
    * Only pull records with `_ts` strictly after this ISO timestamp.
    * Stores that implement `listSince` use it directly; others fall back
    * to a full scan with client-side filtering.
