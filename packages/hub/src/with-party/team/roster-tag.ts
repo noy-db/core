@@ -57,7 +57,9 @@ export type RosterAuthorityFields = Pick<KeyringFile,
   // #1097 — the monotonic roster epoch, bound CONDITIONALLY (see below).
   | 'roster_epoch'
   // core#58 — the advisory clearance, bound CONDITIONALLY for the same reason.
-  | 'clearance'>
+  | 'clearance'
+  // core#96 — the inbox public key and the pending inbox slot names, bound CONDITIONALLY.
+  | 'inbox_key' | 'inbox'>
 
 /** Stable stringify — sorts object keys recursively so key order never splits the tag. */
 function stable(value: unknown): string {
@@ -134,6 +136,18 @@ export function rosterCanonical(file: RosterAuthorityFields): string {
     // reader who trusted the cheap number. It is defence in depth for a field
     // whose whole risk is being read instead of the DEK map.
     ...(file.clearance !== undefined ? { clearance: file.clearance } : {}),
+    // core#96 — the inbox PUBLIC KEY and the PENDING SLOT NAMES, bound ONLY
+    // WHEN PRESENT (same conditional spread, same reason as the two above).
+    //
+    // `inbox_pub`: an amend seals DEKs to this key, so a store that could swap
+    // it for its own would read every DEK delivered afterwards. Bound, a swap
+    // fails the tag before anything is sealed to it.
+    // `inbox_slots`: `revoke` rotates what the target's file NAMES; a pending
+    // delivery is a DEK the target may hold, so its names must be as
+    // unstrippable as `dek_slots`. Contents are self-authenticating (AES-GCM
+    // under a CEK only the private half unwraps) and stay out.
+    ...(file.inbox_key !== undefined ? { inbox_pub: file.inbox_key.pub } : {}),
+    ...(file.inbox !== undefined ? { inbox_slots: [...file.inbox.slots].sort() } : {}),
   })
 }
 

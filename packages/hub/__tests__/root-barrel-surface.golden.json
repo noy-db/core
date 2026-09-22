@@ -110,6 +110,7 @@
     "MaterializedViewCycleError",
     "MaterializedViewSourceUnknownError",
     "MaterializedViewTooLargeError",
+    "MemberInboxMissingError",
     "MemoryDeviceSeal",
     "MemoryRecipientSealer",
     "MemorySealer",

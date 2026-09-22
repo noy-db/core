@@ -1847,7 +1847,12 @@ const KERNEL_SURFACE_BUDGET = {
   // kernel/sync-wiring.ts so open and attach cannot drift), the per-vault conflict
   // resolver registry the attach replays, and revoke() deleting `_users` and
   // dirty-tracking three reserved collections.
-  'packages/hub/src/kernel/noydb.ts': 2292,  // see the #1121 note above
+  // Bumped 2292→2320 (2026-09-22, core#96): `updateUser` re-registers or de-registers a member
+  // with the broker host after a role change — the follow-through the kernel already owns for
+  // `grant`/`revoke` (#73), seven lines, the same shape — plus the doc blocks on `grant` (it
+  // RE-KEYS an existing user) and `updateUser` (the keys now follow the header), which is the
+  // one place a consumer reads before choosing between them.
+  'packages/hub/src/kernel/noydb.ts': 2320,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

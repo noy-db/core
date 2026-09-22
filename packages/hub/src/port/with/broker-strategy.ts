@@ -16,6 +16,7 @@
  */
 import type { NoydbStore, StoreCredentialSource } from '../../kernel/types.js'
 import type { UnlockedKeyring } from '../../with-party/team/keyring.js'
+import type { EnclaveKey } from '../../capsule/index.js'
 import { BrokerNotEnabledError } from '../../kernel/errors.js'
 
 /** Construction-time options for `withBroker(config)` (spec §5 client surface). */
@@ -80,7 +81,13 @@ export interface BrokerStrategy {
    * no-op for owner/admin grantees (they use the shared seed) and for the
    * floor stub (no broker ⇒ nothing to register).
    */
-  enrolMember(ctx: BrokerCtx, member: { readonly userId: string; readonly secret: string }): Promise<void>
+  /**
+   * core#73 — register a sub-admin member with the host. With `secret` (a
+   * grant) the member's `_broker_member` DEK is read from their keyring; with
+   * `dek` (core#96, a role change through `updateUser`) it is the fresh key
+   * just delivered through the member's inbox.
+   */
+  enrolMember(ctx: BrokerCtx, member: { readonly userId: string; readonly secret: string } | { readonly userId: string; readonly dek: EnclaveKey }): Promise<void>
   /** core#73 — called by the kernel right after `revoke()`: de-register the member with the host and drop its record. */
   revokeMember(ctx: BrokerCtx, userId: string): Promise<void>
 }

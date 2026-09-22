@@ -917,6 +917,26 @@ export class DuplicateStoreKindError extends NoydbError {
   }
 }
 
+/**
+ * core#96 — `updateUser` needs to deliver a DEK to a member whose keyring has
+ * no inbox key pair (written before inboxes existed), or the caller is not
+ * cleared to amend. The member can still be re-granted with a fresh secret.
+ */
+export class MemberInboxMissingError extends NoydbError {
+  readonly userId: string
+
+  constructor(userId: string, message?: string) {
+    super(
+      'MEMBER_INBOX_MISSING',
+      message ??
+        `Member "${userId}" has no keyring inbox — the keyring predates core#96, so a DEK cannot be delivered without their secret. ` +
+        'Re-grant the member with a fresh temporary secret (they rotate it on first open); the new keyring carries an inbox.',
+    )
+    this.name = 'MemberInboxMissingError'
+    this.userId = userId
+  }
+}
+
 export class PrivilegeEscalationError extends NoydbError {
   readonly offendingCollection: string
 

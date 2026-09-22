@@ -86,9 +86,12 @@ describe('updateKeyringIdentity (team layer, #54)', () => {
     expect(bobAfter.role).toBe('operator')
     expect(bobAfter.permissions).toEqual({ invoices: 'rw' })
 
-    // Pure header rewrite — DEK set identical (same collection names, same count).
+    // core#96 — the keys follow the header now: viewer held every collection,
+    // an operator on `invoices` holds `invoices` and not `clients` (dropped and
+    // rotated, as a narrowing grant does). KEK / salt unchanged: same secret.
     const dekKeysAfter = [...bobAfter.deks.keys()].sort()
-    expect(dekKeysAfter).toEqual(dekKeysBefore)
+    expect(dekKeysBefore).toContain('clients')
+    expect(dekKeysAfter).toEqual(dekKeysBefore.filter((k) => k !== 'clients'))
   }, 60_000)
 
   it('partial diff — only specified field changes', async () => {
