@@ -1,5 +1,9 @@
 # @noy-db/exclave-plain
 
+## 0.9.0-pre.0
+
+Lockstep bump to 0.9.0-pre.0; no package-level change in this release. See `@noy-db/hub` 0.9.0-pre.0 for the line's notes.
+
 ## 0.8.0
 
 Initial release. The **plaintext capsule** for noy-db — typed collections, schema and `via` fields, the query DSL and most services, with **no encryption at all**. Rows are stored as readable data with MAC-bound integrity, for the one shape of application whose table is read *and written* by other tools and whose access control already lives outside the database (IAM, a VPC, a database grant).

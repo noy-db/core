@@ -1,5 +1,9 @@
 # @noy-db/test-mesh-conformance
 
+## 0.9.0-pre.0
+
+**Now a re-export of `@noy-db/ports/by`, and deprecated in favour of it.** The six conformance kits were consolidated into one package, `@noy-db/ports`, one subpath per hub port. **This is not a break:** every function this package exported is still exported from here, unchanged in name and signature, and the peers are the same (`@noy-db/hub`, `vitest`). New code should import `@noy-db/ports/by`; this name stays published so an existing pin keeps working, and it will be deprecated on npm once the family's satellites have moved.
+
 ## 0.8.0
 
 Lockstep bump to 0.8.0; no package-level change in this release. See `@noy-db/hub` 0.8.0 for the line's notes.

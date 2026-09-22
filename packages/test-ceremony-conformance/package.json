@@ -1,7 +1,7 @@
 {
   "name": "@noy-db/test-ceremony-conformance",
-  "version": "0.8.0",
-  "description": "Parameterized contract tests for noy-db on-* slot ceremonies \u2014 the conformance suite every SlotRewrapCeremony must pass \u2014 now a re-export of @noy-db/ports/on; deprecated in favour of it",
+  "version": "0.9.0-pre.0",
+  "description": "Parameterized contract tests for noy-db on-* slot ceremonies — the conformance suite every SlotRewrapCeremony must pass — now a re-export of @noy-db/ports/on; deprecated in favour of it",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/test-ceremony-conformance#readme",
