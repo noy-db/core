@@ -189,13 +189,28 @@ describe('core#82(1) — realign a corrupted local from the survivor', () => {
     const dbA2 = await open(localA, remote, 'owner', S) // a fresh session over the damaged store: no warm cache
     const vA2 = await dbA2.openVault('firm')
     await expect(vA2.collection<Inv>('invoices').get('inv-1')).rejects.toThrow()
-    await dbA2.pull('firm') // ordinary pull does not help: equal _v
-    await expect(vA2.collection<Inv>('invoices').get('inv-1')).rejects.toThrow()
 
     const r = await dbA2.realign('firm')
     expect(r).toMatchObject({ checked: 2, replaced: 1, unrecoverable: 0 })
     expect(await vA2.collection<Inv>('invoices').get('inv-1')).toEqual({ n: 1 })
     expect(dbA2.syncTargetStatus('firm')[0]!.dirty).toBe(0)
+  })
+
+  it('core#100 — an ordinary pull repairs it too now: same _v, different bytes, no pending write → the target copy is adopted', async () => {
+    const remote = memoryStore()
+    const localA = memoryStore()
+    const dbA = await open(localA, remote, 'owner', S)
+    const vA = await dbA.openVault('firm')
+    await vA.collection<Inv>('invoices').put('inv-1', { n: 1 })
+    await dbA.push('firm')
+    await dbA.close()
+    const good = (await localA.get('firm', 'invoices', 'inv-1'))!
+    await localA.put('firm', 'invoices', 'inv-1', { ...good, _data: good._data!.slice(0, -4) + 'AAAA' })
+    const dbA2 = await open(localA, remote, 'owner', S)
+    const vA2 = await dbA2.openVault('firm')
+    await expect(vA2.collection<Inv>('invoices').get('inv-1')).rejects.toThrow()
+    expect((await dbA2.pull('firm')).pulled).toBe(1)
+    expect(await vA2.collection<Inv>('invoices').get('inv-1')).toEqual({ n: 1 })
   })
 })
 

@@ -1857,7 +1857,10 @@ const KERNEL_SURFACE_BUDGET = {
   // copy never pushes as the epoch rule's loser — and `reloadKeyring` opening with the KEK the
   // session HOLDS (secret fallback for a restore / same-secret re-key). Kernel by nature: the
   // refresh sits between the gate and the engine on four verbs; the reload is the kernel's own.
-  'packages/hub/src/kernel/noydb.ts': 2362,  // see the #1121 note above
+  // Bumped 2362→2380 (2026-09-22, core#100): `#trackRewrites` — a rotation's re-encrypted
+  // records enter the sync dirty log as `rekey` entries on every engine (revoke, custodian
+  // revoke, rotate), and the merge authority reads the CURRENT keyring through a getter.
+  'packages/hub/src/kernel/noydb.ts': 2380,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

@@ -59,7 +59,7 @@ import {
   describeAllUsersAuth as fnDescribeAllUsersAuth,
 } from '../auth-introspection/index.js'
 import type { Vault } from '../../kernel/vault.js'
-import type { UnlockedKeyring } from './keyring.js'
+import type { UnlockedKeyring, RevokeResult } from './keyring.js'
 import {
   enrollAuthenticator as keyringEnrollAuthenticator,
   removeAuthenticator as keyringRemoveAuthenticator,
@@ -171,15 +171,15 @@ export class TeamFacade {
 
   /** Gate + run a `revoke` engine. See `Noydb.revoke` for the public contract. */
   async runRevoke(
-    engine: (adapter: NoydbStore, vault: string, callerKeyring: UnlockedKeyring, options: RevokeOptions) => Promise<void>,
+    engine: (adapter: NoydbStore, vault: string, callerKeyring: UnlockedKeyring, options: RevokeOptions) => Promise<RevokeResult>,
     vault: string,
     options: RevokeOptions,
     factors?: FactorProofBundle,
-  ): Promise<void> {
+  ): Promise<RevokeResult> {
     this.deps.checkPolicyOperation(vault, 'revoke')
     await this.deps.checkGate(vault, 'revoke-user', factors)
     const keyring = await this.deps.getKeyringInternal(vault)
-    await engine(this.deps.options.store, vault, keyring, options)
+    return engine(this.deps.options.store, vault, keyring, options)
   }
 
   /** Gate + run a `rotateKeys` engine. See `Noydb.rotate` for the public contract. */

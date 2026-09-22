@@ -20,7 +20,7 @@
  */
 import type { GrantOptions, RevokeOptions, FactorProofBundle, NoydbStore } from '../../kernel/types.js'
 import type { Vault } from '../../kernel/vault.js'
-import type { UnlockedKeyring } from '../team/keyring.js'
+import type { UnlockedKeyring, RevokeResult } from '../team/keyring.js'
 import type { GrantCustodianOptions } from './index.js'
 import type { LiberateOptions, LiberateResult } from './liberate.js'
 import { CustodyNotEnabledError } from '../../kernel/errors.js'
@@ -41,7 +41,7 @@ export interface CustodyHost {
     factors?: FactorProofBundle,
   ): Promise<void>
   _revokeCustodianImpl(
-    engine: (adapter: NoydbStore, vault: string, callerKeyring: UnlockedKeyring, options: RevokeOptions) => Promise<void>,
+    engine: (adapter: NoydbStore, vault: string, callerKeyring: UnlockedKeyring, options: RevokeOptions) => Promise<RevokeResult>,
     vault: string,
     options: RevokeOptions,
     factors?: FactorProofBundle,

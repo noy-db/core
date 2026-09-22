@@ -1297,12 +1297,24 @@ export interface KeyringFile {
    * open. A revoked admin who cached nothing but the file cannot open a box —
    * the private half never left this member's keyring.
    */
-  readonly inbox?: {
-    readonly slots: readonly string[]
-    readonly cek: string
-    readonly iv: string
-    readonly data: string
-  }
+  readonly inbox?: ReadonlyArray<KeyringInboxBox>
+}
+
+/**
+ * core#96 / core#100 — one sealed delivery to a member: `slots` names the
+ * collections inside (plaintext, tag-bound as the union over all boxes), `cek`
+ * is a random key RSA-OAEP-wrapped to the member's inbox public half, and the
+ * exported DEK set is AES-GCM under it. Deliveries APPEND a box (`updateUser`,
+ * a rotation, a revoke); a caller can never open an earlier box (only the
+ * member's private half can), so nothing is re-sealed or merged. The drain
+ * opens the boxes in order — a later box wins a slot, so a rotation's new key
+ * overrides an earlier pending one.
+ */
+export interface KeyringInboxBox {
+  readonly slots: readonly string[]
+  readonly cek: string
+  readonly iv: string
+  readonly data: string
 }
 
 // ─── Backup ────────────────────────────────────────────────────────────
@@ -1481,7 +1493,13 @@ export interface DirtyEntry {
   readonly vault: string
   readonly collection: string
   readonly id: string
-  readonly action: 'put' | 'delete'
+  /**
+   * `rekey` (core#100): a DEK rotation re-encrypted this record IN PLACE — same
+   * `_v`, new bytes. Pushed with a CAS at the CURRENT version (a `put` expects
+   * `version - 1`), so a target still at that version takes the new ciphertext
+   * and one that moved on reports a conflict as usual.
+   */
+  readonly action: 'put' | 'delete' | 'rekey'
   readonly version: number
   readonly timestamp: string
 }

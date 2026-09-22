@@ -1,4 +1,4 @@
-import type { NoydbStore, KeyringFile, KeyringAuthenticator, Role, Permissions, GrantOptions, RevokeOptions, UpdateUserOptions, UserInfo, EncryptedEnvelope, ExportCapability, ExportFormat, ImportCapability, VaultPolicyOnDisk, UserEnvelope } from '../../kernel/types.js'
+import type { NoydbStore, KeyringFile, KeyringInboxBox, KeyringAuthenticator, Role, Permissions, GrantOptions, RevokeOptions, UpdateUserOptions, UserInfo, EncryptedEnvelope, ExportCapability, ExportFormat, ImportCapability, VaultPolicyOnDisk, UserEnvelope } from '../../kernel/types.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
 import { stampAuthority } from './roster-tag.js'
 import { USER_ENVELOPE_COLLECTION, ROSTER_KEY_ID, BLOB_ADDRESS_KEY_ID, INBOX_KEY_ID } from '../../kernel/constants.js'
@@ -494,10 +494,10 @@ export async function loadKeyring(
   // was sealed by a roster-key holder to the pair the grantor minted.
   let drained = false
   const inboxKeyAes = deks.get(INBOX_KEY_ID)
-  if (keyringFile.inbox !== undefined && inboxKeyAes !== undefined) {
-    for (const [name, dek] of await openInbox(keyringFile, inboxKeyAes)) {
-      if (!deks.has(name)) deks.set(name, dek)
-    }
+  if (keyringFile.inbox !== undefined && keyringFile.inbox.length > 0 && inboxKeyAes !== undefined) {
+    // A delivered key REPLACES a held one: a rotation (core#100) re-mints the
+    // DEK of a collection the member already holds, and the box is the newer.
+    for (const [name, dek] of await openInbox(keyringFile, inboxKeyAes)) deks.set(name, dek)
     drained = true
   }
 
@@ -1070,7 +1070,7 @@ export async function revoke(
   vault: string,
   callerKeyring: UnlockedKeyring,
   options: RevokeOptions,
-): Promise<void> {
+): Promise<RevokeResult> {
   // Load the target's keyring to check their role
   const targetFound = await readKeyringFile(store, vault, options.userId)
   if (!targetFound) {
@@ -1089,8 +1089,8 @@ export async function revoke(
     // and it makes retrying `revoke()` idempotent instead of misleading.
     const pending = [...(callerKeyring.pendingDeks?.keys() ?? [])]
     if (pending.length > 0) {
-      await rotateKeys(store, vault, callerKeyring, { collections: pending })
-      return
+      const resumed = await rotateKeys(store, vault, callerKeyring, { collections: pending })
+      return { rewritten: resumed.rewritten }
     }
     throw new NoAccessError(`User "${options.userId}" has no keyring in vault "${vault}"`)
   }
@@ -1193,11 +1193,20 @@ export async function revoke(
   // the target's undrained inbox is one they MAY hold, so it rotates with the
   // rest (the slot names are tag-bound, so a store cannot hide them from here).
   affectedCollections.delete(INBOX_KEY_ID)
-  for (const slot of targetKeyring.inbox?.slots ?? []) affectedCollections.add(slot)
+  // core#100 — and the target's own broker seed: one record per member under
+  // that member's DEK. The kernel deletes the revoked member's record; the
+  // survivors' records stay under their own keys. "Rotating" the collection
+  // re-keyed them all under a DEK only the caller held (measured: every
+  // survivor lost its cloud identity on a revoke).
+  affectedCollections.delete(BROKER_MEMBER_COLLECTION)
+  for (const slot of inboxSlots(targetKeyring)) affectedCollections.add(slot)
+  let rewritten: RotateResult['rewritten'] = []
   if (affectedCollections.size > 0) {
-    const { unverified } = await rotateKeys(store, vault, callerKeyring, {
+    const rotation = await rotateKeys(store, vault, callerKeyring, {
       collections: [...affectedCollections],
     })
+    const { unverified } = rotation
+    rewritten = rotation.rewritten
     // #1114 — `revoke` resolves to void, so without this the quarantine would
     // be the one thing a rotation reports that nobody can hear. Noisy and
     // itemised on purpose, matching the `cascade: 'warn'` warning above: the
@@ -1213,6 +1222,7 @@ export async function revoke(
       )
     }
   }
+  return { rewritten }
 }
 
 // ─── Roster diagnostics + quarantine (#1121) ───────────────────────────
@@ -1577,7 +1587,7 @@ export async function updateKeyringIdentity(
   const wanted = new Set(selectGranteeDekNames(header.role, header.permissions, permissions, callerKeyring.deks))
 
   const held = target.deks
-  const pending = new Set(target.inbox?.slots ?? [])
+  const pending = new Set(inboxSlots(target))
   // Retained: still wanted, or a key of the member's own the grantor never
   // held (`_inbox_key`; `_broker_member` while the role is still sub-admin —
   // and re-minted below on a role change, since the host scopes by role), or
@@ -1594,33 +1604,37 @@ export async function updateKeyringIdentity(
   for (const [name, wrapped] of Object.entries(held)) if (retains(name)) deks[name] = wrapped
   const dropped = Object.keys(held).filter((name) => !name.startsWith('_') && !(name in deks))
 
-  // What to deliver: wanted and not held; plus a pending delivery that is still
-  // wanted (a box cannot be opened by this caller, only re-sealed from its own
-  // set, so it is rebuilt whole); plus a fresh `_broker_member` on a sub-admin
-  // role change. Everything sealed comes from the caller's own DEK set — the
-  // anti-privilege-escalation invariant `grant` states, kept explicit here.
+  // What to deliver: wanted, not held, and not already pending — as ONE new
+  // box appended to the inbox (a box sealed earlier cannot be opened by this
+  // caller; it stays, and the drain opens them all). Plus a fresh
+  // `_broker_member` on a sub-admin role change. Everything sealed comes from
+  // the caller's own DEK set — the anti-privilege-escalation invariant `grant`
+  // states, kept explicit here. A pending slot that is no longer wanted cannot
+  // be pulled out of its box: it is rotated with the rest (#1097), so the key
+  // in the box opens nothing written since, and the read path denies it by
+  // permission.
   const deliver = new Map<string, EnclaveKey>()
   for (const name of wanted) {
-    if (name in deks) continue
+    if (name in deks || pending.has(name)) continue
     const dek = callerKeyring.deks.get(name)
     if (!dek) throw new PrivilegeEscalationError(name)
     deliver.set(name, dek)
   }
-  for (const name of pending) if (!deliver.has(name) && !(name in deks) && !wanted.has(name)) dropped.push(name)
+  for (const name of pending) if (!wanted.has(name) && !name.startsWith('_')) dropped.push(name)
   let brokerMemberDek: EnclaveKey | undefined
   if (roleChanged && !mayHoldSecrets) {
     brokerMemberDek = await generateDEK()
     deliver.set(BROKER_MEMBER_COLLECTION, brokerMemberDek)
   }
-  let inbox: KeyringFile['inbox']
+  let inbox = target.inbox
   if (deliver.size > 0) {
     if (target.inbox_key === undefined) throw new MemberInboxMissingError(options.userId)
-    inbox = await sealInbox(target.inbox_key, deliver)
+    inbox = [...(target.inbox ?? []), await sealInbox(target.inbox_key, deliver)]
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rebuilt above, never carried
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rebuilt above
   const { inbox: _previousInbox, ...carried } = header
-  const edited: KeyringFile = { ...carried, deks, ...(inbox !== undefined && { inbox }) }
+  const edited: KeyringFile = { ...carried, deks, ...(inbox !== undefined && inbox.length > 0 && { inbox }) }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
   const withEpoch = stampAuthority(edited, target.roster_epoch)
@@ -1683,6 +1697,20 @@ export interface RotateResult {
     readonly userId: string
     readonly reason: KeyringTamperedReason
   }>
+  /**
+   * core#100 — every record this rotation re-encrypted, with its version.
+   * Rotation writes through the raw store, invisible to the sync dirty log,
+   * so a replica kept the OLD ciphertext until each record was edited again —
+   * a revoked member with store access went on reading it, and a survivor
+   * handed the new DEK read `TamperedError` (measured by pilot-1). The kernel
+   * dirty-tracks these on every sync engine so the next push carries them.
+   */
+  readonly rewritten: ReadonlyArray<{ readonly collection: string; readonly id: string; readonly version: number }>
+}
+
+/** core#100 — what `revoke` hands the kernel: the rotation's rewrites, for the dirty log. */
+export interface RevokeResult {
+  readonly rewritten: RotateResult['rewritten']
 }
 
 /** Options for {@link rotateKeys} (#846b — was a bare `string[]`). */
@@ -1842,6 +1870,16 @@ export async function rotateKeys(
         'Remove it from `collections`.',
     )
   }
+  // core#100 — per-member keys are not collections either: `_broker_member`
+  // holds one record per member under that member's OWN DEK (the caller never
+  // held it), and `_inbox_key` is a key. "Rotating" either would strip every
+  // other member's cloud identity or inbox. `revoke` strips both at source.
+  for (const name of [BROKER_MEMBER_COLLECTION, INBOX_KEY_ID]) {
+    if (collections.includes(name)) {
+      throw new ValidationError(`rotateKeys: "${name}" is a per-member key, not a collection, and cannot be rotated. Remove it from \`collections\`.`)
+    }
+  }
+  const rewritten: Array<{ collection: string; id: string; version: number }> = []
   // FR-6: re-keying is an owner-only meta-capability. A custodian operates the
   // vault fully but must NOT rotate — rotation would let it mint fresh DEKs and
   // strip the sealed owner's access, breaking the inalienability floor.
@@ -1935,6 +1973,14 @@ export async function rotateKeys(
       for (const [name, dek] of callerKeyring.deks) if (name !== collName) others.push(dek)
       for (const [name, dek] of newDeks) if (name !== collName) others.push(dek)
       await rekeyBlobSet(store, vault, oldDek, newDek, others)
+      // core#100 — the blob set rewrites through the enclave, ids unseen here;
+      // every entry of both collections was rewritten, so mark them all.
+      for (const blobColl of ['_blob_index', '_blob_chunks']) {
+        for (const id of await store.list(vault, blobColl)) {
+          const env = await store.get(vault, blobColl, id)
+          if (env) rewritten.push({ collection: blobColl, id, version: env._v })
+        }
+      }
     }
 
     // #1125 — A TIER SLOT NAMES A KEY, NOT A COLLECTION. `docs#1` seals the
@@ -1997,7 +2043,10 @@ export async function rotateKeys(
         }
         throw err
       }
-      if (newEnvelope !== null) await store.put(vault, refColl, id, newEnvelope)
+      if (newEnvelope !== null) {
+        await store.put(vault, refColl, id, newEnvelope)
+        rewritten.push({ collection: refColl, id, version: newEnvelope._v })
+      }
     }
   }
 
@@ -2059,7 +2108,21 @@ export async function rotateKeys(
 
     const updatedDeks = { ...userKeyringFile.deks }
     const updatedPermissions = { ...userKeyringFile.permissions }
+    // core#100 — a member with an INBOX (core#96) keeps their standing: the
+    // re-minted DEK for every rotated collection they held (or had pending)
+    // is sealed to their inbox key pair, together with whatever was already
+    // pending (re-sealed from the caller's set, which now holds the new keys).
+    // They drain it at their next tier-1 open or next pull. Only a member
+    // whose keyring predates inboxes is dropped and reported in `needsRegrant`.
+    const deliver = new Map<string, EnclaveKey>()
+    const pendingSlots = new Set(inboxSlots(userKeyringFile))
     for (const collName of collections) {
+      const held = collName in updatedDeks || pendingSlots.has(collName)
+      if (held && userKeyringFile.inbox_key !== undefined) {
+        deliver.set(collName, newDeks.get(collName)!) // a later box wins the slot at drain
+        delete updatedDeks[collName]
+        continue
+      }
       // Report only what the member actually held — a user who never had the
       // collection does not "need a re-grant".
       if (collName in updatedDeks || collName in updatedPermissions) {
@@ -2068,6 +2131,9 @@ export async function rotateKeys(
       delete updatedDeks[collName]
       delete updatedPermissions[collName]
     }
+    const inbox = deliver.size > 0 && userKeyringFile.inbox_key !== undefined
+      ? [...(userKeyringFile.inbox ?? []), await sealInbox(userKeyringFile.inbox_key, deliver)]
+      : userKeyringFile.inbox
 
     // #1096 — `permissions` is an authority field, so narrowing it here
     // invalidates the member's existing roster tag. Restamp with the caller's
@@ -2076,7 +2142,9 @@ export async function rotateKeys(
       ...userKeyringFile,
       deks: updatedDeks,
       permissions: updatedPermissions,
+      ...(inbox !== undefined && inbox.length > 0 ? { inbox } : {}),
     }
+    if (inbox === undefined || inbox.length === 0) delete (edited as { inbox?: unknown }).inbox
     // #1097 — stamped BEFORE the tag is minted, so it lands inside the
     // authenticated canonical and a store can neither edit nor strip it.
     const withEpoch = stampAuthority(edited, userKeyringFile.roster_epoch)
@@ -2088,7 +2156,7 @@ export async function rotateKeys(
     await writeKeyringFile(store, vault, userId, updatedKeyring)
   }
 
-  return { needsRegrant, unverified }
+  return { needsRegrant, unverified, rewritten }
 }
 
 // ─── Change Secret ─────────────────────────────────────────────────────
@@ -2774,8 +2842,13 @@ export async function mintInboxKey(kek: EnclaveKey): Promise<{ wrappedInboxKey: 
   }
 }
 
-/** Seal `deks` to `file.inbox_key`. Every DEK MUST come from the caller's own set — the caller checks. */
-async function sealInbox(inboxKey: NonNullable<KeyringFile['inbox_key']>, deks: Map<string, EnclaveKey>): Promise<NonNullable<KeyringFile['inbox']>> {
+/** core#96 — the collections a member has pending in their inbox, over every box. */
+export function inboxSlots(file: Pick<KeyringFile, 'inbox'>): string[] {
+  return [...new Set((file.inbox ?? []).flatMap((box) => box.slots))]
+}
+
+/** Seal `deks` to `file.inbox_key` as ONE box. Every DEK MUST come from the caller's own set — the caller checks. */
+async function sealInbox(inboxKey: NonNullable<KeyringFile['inbox_key']>, deks: Map<string, EnclaveKey>): Promise<KeyringInboxBox> {
   const pub = await importRecipientPublicKeySpki(base64ToBuffer(inboxKey.pub))
   const cekBytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
   try {
@@ -2789,9 +2862,10 @@ async function sealInbox(inboxKey: NonNullable<KeyringFile['inbox_key']>, deks: 
   }
 }
 
-/** Open the member's own inbox with the AES key from `deks[INBOX_KEY_ID]`. */
+/** Open every box in the member's own inbox with the AES key from `deks[INBOX_KEY_ID]`; a later box wins a slot. */
 async function openInbox(file: KeyringFile, inboxKeyAes: EnclaveKey): Promise<Map<string, EnclaveKey>> {
-  if (!file.inbox || !file.inbox_key) return new Map()
+  const out = new Map<string, EnclaveKey>()
+  if (!file.inbox || file.inbox.length === 0 || !file.inbox_key) return out
   const priv = await decryptBytes(file.inbox_key.priv.iv, file.inbox_key.priv.data, inboxKeyAes)
   let pair: CryptoKeyPair
   try {
@@ -2799,14 +2873,17 @@ async function openInbox(file: KeyringFile, inboxKeyAes: EnclaveKey): Promise<Ma
   } finally {
     priv.fill(0)
   }
-  const cekBytes = await recipientUnwrap(pair, base64ToBuffer(file.inbox.cek))
-  try {
-    const cek = await importTransferKey(cekBytes)
-    const payload = await decryptBytes(file.inbox.iv, file.inbox.data, cek)
-    return importDekSet(JSON.parse(new TextDecoder().decode(payload)) as Record<string, string>)
-  } finally {
-    cekBytes.fill(0)
+  for (const box of file.inbox) {
+    const cekBytes = await recipientUnwrap(pair, base64ToBuffer(box.cek))
+    try {
+      const cek = await importTransferKey(cekBytes)
+      const payload = await decryptBytes(box.iv, box.data, cek)
+      for (const [name, dek] of await importDekSet(JSON.parse(new TextDecoder().decode(payload)) as Record<string, string>)) out.set(name, dek)
+    } finally {
+      cekBytes.fill(0)
+    }
   }
+  return out
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
@@ -2860,7 +2937,7 @@ export async function persistKeyring(
   // set from its own slot, say) — dropping it would lose the delivery.
   const existingInboxKey = existingFound?.file.inbox_key
   const existingInbox = existingFound?.file.inbox
-  const undrainedInbox = existingInbox !== undefined && !existingInbox.slots.every((slot) => keyring.deks.has(slot))
+  const undrainedInbox = existingInbox !== undefined && existingInbox.length > 0 && !inboxSlots({ inbox: existingInbox }).every((slot) => keyring.deks.has(slot))
 
   const wrappedDeks: Record<string, string> = {}
   for (const [collName, dek] of keyring.deks) {

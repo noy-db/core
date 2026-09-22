@@ -1,4 +1,4 @@
-import { buildRecordEnvelope } from '../capsule/index.js'
+import { buildRecordEnvelope, envelopeBodyForHash } from '../capsule/index.js'
 import type {
   NoydbStore,
   DirtyEntry,
@@ -329,7 +329,7 @@ export class SyncEngine {
   }
 
   /** Record a local change for later push. */
-  async trackChange(collection: string, id: string, action: 'put' | 'delete', version: number): Promise<void> {
+  async trackChange(collection: string, id: string, action: DirtyEntry['action'], version: number): Promise<void> {
     await this.ensureLoaded()
 
     // Deduplicate: if same collection+id already in dirty, update it
@@ -392,7 +392,9 @@ export class SyncEngine {
           entry.collection,
           entry.id,
           envelope,
-          entry.version - 1,
+          // core#100 — a `rekey` re-encrypted the record in place: same `_v`,
+          // new bytes; the target still at that version takes it.
+          entry.action === 'rekey' ? entry.version : entry.version - 1,
         )
         acc.completed.push(i)
         acc.pushed++
@@ -590,7 +592,7 @@ export class SyncEngine {
       try {
         const protectedIds = new Map<string, Set<string>>()
         for (const d of this.dirty) {
-          if (d.action !== 'put') continue
+          if (d.action === 'delete') continue
           let set = protectedIds.get(d.collection)
           if (!set) { set = new Set(); protectedIds.set(d.collection, set) }
           set.add(d.id)
@@ -630,7 +632,7 @@ export class SyncEngine {
               const remoteEnvelope = await this.remote.get(this.vault, collName, id)
               if (!remoteEnvelope) continue
               const localEnvelope = await this.local.get(this.vault, collName, id)
-              if (!localEnvelope || remoteEnvelope._v > localEnvelope._v) {
+              if (!localEnvelope || this.#remoteSupersedes(collName, id, remoteEnvelope, localEnvelope)) {
                 await this.applyRemote(collName, id, remoteEnvelope)
                 pulled++
               }
@@ -772,7 +774,7 @@ export class SyncEngine {
                 pulled++
               }
               // no resolver and LOCAL is the marker → keep local marker; its dirty 'put' pushes it outward
-            } else if (remoteEnvelope._v > localEnvelope._v) {
+            } else if (this.#remoteSupersedes(collName, id, remoteEnvelope, localEnvelope)) {
               // Remote is newer — check if we have a dirty entry for this
               const isDirty = this.dirty.some(d => d.collection === collName && d.id === id)
               if (isDirty) {
@@ -862,7 +864,7 @@ export class SyncEngine {
               }
               // else: local already holds the marker (a local delete not yet observed
               // remotely) — keep it; push re-asserts it.
-            } else if (remoteEnvelope._v > localEnvelope._v) {
+            } else if (this.#remoteSupersedes(collName, id, remoteEnvelope, localEnvelope)) {
               await this.applyRemote(collName, id, remoteEnvelope)
               // Drop any now-superseded local dirty entry so a subsequent push doesn't
               // redundantly re-fight a CAS conflict over content pull just overwrote.
@@ -1209,6 +1211,20 @@ export class SyncEngine {
     const toVersion = remote._v + 1
     if (!this.mergeAuthority) return { ...winner, _v: toVersion }
     return this.mergeAuthority.advance(collection, id, winner, toVersion)
+  }
+
+  /**
+   * core#100 — does the remote copy supersede ours? A higher `_v`, as always;
+   * or the SAME `_v` with different bytes while we hold no pending write for
+   * it: a DEK rotation re-encrypts records in place, and a replica that kept
+   * the old ciphertext would read `TamperedError` under the delivered key.
+   * `applyRemote` still authenticates it (`MergeAuthority`) before it lands.
+   */
+  #remoteSupersedes(collection: string, id: string, remote: EncryptedEnvelope, local: EncryptedEnvelope): boolean {
+    if (remote._v > local._v) return true
+    if (remote._v !== local._v) return false
+    if (this.dirty.some(d => d.collection === collection && d.id === id)) return false
+    return envelopeBodyForHash(remote) !== envelopeBodyForHash(local)
   }
 
   private async applyRemote(collection: string, id: string, envelope: EncryptedEnvelope): Promise<void> {
