@@ -294,6 +294,7 @@ export {
   ReadOnlyError,
   PermissionDeniedError,
   PrivilegeEscalationError,
+  MemberInboxMissingError,
   StoreCapabilityError,
   UnknownStoreKindError,
   DuplicateStoreKindError,

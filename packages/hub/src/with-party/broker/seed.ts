@@ -37,7 +37,8 @@
  */
 import type { NoydbStore, EncryptedEnvelope, StoreCredentials } from '../../kernel/types.js'
 import type { UnlockedKeyring } from '../../with-party/team/keyring.js'
-import { ensureCollectionDEK, loadKeyring } from '../../with-party/team/keyring.js'
+import { ensureCollectionDEK, loadKeyring, readKeyringFile, requireRosterKey } from '../../with-party/team/keyring.js'
+import { assertRosterTagValid } from '../../with-party/team/roster-tag.js'
 import { BROKER_COLLECTION, BROKER_MEMBER_COLLECTION } from '../../with-party/team/reserved-secret-collections.js'
 import {
   buildSealedRecordEnvelope,
@@ -328,12 +329,31 @@ export async function rotateSeed(ctx: BrokerSeedCtx): Promise<void> {
  * seed, so the host's record for this userId is REPLACED — key and role — and
  * a device still holding the previous enrolment is refused from then on.
  */
-export async function enrolMemberSeed(ctx: BrokerSeedCtx, member: { readonly userId: string; readonly secret: string }): Promise<void> {
+export async function enrolMemberSeed(
+  ctx: BrokerSeedCtx,
+  member: { readonly userId: string; readonly secret: string } | { readonly userId: string; readonly dek: EnclaveKey },
+): Promise<void> {
   const { store, vault, keyring, config } = ctx
   requireAdminAccess(keyring)
-  const grantee = await loadKeyring(store, vault, { userId: member.userId, secret: member.secret })
-  if (isAdminRole(grantee)) return
-  const dek = grantee.deks.get(BROKER_MEMBER_COLLECTION)
+  let dek: EnclaveKey | undefined
+  let role: string
+  if ('dek' in member) {
+    // core#96 — a role change: the fresh DEK came from `updateKeyringIdentity`,
+    // the role from the file it just wrote. Verified before it is trusted: the
+    // host scopes credentials by this role, so a store-forged one here would
+    // register a forged scope.
+    const found = await readKeyringFile(store, vault, member.userId)
+    if (!found) throw new BrokerEnrolmentError(`No keyring for "${member.userId}" in vault "${vault}".`)
+    await assertRosterTagValid(found.file, requireRosterKey(keyring, 'enrolMemberSeed'), member.userId)
+    if (found.file.role === 'owner' || found.file.role === 'admin') return
+    dek = member.dek
+    role = found.file.role
+  } else {
+    const grantee = await loadKeyring(store, vault, { userId: member.userId, secret: member.secret })
+    if (isAdminRole(grantee)) return
+    dek = grantee.deks.get(BROKER_MEMBER_COLLECTION)
+    role = grantee.role
+  }
   if (!dek) {
     throw new BrokerEnrolmentError(
       `grant() did not mint a _broker_member DEK for "${member.userId}" — the keyring predates member enrolment; re-grant the user.`,
@@ -341,7 +361,7 @@ export async function enrolMemberSeed(ctx: BrokerSeedCtx, member: { readonly use
   }
 
   const seedBytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
-  const identity: BrokerMemberIdentity = { userId: member.userId, role: grantee.role }
+  const identity: BrokerMemberIdentity = { userId: member.userId, role }
   const proofBits = await deriveBrokerProofBits(seedBytes, vault, config.brokerId, member.userId)
   try {
     await postEnroll(config, vault, proofBits, identity)
@@ -352,7 +372,7 @@ export async function enrolMemberSeed(ctx: BrokerSeedCtx, member: { readonly use
   const record: BrokerMemberRecord = {
     brokerId: config.brokerId,
     userId: member.userId,
-    role: grantee.role,
+    role,
     seed: bufferToBase64(seedBytes),
     endpoint: config.endpoint,
     createdAt: new Date().toISOString(),

@@ -862,6 +862,25 @@ export async function recipientUnwrap(pair: CryptoKeyPair, wrapped: Uint8Array):
   return new Uint8Array(await subtle.decrypt({ name: 'RSA-OAEP' }, pair.privateKey, wrapped as BufferSource))
 }
 
+/**
+ * core#96 — the private half of a recipient pair as PKCS#8 bytes, so a caller
+ * can seal it under a key it holds and persist it (a member's keyring inbox
+ * key pair lives in the keyring file). The caller zeroes the bytes after use.
+ */
+export async function exportRecipientPrivateKeyPkcs8(pair: CryptoKeyPair): Promise<Uint8Array> {
+  return new Uint8Array(await subtle.exportKey('pkcs8', pair.privateKey))
+}
+
+/** core#96 — rebuild a recipient pair from persisted PKCS#8 private + SPKI public bytes. */
+export async function importRecipientKeyPair(pkcs8: Uint8Array, spki: Uint8Array): Promise<CryptoKeyPair> {
+  const alg = { name: 'RSA-OAEP', hash: 'SHA-256' } as const
+  const [privateKey, publicKey] = await Promise.all([
+    subtle.importKey('pkcs8', pkcs8 as BufferSource, alg, false, ['decrypt']),
+    subtle.importKey('spki', spki as BufferSource, alg, false, ['encrypt']),
+  ])
+  return { privateKey, publicKey }
+}
+
 // ─── Base64 Helpers ────────────────────────────────────────────────────
 
 

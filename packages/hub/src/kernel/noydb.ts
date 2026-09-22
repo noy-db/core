@@ -3,6 +3,7 @@ import { wireEngine, type EngineWiringHost } from './sync-wiring.js'
 import type { OnDirtyCallback } from './collection.js'
 import { resolveStrategies, type StrategyBag } from '../port/with/strategies.js'
 import type { RotateResult, RosterVerifyResult, QuarantineResult } from '../with-party/team/keyring.js'
+import type { EnclaveKey } from '../capsule/index.js'
 import type {
   NoydbOptions,
   NoydbEventMap,
@@ -743,6 +744,13 @@ export class Noydb {
   /**
    * Grant access to a user for a vault.
    *
+   * ⚠️ On an EXISTING user this RE-KEYS them: a new KEK from `secret`,
+   * authenticator slots dropped, the file overwritten. So it needs the
+   * member's CURRENT secret — after `acceptInvite` or `rotateSecret` an
+   * owner never holds it, and a re-grant with a stale one locks the member
+   * out. To change what an existing member may do, use `updateUser`
+   * (core#96); re-grant only to re-key, with a fresh temporary secret.
+   *
    * Gated by `enroll-user`. `STRICT_POLICY` requires a TOTP / email-OTP
    * factor proof so the operator affirmatively re-asserts identity at
    * the moment of grant; `PERSONAL_POLICY` accepts a tier-1 unlock alone.
@@ -761,7 +769,7 @@ export class Noydb {
   }
 
   /** core#73 — register a (re-)granted or recovered sub-admin member with the broker host; a no-op without a broker. */
-  async #enrolBrokerMember(vault: string, member: { readonly userId: string; readonly secret: string }): Promise<void> {
+  async #enrolBrokerMember(vault: string, member: { readonly userId: string; readonly secret: string } | { readonly userId: string; readonly dek: EnclaveKey }): Promise<void> {
     await this.strategies.broker.enrolMember({ store: this.options.store, vault, keyring: await this._getKeyringInternal(vault) }, member)
   }
 
@@ -857,20 +865,34 @@ export class Noydb {
   }
 
   /**
-   * Mutate post-grant identity fields on an existing keyring — `role`,
-   * `displayName`, and/or `permissions`. Pure plaintext-header rewrite:
-   * no DEK rewrap, no KEK required, no authenticator slots touched.
-   * Tier-2 enrollments and recovery codes survive.
+   * Change what an EXISTING member may do — `role`, `displayName`, and/or
+   * `permissions` — without holding their secret. The member's KEK, salt
+   * and authenticator slots are untouched; tier-2 enrollments and recovery
+   * codes survive.
+   *
+   * core#96 — the keys follow the header. A change that widens access
+   * delivers the DEKs the member lacks through their keyring INBOX
+   * (sealed to a per-member key pair only their KEK opens; drained at
+   * their next tier-1 unlock, or at the next pull of an open session). A
+   * change that narrows access drops the DEKs and rotates those
+   * collections, as a narrowing `grant` does (#1097). A role change
+   * re-registers the member with a configured broker host under a fresh
+   * `_broker_member` key. This is the widening path: `db.grant` on an
+   * existing user RE-KEYS them from `secret`, so it needs their CURRENT
+   * secret — after `acceptInvite` or `rotateSecret` an owner never holds it.
    *
    * Different from `db.revoke + db.grant`:
    *
-   *   - Same `userId`, same DEK wrappings, same `granted_by`, same
-   *     `_users/<keyringId>` envelope. Only the specified header
-   *     fields move. Last-write-wins via the standard keyring put.
+   *   - Same `userId`, same KEK, same `granted_by`, same
+   *     `_users/<keyringId>` envelope. Last-write-wins via the standard
+   *     keyring put.
    *   - No cascade on role demotion (admins demoted to operator keep
    *     the keyrings they previously granted; the cascade rules are
    *     a `db.revoke` concern, not `db.updateUser`).
    *   - Tier-2 slots NOT dropped — the wrapping is unaffected.
+   *
+   * @throws `MemberInboxMissingError` when a DEK must be delivered to a
+   *   member whose keyring predates inboxes — re-grant them once.
    *
    * Role-elevation guard: BOTH the old and new role must satisfy
    * `db.grant`'s hierarchy. Owner can do anything; admin manages
@@ -903,7 +925,16 @@ export class Noydb {
   ): Promise<void> {
     await this.checkGate(vault, 'update-user', factors)
     const keyring = await this._getKeyringInternal(vault)
-    await updateKeyringIdentity(this.options.store, vault, keyring, options)
+    const { roleChanged, brokerMemberDek } = await updateKeyringIdentity(this.options.store, vault, keyring, options)
+    // core#96 — the broker host scopes by role, so a role change re-registers
+    // the member under the fresh `_broker_member` DEK delivered through their
+    // inbox, or de-registers one promoted to owner/admin (the shared seed
+    // serves those). No-op without a broker.
+    if (roleChanged) {
+      const ctx = { store: this.options.store, vault, keyring }
+      if (brokerMemberDek) await this.strategies.broker.enrolMember(ctx, { userId: options.userId, dek: brokerMemberDek })
+      else if (await this.options.store.get(vault, '_broker_member', options.userId)) await this.strategies.broker.revokeMember(ctx, options.userId)
+    }
     // If the caller updated their own role / permissions, the cached
     // unlocked keyring is stale — drop it so the next access reloads
     // with the new header fields. (DEKs unchanged, so the cached

@@ -1,7 +1,7 @@
 import type { NoydbStore, KeyringFile, KeyringAuthenticator, Role, Permissions, GrantOptions, RevokeOptions, UpdateUserOptions, UserInfo, EncryptedEnvelope, ExportCapability, ExportFormat, ImportCapability, VaultPolicyOnDisk, UserEnvelope } from '../../kernel/types.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
 import { stampAuthority } from './roster-tag.js'
-import { USER_ENVELOPE_COLLECTION, ROSTER_KEY_ID, BLOB_ADDRESS_KEY_ID } from '../../kernel/constants.js'
+import { USER_ENVELOPE_COLLECTION, ROSTER_KEY_ID, BLOB_ADDRESS_KEY_ID, INBOX_KEY_ID } from '../../kernel/constants.js'
 import { parseDekKey } from '../../kernel/tier-visibility.js' // #1125 — a tier slot names a key, not a collection
 import {
   buildRecordEnvelope,
@@ -20,8 +20,20 @@ import {
   type EnclaveKey,
   type EchoSecretParts,
   hasSealedBody,
+  encryptBytes,
+  decryptBytes,
+  exportDekSet,
+  importDekSet,
+  importTransferKey,
+  generateRecipientKeyPair,
+  exportRecipientPublicKeySpki,
+  exportRecipientPrivateKeyPkcs8,
+  importRecipientPublicKeySpki,
+  importRecipientKeyPair,
+  recipientWrap,
+  recipientUnwrap,
 } from '../../capsule/index.js'
-import { NoAccessError, PermissionDeniedError, PrivilegeEscalationError, KeyringExpiredError, KeyringCorruptError, KeyringTamperedError, TamperedError, InvalidKeyError, ValidationError, DirectoryDisabledError, EchoCeremonyRequiredError } from '../../kernel/errors.js'
+import { NoAccessError, PermissionDeniedError, PrivilegeEscalationError, MemberInboxMissingError, KeyringExpiredError, KeyringCorruptError, KeyringTamperedError, TamperedError, InvalidKeyError, ValidationError, DirectoryDisabledError, EchoCeremonyRequiredError } from '../../kernel/errors.js'
 import type { KeyringTamperedReason } from '../../kernel/errors.js'
 import { mintRosterTag, assertRosterAuthenticated, assertRosterTagValid } from './roster-tag.js'
 import { readDirectoryConfig } from '../directory/storage.js'
@@ -461,7 +473,22 @@ export async function loadKeyring(
   // an expiry is genuinely an expiry. See the note at the top of this function.
   assertKeyringNotExpired(keyringFile)
 
-  return {
+  // core#96 — DRAIN THE INBOX. DEKs an owner/admin delivered since the last
+  // tier-1 unlock are opened with the private half only this KEK reaches, and
+  // move into the DEK set. An entry already held wins (a delivery never
+  // replaces a key the member has). Deliberately AFTER roster verification:
+  // `inbox.slots` and `inbox_key.pub` are tag-bound, so a box arriving here
+  // was sealed by a roster-key holder to the pair the grantor minted.
+  let drained = false
+  const inboxKeyAes = deks.get(INBOX_KEY_ID)
+  if (keyringFile.inbox !== undefined && inboxKeyAes !== undefined) {
+    for (const [name, dek] of await openInbox(keyringFile, inboxKeyAes)) {
+      if (!deks.has(name)) deks.set(name, dek)
+    }
+    drained = true
+  }
+
+  const unlocked: UnlockedKeyring = {
     userId: keyringFile.user_id,
     displayName: keyringFile.display_name,
     role: keyringFile.role,
@@ -475,6 +502,12 @@ export async function loadKeyring(
     ...(keyringFile.import_capability !== undefined && { importCapability: keyringFile.import_capability }),
     ...(keyringFile.policy !== undefined && { policy: keyringFile.policy }),
   }
+  // The drained DEKs go under the member's own KEK now and the box is dropped
+  // (`persistKeyring` carries `inbox` forward only while a slot is still not
+  // held). The write bumps the roster epoch, so it supersedes the grantor's
+  // delivery on every replica.
+  if (drained) await persistKeyring(store, vault, unlocked)
+  return unlocked
 }
 
 /**
@@ -659,6 +692,85 @@ export async function createOwnerKeyring(
 
 // ─── Grant ─────────────────────────────────────────────────────────────
 
+/**
+ * Which of the caller's DEKs a grantee with `role` + `permissions` receives.
+ * One rule for `grant` and for `updateKeyringIdentity` (core#96), so a member
+ * widened after the fact holds exactly what a fresh grant would have given.
+ *
+ * - Named collections in `permissions` (`'*'` is a marker, not a collection).
+ * - For owner/admin/custodian/viewer, or a `'*'` grant (#1010), EVERY DEK the
+ *   caller holds — the collections that exist NOW. A DEK can only be handed
+ *   over at a write to the grantee's file, so a collection created later
+ *   needs `updateUser` (the read path says so explicitly).
+ * - For ALL roles, the `_`-prefixed system collections (`_ledger`, `_history`,
+ *   `_sync`, …): any user with access to the vault must read and write them —
+ *   the hash-chained ledger writes an entry on every put/delete, so an operator
+ *   on one data collection still needs the `_ledger` DEK. Trade-off: a granted
+ *   user can decrypt every system-collection entry, including ones for
+ *   collections they cannot otherwise read — a metadata leak (collection
+ *   names, record ids, ciphertext hashes), never a plaintext one.
+ *
+ * EXCEPTIONS, in every branch: a secret-bearing reserved collection
+ * (`_sync_credentials`, `_broker`, …) — whose record CONTENTS are directly
+ * usable secrets — goes only to owner/admin, the roles the dedicated
+ * credential API admits; handing an operator/viewer/client/custodian one of
+ * these is a plaintext leak. And the caller's own per-member keys
+ * (`_inbox_key`, `_broker_member`) are never anyone else's.
+ */
+function selectGranteeDekNames(
+  role: Role,
+  requested: Permissions | undefined,
+  permissions: Permissions,
+  callerDeks: ReadonlyMap<string, EnclaveKey>,
+): string[] {
+  const mayHoldSecrets = role === 'owner' || role === 'admin'
+  const admits = (name: string): boolean =>
+    name !== INBOX_KEY_ID && name !== BROKER_MEMBER_COLLECTION && !(isSecretBearingReservedCollection(name) && !mayHoldSecrets)
+  const selected = new Set<string>()
+  for (const collName of Object.keys(permissions)) {
+    if (collName === PERMISSION_WILDCARD) continue
+    if (admits(collName) && callerDeks.has(collName)) selected.add(collName)
+  }
+  const wrapAll =
+    role === 'owner' || role === 'admin' || role === 'custodian' || role === 'viewer' || permissionsAreWildcard(requested)
+  for (const name of callerDeks.keys()) {
+    if ((wrapAll || name.startsWith('_')) && admits(name)) selected.add(name)
+  }
+  return [...selected]
+}
+
+/**
+ * A grantee's DEKs can only ever be handed over at a write to their file, and
+ * the caller can only hand over what it holds — so a permission naming a
+ * collection that does not exist yet (#1004: `{ invoices: 'rw' }` before
+ * `invoices` existed) would wrap nothing and leave a permanently blind slot.
+ * Mint the DEK now so the grant is honoured whichever order the caller works
+ * in. Only for collections with NO records: if a collection has records and
+ * the caller still lacks its DEK, minting would fabricate a key that decrypts
+ * nothing AND hand the anti-privilege-escalation check a DEK the caller never
+ * legitimately held. Returns whether anything was minted — the caller's own
+ * file must then record it, or their next write to that collection mints a
+ * SECOND, different DEK and orphans the copy just handed over.
+ */
+async function mintMissingDeksForGrant(
+  store: NoydbStore,
+  vault: string,
+  callerKeyring: UnlockedKeyring,
+  permissions: Permissions,
+  mayHoldSecrets: boolean,
+): Promise<boolean> {
+  let minted = false
+  for (const collName of Object.keys(permissions)) {
+    if (collName === PERMISSION_WILDCARD) continue
+    if (isSecretBearingReservedCollection(collName) && !mayHoldSecrets) continue
+    if (callerKeyring.deks.has(collName)) continue
+    if (await collectionHasRecords(store, vault, collName)) continue
+    callerKeyring.deks.set(collName, await generateDEK())
+    minted = true
+  }
+  return minted
+}
+
 /** Grant access to a new user. Caller must have grant privilege. */
 export async function grant(
   store: NoydbStore,
@@ -728,30 +840,7 @@ export async function grant(
   const granteeMayHoldSecrets =
     options.role === 'owner' || options.role === 'admin'
 
-  // A grantee's DEKs can only ever be wrapped HERE, at grant time: wrapping
-  // needs the grantee's KEK, which is derived from a secret the vault never
-  // stores, so there is no later moment at which a newly-minted collection DEK
-  // could be back-filled into an existing keyring. #1004: granting
-  // `{ invoices: 'rw' }` before `invoices` existed therefore wrapped nothing
-  // and left a permanently blind slot. Mint the DEK now so the grant is
-  // honoured whichever order the caller works in.
-  //
-  // Only for collections that do not exist yet. If a collection HAS records
-  // and the grantor still lacks its DEK, minting would fabricate a key that
-  // decrypts nothing AND would hand the anti-privilege-escalation check below
-  // a DEK the grantor never legitimately held — turning a structural guarantee
-  // into a no-op. Leave those unwrapped and let the read path deny.
-  let mintedForGrant = false
-  for (const collName of Object.keys(permissions)) {
-    // `'*'` is a marker, not a collection — minting a DEK for it would create a
-    // literal `*` collection and cover nothing (#1010).
-    if (collName === PERMISSION_WILDCARD) continue
-    if (isSecretBearingReservedCollection(collName) && !granteeMayHoldSecrets) continue
-    if (callerKeyring.deks.has(collName)) continue
-    if (await collectionHasRecords(store, vault, collName)) continue
-    callerKeyring.deks.set(collName, await generateDEK())
-    mintedForGrant = true
-  }
+  const mintedForGrant = await mintMissingDeksForGrant(store, vault, callerKeyring, permissions, granteeMayHoldSecrets)
   // Only when we actually minted: the grantor's own keyring file has to record
   // the new DEK, or their next write to that collection would mint a SECOND,
   // different one and orphan the copy we are about to wrap for the grantee.
@@ -766,71 +855,12 @@ export async function grant(
     ? new Set(Object.keys(previousGrantFound.file.deks))
     : null
 
-  // Wrap the appropriate DEKs with the new user's KEK
+  // Wrap the appropriate DEKs with the new user's KEK. WHICH DEKs is one rule
+  // shared with `updateKeyringIdentity` (core#96) — `selectGranteeDekNames` —
+  // so a widening after the grant hands over exactly what a grant would have.
   const wrappedDeks: Record<string, string> = {}
-  for (const collName of Object.keys(permissions)) {
-    if (collName === PERMISSION_WILDCARD) continue
-    // Never hand a secret-bearing reserved DEK to a sub-admin, even if the
-    // grantor explicitly names it in `permissions` — that path is served
-    // only by the owner/admin-gated credential API, not per-collection grants.
-    if (isSecretBearingReservedCollection(collName) && !granteeMayHoldSecrets) continue
-    const dek = callerKeyring.deks.get(collName)
-    if (dek) {
-      wrappedDeks[collName] = await wrapKey(dek, newKek)
-    }
-  }
-
-  // For owner/admin/custodian/viewer roles, wrap ALL known DEKs.
-  // FR-6: a custodian operates EVERY collection, so — like admin — it must
-  // receive every collection DEK on grant. Without this branch a custodian
-  // could neither read nor write and the role would be inert.
-  // #1010 — `permissions: { '*': ... }` puts a permission-scoped grantee on the
-  // same footing as the whole-vault roles: every DEK the grantor holds. Note the
-  // inherent limit the caller must know about — this covers the collections that
-  // exist NOW. A wildcard cannot enumerate collections created later, and a DEK
-  // can only ever be wrapped at grant time, so a later collection needs a
-  // re-grant (the read path says so explicitly).
-  if (
-    options.role === 'owner' ||
-    options.role === 'admin' ||
-    options.role === 'custodian' ||
-    options.role === 'viewer' ||
-    permissionsAreWildcard(options.permissions)
-  ) {
-    for (const [collName, dek] of callerKeyring.deks) {
-      if (collName in wrappedDeks) continue
-      if (isSecretBearingReservedCollection(collName) && !granteeMayHoldSecrets) continue
-      wrappedDeks[collName] = await wrapKey(dek, newKek)
-    }
-  }
-
-  // For ALL roles, propagate system-prefixed collection DEKs
-  // (`_ledger`, `_history`, `_sync`, …). These are internal collections
-  // that any user with access to the vault must be able to
-  // read and write — for example, the hash-chained ledger writes
-  // an entry on every put/delete, so operators and clients with write
-  // access to a single data collection still need the `_ledger` DEK.
-  //
-  // Trade-off: a granted user can decrypt every system-collection
-  // entry, including ones they would not otherwise have access to
-  // (e.g., an operator on `invoices` can read ledger entries for
-  // mutations in `salaries`). This is a metadata leak, not a
-  // plaintext leak — the ledger entries record collection names,
-  // record ids, and ciphertext hashes, but never plaintext records.
-  // Per-collection ledger DEKs are tracked as a follow-up.
-  //
-  // EXCEPTION — secret-bearing reserved collections (`_sync_credentials`,
-  // `_broker`) whose record CONTENTS are directly-usable secrets are NOT
-  // propagated to sub-admin grantees. Unlike the operational collections
-  // above, handing an operator/viewer/client/custodian one of these DEKs
-  // IS a plaintext leak (the firm's transport OAuth tokens). Only owner and
-  // admin — the roles the dedicated `getCredential`/`putCredential` API
-  // admits — receive them, so the legit admin-reads-existing-credential
-  // flow (which needs the DEK to decrypt, not regenerate) still works.
-  for (const [collName, dek] of callerKeyring.deks) {
-    if (!collName.startsWith('_') || collName in wrappedDeks) continue
-    if (isSecretBearingReservedCollection(collName) && !granteeMayHoldSecrets) continue
-    wrappedDeks[collName] = await wrapKey(dek, newKek)
+  for (const collName of selectGranteeDekNames(options.role, options.permissions, permissions, callerKeyring.deks)) {
+    wrappedDeks[collName] = await wrapKey(callerKeyring.deks.get(collName)!, newKek)
   }
 
   // Anti-privilege-escalation check. Every DEK we just
@@ -858,6 +888,13 @@ export async function grant(
   if (!granteeMayHoldSecrets) {
     wrappedDeks[BROKER_MEMBER_COLLECTION] = await wrapKey(await generateDEK(), newKek)
   }
+  // core#96 — every grantee gets an INBOX: a key pair whose public half lets
+  // an owner/admin hand this member a DEK later (`updateUser`) without the
+  // member's secret, and whose private half is sealed under an AES key only
+  // this member's KEK unwraps. Minted here for the same reason `_broker_member`
+  // is: a write under the grantee's KEK happens exactly at grant.
+  const inbox = await mintInboxKey(newKek)
+  wrappedDeks[INBOX_KEY_ID] = inbox.wrappedInboxKey
 
   const canary = await mintKeyringCanary(newKek)
   const authority = {
@@ -869,7 +906,9 @@ export async function grant(
     ...(options.exportCapability !== undefined && { export_capability: options.exportCapability }),
     ...(options.importCapability !== undefined && { import_capability: options.importCapability }),
   }
-  const authorityWithDeks = { ...authority, deks: wrappedDeks } // #1115
+  // #1115 — the DEK set; core#96 — the inbox public key: both tag-bound, so both
+  // sit in the object the tag is minted from.
+  const authorityWithDeks = { ...authority, deks: wrappedDeks, inbox_key: inbox.inboxKey }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
   const withEpoch = stampAuthority(authorityWithDeks, previousGrantFound?.file.roster_epoch)
@@ -1137,6 +1176,11 @@ export async function revoke(
   // #1126 — same treatment, same reason: the blob addressing root is a reserved
   // key, not a collection, and rotating it would invalidate every blob eTag.
   affectedCollections.delete(BLOB_ADDRESS_KEY_ID)
+  // core#96 — the inbox key is a reserved key too; and a DEK still sitting in
+  // the target's undrained inbox is one they MAY hold, so it rotates with the
+  // rest (the slot names are tag-bound, so a store cannot hide them from here).
+  affectedCollections.delete(INBOX_KEY_ID)
+  for (const slot of targetKeyring.inbox?.slots ?? []) affectedCollections.add(slot)
   if (affectedCollections.size > 0) {
     const { unverified } = await rotateKeys(store, vault, callerKeyring, {
       collections: [...affectedCollections],
@@ -1424,12 +1468,25 @@ export async function quarantineKeyring(
  * @throws `ValidationError` when the diff is empty (nothing to update).
  *
  */
+/** What `updateKeyringIdentity` hands back to the kernel (core#96). */
+export interface UpdateKeyringResult {
+  /** The role moved. The kernel re-registers the member with a broker host, if one is configured. */
+  readonly roleChanged: boolean
+  /**
+   * A fresh `_broker_member` DEK, delivered through the inbox, when the member
+   * is (still) a sub-admin after a role change — the kernel seals the new seed
+   * under it and re-enrols. Absent otherwise (a promotion to owner/admin drops
+   * the slot: those roles use the shared `_broker` seed).
+   */
+  readonly brokerMemberDek?: EnclaveKey
+}
+
 export async function updateKeyringIdentity(
   store: NoydbStore,
   vault: string,
   callerKeyring: UnlockedKeyring,
   options: UpdateUserOptions,
-): Promise<void> {
+): Promise<UpdateKeyringResult> {
   if (
     options.role === undefined &&
     options.displayName === undefined &&
@@ -1481,7 +1538,7 @@ export async function updateKeyringIdentity(
   // itself to. The caller's own roster key (verified against `target` above)
   // is what re-authenticates the result; the target's canary rides the spread
   // untouched.
-  const edited: KeyringFile = {
+  const header: KeyringFile = {
     ...target,
     ...(options.role !== undefined && { role: options.role }),
     ...(options.displayName !== undefined && {
@@ -1490,12 +1547,84 @@ export async function updateKeyringIdentity(
     }),
     ...(options.permissions !== undefined && { permissions: options.permissions }),
   }
+
+  // core#96 — THE KEYS FOLLOW THE HEADER. Before this, a permissions change
+  // was a header swap: naming a collection the member held no DEK for left a
+  // permanently blind slot, and the only way to hand a DEK over was `grant`,
+  // which re-keys the member and needs their CURRENT secret. Now the set a
+  // fresh grant would give this role + permissions is computed by the same
+  // rule (`selectGranteeDekNames`); what the member lacks is delivered
+  // through their inbox, what they no longer qualify for is dropped — and
+  // rotated, exactly as a narrowing `grant` does (#1097).
+  const roleChanged = header.role !== target.role
+  const mayHoldSecrets = header.role === 'owner' || header.role === 'admin'
+  const permissions = resolvePermissions(header.role, header.permissions)
+  const minted = await mintMissingDeksForGrant(store, vault, callerKeyring, permissions, mayHoldSecrets)
+  if (minted) await persistKeyring(store, vault, callerKeyring)
+  const wanted = new Set(selectGranteeDekNames(header.role, header.permissions, permissions, callerKeyring.deks))
+
+  const held = target.deks
+  const pending = new Set(target.inbox?.slots ?? [])
+  // Retained: still wanted, or a key of the member's own the grantor never
+  // held (`_inbox_key`; `_broker_member` while the role is still sub-admin —
+  // and re-minted below on a role change, since the host scopes by role), or
+  // an operational `_`-prefixed slot this caller does not hold (a tier key,
+  // say) that is not secret-bearing for the new role.
+  const retains = (name: string): boolean => {
+    if (name === INBOX_KEY_ID) return true
+    if (name === BROKER_MEMBER_COLLECTION) return !mayHoldSecrets && !roleChanged
+    if (wanted.has(name)) return true
+    if (!name.startsWith('_')) return false
+    return !(isSecretBearingReservedCollection(name) && !mayHoldSecrets)
+  }
+  const deks: Record<string, string> = {}
+  for (const [name, wrapped] of Object.entries(held)) if (retains(name)) deks[name] = wrapped
+  const dropped = Object.keys(held).filter((name) => !name.startsWith('_') && !(name in deks))
+
+  // What to deliver: wanted and not held; plus a pending delivery that is still
+  // wanted (a box cannot be opened by this caller, only re-sealed from its own
+  // set, so it is rebuilt whole); plus a fresh `_broker_member` on a sub-admin
+  // role change. Everything sealed comes from the caller's own DEK set — the
+  // anti-privilege-escalation invariant `grant` states, kept explicit here.
+  const deliver = new Map<string, EnclaveKey>()
+  for (const name of wanted) {
+    if (name in deks) continue
+    const dek = callerKeyring.deks.get(name)
+    if (!dek) throw new PrivilegeEscalationError(name)
+    deliver.set(name, dek)
+  }
+  for (const name of pending) if (!deliver.has(name) && !(name in deks) && !wanted.has(name)) dropped.push(name)
+  let brokerMemberDek: EnclaveKey | undefined
+  if (roleChanged && !mayHoldSecrets) {
+    brokerMemberDek = await generateDEK()
+    deliver.set(BROKER_MEMBER_COLLECTION, brokerMemberDek)
+  }
+  let inbox: KeyringFile['inbox']
+  if (deliver.size > 0) {
+    if (target.inbox_key === undefined) throw new MemberInboxMissingError(options.userId)
+    inbox = await sealInbox(target.inbox_key, deliver)
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rebuilt above, never carried
+  const { inbox: _previousInbox, ...carried } = header
+  const edited: KeyringFile = { ...carried, deks, ...(inbox !== undefined && { inbox }) }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
   const withEpoch = stampAuthority(edited, target.roster_epoch)
   const next: KeyringFile = { ...withEpoch, roster_tag: await mintRosterTag(withEpoch, rosterKey) }
 
   await writeKeyringFile(store, vault, options.userId, next)
+
+  // #1097 — a narrowing must rotate what it takes away, or the file it
+  // overwrote (legitimately minted, replayable by a store) keeps opening
+  // records written after the narrowing. Self-edits excluded, as in `grant`:
+  // the caller holds every DEK in memory and `rotateKeys` would rebuild their
+  // file from it, overwriting the edit just written.
+  const rotate = [...new Set(dropped)].filter((name) => !name.startsWith('_'))
+  if (rotate.length > 0 && options.userId !== callerKeyring.userId) {
+    await rotateKeys(store, vault, callerKeyring, { collections: rotate })
+  }
+  return { roleChanged, ...(brokerMemberDek !== undefined && { brokerMemberDek }) }
 }
 
 // ─── Key Rotation ──────────────────────────────────────────────────────
@@ -2596,6 +2725,77 @@ export function hasAccess(keyring: UnlockedKeyring, collectionName: string): boo
   return collectionName in keyring.permissions
 }
 
+// ─── Inbox (core#96) ───────────────────────────────────────────────────
+//
+// A member's DEKs are wrapped under their KEK, and a KEK derives only from a
+// secret the vault never stores — so before this, the ONLY moment a DEK could
+// reach a member was a write under their KEK: `grant`, which re-keys them.
+// Widening an existing member therefore required their CURRENT secret, which
+// after `acceptInvite` or `rotateSecret` the grantor does not hold, and a
+// re-grant with a stale one locked them out (measured, core#96).
+//
+// The inbox closes that with an asymmetric box the grantor can seal and only
+// the member can open: at grant, a recipient key pair is minted; the public
+// half sits plaintext in the member's file (bound into the roster tag), the
+// private half sealed under an AES key held in `deks[INBOX_KEY_ID]` — under
+// the member's KEK like every other DEK. A delivery is `sealInbox`: a fresh
+// CEK RSA-OAEP-wrapped to the public half, the DEK set AES-GCM under the CEK.
+// The member's next tier-1 unlock drains it (`openInbox` in `loadKeyring`)
+// and re-persists the file with the DEKs under their own KEK.
+//
+// Why not a symmetric key both sides hold: an admin who held it and was
+// later revoked could open every box delivered to that member afterwards.
+// With the pair, an ex-admin holds nothing that opens a box sealed after the
+// revocation — the private half never left the member's file.
+
+export async function mintInboxKey(kek: EnclaveKey): Promise<{ wrappedInboxKey: string; inboxKey: NonNullable<KeyringFile['inbox_key']> }> {
+  const inboxKey = await generateDEK()
+  const pair = await generateRecipientKeyPair()
+  const pub = await exportRecipientPublicKeySpki(pair)
+  const priv = await exportRecipientPrivateKeyPkcs8(pair)
+  try {
+    const sealed = await encryptBytes(priv, inboxKey)
+    return { wrappedInboxKey: await wrapKey(inboxKey, kek), inboxKey: { pub: bufferToBase64(pub), priv: sealed } }
+  } finally {
+    priv.fill(0)
+  }
+}
+
+/** Seal `deks` to `file.inbox_key`. Every DEK MUST come from the caller's own set — the caller checks. */
+async function sealInbox(inboxKey: NonNullable<KeyringFile['inbox_key']>, deks: Map<string, EnclaveKey>): Promise<NonNullable<KeyringFile['inbox']>> {
+  const pub = await importRecipientPublicKeySpki(base64ToBuffer(inboxKey.pub))
+  const cekBytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
+  try {
+    const cek = await importTransferKey(cekBytes)
+    const payload = new TextEncoder().encode(JSON.stringify(await exportDekSet(deks)))
+    const { iv, data } = await encryptBytes(payload, cek)
+    const wrapped = await recipientWrap(pub, cekBytes)
+    return { slots: [...deks.keys()].sort(), cek: bufferToBase64(wrapped), iv, data }
+  } finally {
+    cekBytes.fill(0)
+  }
+}
+
+/** Open the member's own inbox with the AES key from `deks[INBOX_KEY_ID]`. */
+async function openInbox(file: KeyringFile, inboxKeyAes: EnclaveKey): Promise<Map<string, EnclaveKey>> {
+  if (!file.inbox || !file.inbox_key) return new Map()
+  const priv = await decryptBytes(file.inbox_key.priv.iv, file.inbox_key.priv.data, inboxKeyAes)
+  let pair: CryptoKeyPair
+  try {
+    pair = await importRecipientKeyPair(priv, base64ToBuffer(file.inbox_key.pub))
+  } finally {
+    priv.fill(0)
+  }
+  const cekBytes = await recipientUnwrap(pair, base64ToBuffer(file.inbox.cek))
+  try {
+    const cek = await importTransferKey(cekBytes)
+    const payload = await decryptBytes(file.inbox.iv, file.inbox.data, cek)
+    return importDekSet(JSON.parse(new TextDecoder().decode(payload)) as Record<string, string>)
+  } finally {
+    cekBytes.fill(0)
+  }
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 /** Persist a keyring file to the store. */
@@ -2641,6 +2841,13 @@ export async function persistKeyring(
   // roster tag would be stamped over the cleared value, so the erasure would
   // come out authenticated.
   const existingExpiresAt = existingFound?.file.expires_at
+  // core#96 — the inbox key pair is the member's origin material too: minted by
+  // the grantor, never in `UnlockedKeyring`. And a box whose slots are not all
+  // held yet was NOT drained by this session (a tier-2 unlock rebuilding the
+  // set from its own slot, say) — dropping it would lose the delivery.
+  const existingInboxKey = existingFound?.file.inbox_key
+  const existingInbox = existingFound?.file.inbox
+  const undrainedInbox = existingInbox !== undefined && !existingInbox.slots.every((slot) => keyring.deks.has(slot))
 
   const wrappedDeks: Record<string, string> = {}
   for (const [collName, dek] of keyring.deks) {
@@ -2676,6 +2883,10 @@ export async function persistKeyring(
     ...authority,
     deks: wrappedDeks,
     ...(Object.keys(wrappedPending).length > 0 ? { pending_deks: wrappedPending } : {}),
+    // core#96 — both tag-bound (`inbox_pub`, `inbox_slots`), so they must be
+    // in the object the tag is minted from, not spread in afterwards.
+    ...(existingInboxKey !== undefined && { inbox_key: existingInboxKey }),
+    ...(undrainedInbox && existingInbox !== undefined && { inbox: existingInbox }),
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.

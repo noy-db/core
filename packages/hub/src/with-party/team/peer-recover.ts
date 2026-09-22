@@ -37,6 +37,8 @@ import type { NoydbStore, KeyringFile, Role } from '../../kernel/types.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
 import { buildRecordEnvelope, deriveKey, generateSalt, wrapKey, bufferToBase64, generateDEK } from '../../capsule/index.js'
 import { BROKER_MEMBER_COLLECTION } from './reserved-secret-collections.js'
+import { INBOX_KEY_ID } from '../../kernel/constants.js'
+import { mintInboxKey } from './keyring.js'
 import { NoAccessError, PermissionDeniedError, PrivilegeEscalationError } from '../../kernel/errors.js'
 import { assertStrongSecret, type SecretPolicy } from '../../kernel/validation.js'
 import type { UnlockedKeyring } from './keyring.js'
@@ -160,8 +162,13 @@ export async function recoverUser(
   //    grantor never did: minted per grantee at grant time. It is not carried
   //    over (the caller cannot unwrap it) but MINTED AFRESH below, and the
   //    kernel re-enrols the member with the broker host under the new key.
-  for (const coll of Object.keys(target.deks)) {
-    if (coll === BROKER_MEMBER_COLLECTION) continue
+  //    core#96 — `_inbox_key` is the same kind of key (per member, minted at
+  //    grant, never the grantor's); a fresh inbox pair is minted below. A DEK
+  //    still in the target's undrained inbox is one they were handed and may
+  //    hold: it goes straight into the recovered file, under the new KEK.
+  const carriedSlots = [...Object.keys(target.deks), ...(target.inbox?.slots ?? [])]
+  for (const coll of carriedSlots) {
+    if (coll === BROKER_MEMBER_COLLECTION || coll === INBOX_KEY_ID) continue
     if (!callerKeyring.deks.has(coll)) {
       throw new PrivilegeEscalationError(coll)
     }
@@ -182,8 +189,10 @@ export async function recoverUser(
   if (targetRole !== 'owner' && targetRole !== 'admin') {
     wrappedDeks[BROKER_MEMBER_COLLECTION] = await wrapKey(await generateDEK(), newKek) // core#73
   }
-  for (const coll of Object.keys(target.deks)) {
-    if (coll === BROKER_MEMBER_COLLECTION) continue
+  const inbox = await mintInboxKey(newKek) // core#96
+  wrappedDeks[INBOX_KEY_ID] = inbox.wrappedInboxKey
+  for (const coll of carriedSlots) {
+    if (coll === BROKER_MEMBER_COLLECTION || coll === INBOX_KEY_ID) continue
     const callerDek = callerKeyring.deks.get(coll)
     if (!callerDek) {
       // Already caught by the anti-privilege-escalation loop above.
@@ -213,8 +222,8 @@ export async function recoverUser(
   //    parts would mean transporting three secrets over the out-of-band
   //    channel — deliberately out of scope).
   const canary = await mintKeyringCanary(newKek)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- excluded from ...carried
-  const { echo: _staleEcho, ...carried } = target
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- excluded from ...carried (core#96: the inbox was folded into `wrappedDeks`, the pair is re-minted)
+  const { echo: _staleEcho, inbox: _drainedInbox, ...carried } = target
   const edited: KeyringFile = {
     ...carried,
     _noydb_keyring: NOYDB_KEYRING_VERSION,
@@ -225,6 +234,7 @@ export async function recoverUser(
     granted_by: callerKeyring.userId,
     authenticators: [],
     canary,
+    inbox_key: inbox.inboxKey,
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.

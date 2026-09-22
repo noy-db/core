@@ -230,6 +230,8 @@ export { generateSigningKeyPair, signBytes, verifyBytes } from '../plumbing/sign
 export type { EnclaveKeyPair } from './crypto.js'
 export {
   generateRecipientKeyPair,
+  exportRecipientPrivateKeyPkcs8,
+  importRecipientKeyPair,
   exportRecipientPublicKeySpki,
   importRecipientPublicKeySpki,
   recipientWrap,

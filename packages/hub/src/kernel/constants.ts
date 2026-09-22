@@ -57,3 +57,11 @@ export const ROSTER_KEY_ID = '_roster'
  * of rewriting every chunk and index row on every revocation.
  */
 export const BLOB_ADDRESS_KEY_ID = '_blob_addr'
+
+/**
+ * core#96 — the DEK-map slot holding a member's INBOX KEY: the AES key that
+ * seals the private half of their inbox key pair (`KeyringFile.inbox_key`).
+ * A reserved key, not a collection — never propagated to a grantee (it is
+ * per member), never rotated, stripped by `revoke` the way `_roster` is.
+ */
+export const INBOX_KEY_ID = '_inbox_key'

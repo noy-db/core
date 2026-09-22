@@ -71,6 +71,8 @@ export {
   generateEphemeralKey,
   generateIV,
   generateRecipientKeyPair,
+  exportRecipientPrivateKeyPkcs8,
+  importRecipientKeyPair,
   generateRecoverySecret,
   generateSalt,
   generateSigningKeyPair,

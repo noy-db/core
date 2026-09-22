@@ -1269,6 +1269,40 @@ export interface KeyringFile {
    * using standard/managed mode, or written before this extension.
    */
   readonly echo?: KeyringEchoBlock
+  /**
+   * core#96 — the member's INBOX KEY PAIR, minted by the grantor at grant /
+   * recovery time. `pub` is the SPKI public half, plaintext and bound into the
+   * roster tag (a store must not be able to swap it for its own); `priv` is the
+   * PKCS#8 private half sealed under the AES key in `deks[INBOX_KEY_ID]`, which
+   * only this member's KEK unwraps. It lets an owner/admin hand this member a
+   * DEK LATER, without the member's secret — see `inbox`.
+   *
+   * Absent on every keyring written before this existed: such a member can be
+   * re-granted (re-keyed) but not amended in place (`MemberInboxMissingError`).
+   */
+  readonly inbox_key?: {
+    readonly pub: string
+    readonly priv: { readonly iv: string; readonly data: string }
+  }
+  /**
+   * core#96 — DEKs delivered to this member by `updateUser` and not yet
+   * drained: a random CEK RSA-OAEP-wrapped to `inbox_key.pub` (`cek`), and the
+   * exported DEK set AES-GCM-sealed under that CEK (`iv`/`data`). `slots` names
+   * the collections inside, plaintext, and is bound into the roster tag so the
+   * rotation scope of a later `revoke` cannot be hidden from it.
+   *
+   * Drained by the member's next tier-1 unlock (`loadKeyring`): the DEKs move
+   * into `deks` under the member's own KEK and the field is dropped. A member
+   * who unlocks only through a tier-2 slot sees them at their next tier-1
+   * open. A revoked admin who cached nothing but the file cannot open a box —
+   * the private half never left this member's keyring.
+   */
+  readonly inbox?: {
+    readonly slots: readonly string[]
+    readonly cek: string
+    readonly iv: string
+    readonly data: string
+  }
 }
 
 // ─── Backup ────────────────────────────────────────────────────────────
@@ -2009,15 +2043,24 @@ export interface GrantOptions {
 }
 
 /**
- * Caller payload for `db.updateUser`. Mutate one or more
- * identity fields on an existing keyring without rotating any keys.
+ * Caller payload for `db.updateUser`: change what an EXISTING member may
+ * do, without holding their secret.
  *
  * `role`, `displayName`, and `permissions` live in the plaintext header
  * of `_keyring/<userId>` (the sync engine reads them without keys).
- * Mutating them is a JSON header swap — no DEK rewrap, no KEK
- * required, no authenticator slots touched. Tier-2 slots and recovery
- * enrollments survive unchanged. Last-write-wins through the existing
- * keyring put (same concurrency story as `db.grant` / `db.revoke`).
+ * The member's KEK, salt, authenticator slots and recovery enrollments
+ * are untouched. Last-write-wins through the existing keyring put (same
+ * concurrency story as `db.grant` / `db.revoke`).
+ *
+ * core#96 — a change that WIDENS access (a new collection, a wrap-all
+ * role) delivers the DEKs the member lacks through their keyring inbox
+ * (`KeyringFile.inbox`): sealed to the member's inbox key pair, drained at
+ * their next tier-1 unlock. A change that NARROWS access drops the DEKs
+ * and rotates those collections, exactly as a narrowing `grant` does
+ * (#1097). Before this existed, `updateUser` could name a collection the
+ * member had no key for — a permanently blind slot — and `grant` was the
+ * only widening path, which re-keys the member and needs their CURRENT
+ * secret. Use `grant` to create or re-key; use this to change access.
  *
  * Top-level fields are partial-merge: absent fields are not modified.
  * `null` on `displayName` clears the field (stored as the empty string;
