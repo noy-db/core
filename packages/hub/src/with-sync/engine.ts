@@ -607,7 +607,7 @@ export class SyncEngine {
                 // #936: supersede, don't overwrite in place — see advancePastRemote.
                 const winner = await this.advancePastRemote(conflict.local, entry.collection, entry.id, remoteEnvelope)
                 await this.remote.put(this.vault, entry.collection, entry.id, winner)
-                if (winner !== conflict.local) await this.applyRemote(entry.collection, entry.id, winner)
+                if (winner !== conflict.local) await this.applyRemote(entry.collection, entry.id, winner, { admit: false })
                 acc.completed.push(i)
                 acc.pushed++
               } else if (handled === 'remote') {
@@ -1180,7 +1180,7 @@ export class SyncEngine {
                     // #936: supersede, don't overwrite in place — see advancePastRemote.
                     const winner = await this.advancePastRemote(conflict.local, entry.collection, entry.id, remoteEnvelope)
                     await this.remote.put(this.vault, entry.collection, entry.id, winner)
-                    if (winner !== conflict.local) await this.applyRemote(entry.collection, entry.id, winner)
+                    if (winner !== conflict.local) await this.applyRemote(entry.collection, entry.id, winner, { admit: false })
                     completed.push(i)
                     pushed++
                   } else if (handled === 'remote') {
@@ -1413,7 +1413,7 @@ export class SyncEngine {
     return envelopeBodyForHash(remote) !== envelopeBodyForHash(local)
   }
 
-  private async applyRemote(collection: string, id: string, envelope: EncryptedEnvelope): Promise<void> {
+  private async applyRemote(collection: string, id: string, envelope: EncryptedEnvelope, opts?: { readonly admit?: boolean }): Promise<void> {
     // #1042 — FAIL CLOSED, and do it HERE rather than at the 14 call sites.
     // Every path that commits store-supplied ciphertext goes through this
     // function, so gating it once covers them all by construction instead of by
@@ -1437,8 +1437,11 @@ export class SyncEngine {
     // A refusal is a fate, not an error: parked with the envelope intact, the
     // local copy untouched, reported and emitted. `pulled` is corrected at the
     // end of the run (the callers count before they know).
+    // `admit: false` (pilot-1 on #74): this device's OWN record, re-versioned past
+    // the remote after a conflict it won — it passed the writer's gate when it
+    // was written; judging it again as `sync-apply` is wrong and confusing.
     const isErasure = isTombstoneShape(envelope) || isDeleteMarker(envelope)
-    if (this.admission && !isErasure) {
+    if (this.admission && !isErasure && opts?.admit !== false) {
       const verdict = await this.admission.admit(collection, id, envelope)
       if (!verdict.admitted) {
         const rejection: SyncRejection = {
