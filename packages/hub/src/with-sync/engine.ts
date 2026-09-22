@@ -1,4 +1,4 @@
-import { buildRecordEnvelope, envelopeBodyForHash } from '../capsule/index.js'
+import { buildRecordEnvelope, envelopeBodyForHash, buildDeleteMarker } from '../capsule/index.js'
 import type {
   NoydbStore,
   DirtyEntry,
@@ -17,6 +17,7 @@ import type {
   SyncProgress,
   RealignResult,
   SyncApplied, SyncRejection, SyncRejectedApi,
+  SyncEpochRecord, ReplaceRemoteResult,
 } from '../kernel/types.js'
 import { NOYDB_SYNC_VERSION } from '../kernel/types.js'
 import { isConflictError, ValidationError } from '../kernel/errors.js'
@@ -75,6 +76,8 @@ export class SyncEngine {
   /** #1036 — last SUCCESSFUL push/pull. Never advanced by a failed attempt. */
   private lastPush: string | null = null
   private lastPull: string | null = null
+  /** core#72 — the target's restore epoch this device adopted; null before any. */
+  private epoch: number | null = null
   /**
    * #1036 — the failure that ended the most recent attempt, cleared by the next
    * success. Live state only: deliberately NOT persisted in `_sync/meta`, since a
@@ -203,6 +206,117 @@ export class SyncEngine {
   /** core#74 — wire the vault's admission gate. */
   setAdmission(a: AdmissionAuthority): void {
     this.admission = a
+  }
+
+  /** core#71 — after `vault.load()`: a new base. Drops the dirty log, the watermarks and the adopted epoch. */
+  async resetAfterRestore(): Promise<void> {
+    await this.ensureLoaded()
+    this.dirty = []
+    this.lastPush = null
+    this.lastPull = null
+    this.epoch = null
+    await this.persistMeta()
+  }
+
+  /** core#72 — the target's epoch record, or null when the target was never replaced. */
+  async #remoteEpoch(): Promise<SyncEpochRecord | null> {
+    const env = await this.remote.get(this.vault, '_sync', 'epoch')
+    return env ? (JSON.parse(envelopeBodyForHash(env)) as SyncEpochRecord) : null
+  }
+
+  /**
+   * core#72 — make the LOCAL vault authoritative on this target. Every local
+   * record goes up unconditionally, re-sealed above the target's version where
+   * the target moved on (so every peer's copy is superseded); every id the
+   * target holds that the local vault lacks gets a delete marker at
+   * `remote._v + 1` (so every peer removes it); the reserved collections are
+   * mirrored; then a new epoch is written at `_sync/epoch`. The dirty log is
+   * cleared: the target IS the local state now.
+   */
+  async replaceRemote(): Promise<ReplaceRemoteResult> {
+    await this.ensureLoaded()
+    const actor = this.rosterReload?.userId ?? 'sync'
+    const [localSnapshot, remoteSnapshot] = await Promise.all([this.local.loadAll(this.vault), this.remote.loadAll(this.vault)])
+    let replaced = 0
+    let tombstoned = 0
+    for (const [collection, records] of Object.entries(localSnapshot)) {
+      if (collection === REJECTED_COLLECTION) continue
+      for (const [id, envelope] of Object.entries(records)) {
+        const current = remoteSnapshot[collection]?.[id]
+        let out = envelope
+        if (current && current._v >= envelope._v) {
+          // The target moved past the local copy: lift the local envelope above
+          // it, re-sealed through the merge authority (the AAD binds `_v`).
+          out = this.mergeAuthority
+            ? await this.mergeAuthority.advance(collection, id, envelope, current._v + 1)
+            : { ...envelope, _v: current._v + 1 }
+          await this.local.put(this.vault, collection, id, out)
+        }
+        await this.remote.put(this.vault, collection, id, out)
+        replaced++
+      }
+    }
+    for (const [collection, records] of Object.entries(remoteSnapshot)) {
+      if (collection === REJECTED_COLLECTION) continue
+      for (const [id, envelope] of Object.entries(records)) {
+        if (localSnapshot[collection]?.[id] !== undefined) continue
+        if (isTombstoneShape(envelope) || isDeleteMarker(envelope)) continue
+        const marker = buildDeleteMarker({ collection, id }, envelope._v + 1, actor)
+        await this.remote.put(this.vault, collection, id, marker)
+        await this.local.put(this.vault, collection, id, marker) // the local mirrors the target exactly: its own next pull brings nothing back
+        tombstoned++
+      }
+    }
+    const mirrored = await pushReserved(this.local, this.remote, this.vault)
+    const previous = await this.#remoteEpoch()
+    const epoch = (previous?.epoch ?? 0) + 1
+    const record: SyncEpochRecord = { epoch, at: new Date().toISOString(), by: actor, replaced, tombstoned }
+    await this.remote.put(this.vault, '_sync', 'epoch', buildRecordEnvelope({ collection: '_sync', id: 'epoch', version: epoch }, { iv: '', data: JSON.stringify(record) }))
+    this.dirty = []
+    this.epoch = epoch
+    this.lastPush = new Date().toISOString()
+    await this.persistMeta()
+    const result: ReplaceRemoteResult = { epoch, replaced, tombstoned, reserved: mirrored.copied }
+    this.emitter.emit('sync:replace', { vault: this.vault, ...result })
+    return result
+  }
+
+  /**
+   * core#72 — at the start of a pull: has the target been replaced since this
+   * device last synced? If so, park every unpushed local edit (same fate as an
+   * admission refusal, reason `restore-epoch`), drop the dirty log, adopt the
+   * epoch. The pull that follows then adopts the target: the restorer lifted
+   * its records above every peer's version and tombstoned what it removed.
+   */
+  async #crossEpoch(): Promise<{ epoch: number; resynced: boolean; parked: number }> {
+    const remote = await this.#remoteEpoch()
+    if (!remote || remote.epoch === this.epoch) return { epoch: remote?.epoch ?? 0, resynced: false, parked: 0 }
+    const from = this.epoch
+    let parked = 0
+    for (const entry of this.dirty) {
+      if (entry.action === 'delete') continue
+      const env = await this.local.get(this.vault, entry.collection, entry.id)
+      if (!env) continue
+      const rejection: SyncRejection = {
+        vault: this.vault, collection: entry.collection, id: entry.id, version: env._v,
+        reason: `restore-epoch: the target was replaced (epoch ${remote.epoch}) after this edit; readmit to keep it locally, then put again to push`,
+        ...(env._by !== undefined ? { by: env._by } : {}), at: new Date().toISOString(),
+      }
+      const parkedRecord: ParkedRejection = { rejection, envelope: env }
+      await this.local.put(this.vault, REJECTED_COLLECTION, `${entry.collection}::${entry.id}`,
+        buildRecordEnvelope({ collection: REJECTED_COLLECTION, id: `${entry.collection}::${entry.id}`, version: 1 }, { iv: '', data: JSON.stringify(parkedRecord) }))
+      this.#rejected.push(rejection)
+      this.emitter.emit('sync:rejected', rejection)
+      // Adopting the target WHOLESALE: the unpushed record leaves the local
+      // store too (the parking record holds it; `readmit` puts it back).
+      await this.local.delete(this.vault, entry.collection, entry.id)
+      await this.cacheInvalidator?.(entry.collection, entry.id, 'delete')
+      parked++
+    }
+    this.dirty = []
+    this.epoch = remote.epoch
+    this.emitter.emit('sync:epoch', { vault: this.vault, from, to: remote.epoch, parked })
+    return { epoch: remote.epoch, resynced: true, parked }
   }
 
   /** core#74 — the parked refusals on this device, and their two fates. */
@@ -631,8 +745,9 @@ export class SyncEngine {
     this.#applied = []
     this.#rejected = []
     const conflicts: Conflict[] = []
-    const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
+    let crossed = { epoch: 0, resynced: false, parked: 0 }
+    const erasures: ErasureEnforcement[] = []
 
     // core#75 / core#83 — the reserved set comes FIRST, before any record: a
     // device that bootstrapped from this target on open already holds its own
@@ -658,6 +773,17 @@ export class SyncEngine {
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
+    }
+
+    // core#72 — cross the target's restore epoch AFTER the reserved phase (the
+    // roster mirrors by its own epoch and a fresh member device needs its seed
+    // before its own mint can serve a request — core#97) and BEFORE any record:
+    // unpushed local edits are parked before the target's records land. An
+    // unreachable target is a pull error like any other, not a throw.
+    try {
+      crossed = await this.#crossEpoch()
+    } catch (err) {
+      errors.push(err instanceof Error ? err : new Error(String(err)))
     }
 
     // ── #807 period-scoped pull: validate the option, sync the period summaries
@@ -954,6 +1080,7 @@ export class SyncEngine {
     const result: PullResult = {
       pulled, conflicts, errors, erasures, ...(reserved > 0 && { reserved }), ...(phases !== null ? { phases } : {}),
       ...(applied.length > 0 && { applied }), ...(rejected.length > 0 && { rejected }),
+      ...(crossed.epoch > 0 && { epoch: crossed.epoch }), ...(crossed.resynced && { resynced: true as const }),
     }
     this.emitter.emit('sync:pull', result)
     return result
@@ -1180,6 +1307,7 @@ export class SyncEngine {
       dirty: this.dirty.length,
       lastPush: this.lastPush,
       lastPull: this.lastPull,
+      ...(this.epoch !== null ? { epoch: this.epoch } : {}), // core#72
       ...(this.inFlight ? { inFlight: this.inFlight } : {}),
       online: this.isOnline,
       ...(this.lastError ? { lastError: this.lastError } : {}),
@@ -1466,6 +1594,7 @@ export class SyncEngine {
       this.dirty = [...meta.dirty]
       this.lastPush = meta.last_push
       this.lastPull = meta.last_pull
+      this.epoch = meta.epoch ?? null
     }
 
     this.loaded = true
@@ -1477,6 +1606,7 @@ export class SyncEngine {
       last_push: this.lastPush,
       last_pull: this.lastPull,
       dirty: this.dirty,
+      ...(this.epoch !== null ? { epoch: this.epoch } : {}),
     }
 
     const envelope: EncryptedEnvelope = buildRecordEnvelope(

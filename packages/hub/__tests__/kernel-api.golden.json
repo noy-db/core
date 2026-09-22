@@ -39,6 +39,7 @@
     "queryAcross",
     "realign",
     "rejected",
+    "replaceRemote",
     "resetSessionTimer",
     "restoreSnapshot",
     "revoke",

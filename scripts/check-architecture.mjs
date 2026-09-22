@@ -1647,7 +1647,8 @@ const KERNEL_SURFACE_BUDGET = {
   // target-less vault switches Collection's sync mode on and rebuilds handles.
   // Bumped 3774→3780 (2026-09-22, core#74): `_admitRemote` — the vault-side seam the sync engine's
   // admission authority binds (reserved names never gated).
-  'packages/hub/src/kernel/vault.ts': 3780,
+  // Bumped 3780→3790 (2026-09-22, core#71): `onRestore` — the seam a restore uses to reset the vault's engines.
+  'packages/hub/src/kernel/vault.ts': 3790,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
@@ -1868,7 +1869,8 @@ const KERNEL_SURFACE_BUDGET = {
   // revoke, rotate), and the merge authority reads the CURRENT keyring through a getter.
   // Bumped 2380→2400 (2026-09-22, core#74): `db.rejected(vault)` — the two fates of a record the
   // admission gate refused (readmit / discard), delegating to the primary engine.
-  'packages/hub/src/kernel/noydb.ts': 2400,  // see the #1121 note above
+  // Bumped 2400→2420 (2026-09-22, core#72): `replaceRemote(vault)` and the restore reset wired into the vault.
+  'packages/hub/src/kernel/noydb.ts': 2420,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,
