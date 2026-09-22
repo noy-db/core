@@ -710,6 +710,7 @@ export class Noydb {
       engine.setReservedDictExpander(names => comp._reservedDictDepsOf(names)) // #653
       engine.setPeriodPullSource({ periods: () => comp.listPeriods() }) // #807 period-scoped pull windows
       engine.setRosterReload({ userId: this.options.user, reload: () => comp._reloadKeyringAfterSync() }) // core#82
+      engine.setCollectionNames(() => [...(this.keyringCache.get(name)?.deks.keys() ?? [])].filter(n => !n.startsWith('_'))) // core#81 paged pull
     })
     // Initialise the optional guard + derivation registries via dynamic-import — no-ops when the
     // corresponding strategies array is empty/unset, keeping the service code out of the floor bundle.

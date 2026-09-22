@@ -141,6 +141,46 @@ export class SyncEngine {
     this.periodPullSource = source
   }
 
+  /** core#81 — the collections this keyring names; the walk set for a paged pull. Wired by the vault at open. */
+  private collectionNames?: () => readonly string[]
+
+  /** Wire the paged-pull walk set (core#81). Same injection pattern as `setCacheInvalidator`. */
+  setCollectionNames(fn: () => readonly string[]): void {
+    this.collectionNames = fn
+  }
+
+  /**
+   * core#81 — one chunk per page of one collection, for `pull({ paged: true })`.
+   * `listPage` when the store offers it (200 per page), else `list` + `get` in
+   * batches of the same size. Never more than one page in memory.
+   */
+  private async *pagedChunks(names: readonly string[]): AsyncGenerator<[string, Record<string, EncryptedEnvelope>]> {
+    const PAGE = 200
+    const remote = this.remote
+    for (const coll of names) {
+      if (typeof remote.listPage === 'function') {
+        let cursor: string | undefined
+        do {
+          const page = await remote.listPage(this.vault, coll, cursor, PAGE)
+          const records: Record<string, EncryptedEnvelope> = {}
+          for (const { id, envelope } of page.items) records[id] = envelope
+          if (page.items.length > 0) yield [coll, records]
+          cursor = page.nextCursor ?? undefined
+        } while (cursor !== undefined)
+      } else {
+        const ids = await remote.list(this.vault, coll)
+        for (let i = 0; i < ids.length; i += PAGE) {
+          const records: Record<string, EncryptedEnvelope> = {}
+          for (const id of ids.slice(i, i + PAGE)) {
+            const env = await remote.get(this.vault, coll, id)
+            if (env) records[id] = env
+          }
+          if (Object.keys(records).length > 0) yield [coll, records]
+        }
+      }
+    }
+  }
+
   /** core#82 — when a pull replaces the caller's OWN keyring file, the vault reloads it in place. */
   private rosterReload?: { userId: string; reload: () => Promise<void> }
 
@@ -584,19 +624,32 @@ export class SyncEngine {
     const filter = expanded ? new Set([...expanded, ...(this.reservedDictExpander?.(expanded) ?? [])]) : null
 
     try {
-      const remoteSnapshot = await this.remote.loadAll(this.vault)
-      // core#81 — the total is known once the snapshot is down; progress from
-      // here measures the APPLY phase (the long one on an indexed store).
+      // core#81 — two ways to walk the remote. Default: one `loadAll()`, the
+      // total known once the snapshot is down, progress measuring the APPLY
+      // phase. Paged: the collections this keyring names (∩ the filter), one
+      // page in memory at a time, the total counted by `list()` BEFORE the
+      // first apply. Same loop body either way.
       let pullTotal = 0
-      for (const [collName, records] of Object.entries(remoteSnapshot)) {
-        if (filter && !filter.has(collName)) continue
-        pullTotal += Object.keys(records).length
+      let chunks: Iterable<[string, Record<string, EncryptedEnvelope>]> | AsyncIterable<[string, Record<string, EncryptedEnvelope>]>
+      if (options?.paged) {
+        const known = new Set(this.collectionNames?.() ?? [])
+        for (const name of filter ?? []) if (!name.startsWith('_')) known.add(name)
+        const names = [...known].filter(n => !n.startsWith('_') && (!filter || filter.has(n)))
+        for (const name of names) pullTotal += (await this.remote.list(this.vault, name)).length
+        chunks = this.pagedChunks(names)
+      } else {
+        const remoteSnapshot = await this.remote.loadAll(this.vault)
+        for (const [collName, records] of Object.entries(remoteSnapshot)) {
+          if (filter && !filter.has(collName)) continue
+          pullTotal += Object.keys(records).length
+        }
+        chunks = Object.entries(remoteSnapshot)
       }
       const pullSample = (): SyncProgress => ({
         direction: 'pull', phase: 'records', records: pulled, bytes: this.pullBytes, total: { records: pullTotal },
       })
 
-      for (const [collName, records] of Object.entries(remoteSnapshot)) {
+      for await (const [collName, records] of chunks) {
         // Partial sync: skip collections not in the filter
         if (filter && !filter.has(collName)) {
           continue
