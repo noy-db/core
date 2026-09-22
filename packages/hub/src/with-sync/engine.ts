@@ -362,12 +362,134 @@ export class SyncEngine {
     if (this.dirty.length !== before) await this.persistMeta()
   }
 
+  /** One dirty entry of `push()`: the CAS put, the tombstone assertion, the delete, and every conflict branch. Extracted so `push({ concurrency })` can run entries in a bounded pool (core#93). */
+  async #pushOne(i: number, entry: DirtyEntry, acc: { pushed: number; bytes: number; completed: number[]; conflicts: Conflict[]; erasures: ErasureEnforcement[]; errors: Error[] }): Promise<void> {
+  try {
+    if (entry.action === 'delete') {
+      await this.remote.delete(this.vault, entry.collection, entry.id)
+      acc.completed.push(i)
+      acc.pushed++
+    } else {
+      const envelope = await this.local.get(this.vault, entry.collection, entry.id)
+      if (!envelope) {
+        // Record was deleted locally after being marked dirty
+        acc.completed.push(i)
+        return
+      }
+
+      if (isTombstoneShape(envelope)) {
+        // #590: a tombstone push is an erasure assertion — unconditional,
+        // no CAS, no conflict resolution. Erasure always wins.
+        await this.remote.put(this.vault, entry.collection, entry.id, envelope)
+        acc.completed.push(i)
+        acc.pushed++
+        return
+      }
+
+      try {
+        await this.remote.put(
+          this.vault,
+          entry.collection,
+          entry.id,
+          envelope,
+          entry.version - 1,
+        )
+        acc.completed.push(i)
+        acc.pushed++
+        acc.bytes += envelopeBodySize(envelope) // core#81
+      } catch (err) {
+        if (isConflictError(err)) {
+          const remoteEnvelope = await this.remote.get(this.vault, entry.collection, entry.id)
+          if (remoteEnvelope) {
+            if (isTombstoneShape(remoteEnvelope)) {
+              // #590: remote already shredded this record — enforce locally,
+              // never resolve. Resolvers must not overrule an erasure.
+              await this.applyRemote(entry.collection, entry.id, remoteEnvelope)
+              acc.erasures.push(this.reportErasure(entry.collection, entry.id, remoteEnvelope, envelope, 'push'))
+              acc.completed.push(i)
+            } else if (
+              remoteEnvelope._v === envelope._v &&
+              isDeleteMarker(remoteEnvelope) !== isDeleteMarker(envelope) &&
+              !this.conflictResolvers.get(entry.collection)
+            ) {
+              // #589: a same-_v delete-vs-edit tie on the push channel. handleConflict's db-level
+              // 'version' default would resolve it to local-wins; the tie rule consults ONLY the
+              // per-collection resolver, else delete-wins. (When a per-collection resolver IS set,
+              // fall through to handleConflict, which already honors it — incl. the merged case.)
+              if (isDeleteMarker(remoteEnvelope)) {
+                // remote already deleted → converge locally, drop our (edit) push
+                await this.applyRemote(entry.collection, entry.id, remoteEnvelope)
+                acc.completed.push(i)
+              } else {
+                // our local is the marker → force the delete onto the remote (unconditional put)
+                await this.remote.put(this.vault, entry.collection, entry.id, envelope)
+                acc.completed.push(i)
+                acc.pushed++
+              }
+            } else {
+              const { handled, conflict } = await this.handleConflict(
+                entry.collection,
+                entry.id,
+                envelope,
+                remoteEnvelope,
+                'push',
+              )
+              acc.conflicts.push(conflict)
+              if (handled === 'local') {
+                // #936: supersede, don't overwrite in place — see advancePastRemote.
+                const winner = await this.advancePastRemote(conflict.local, entry.collection, entry.id, remoteEnvelope)
+                await this.remote.put(this.vault, entry.collection, entry.id, winner)
+                if (winner !== conflict.local) await this.applyRemote(entry.collection, entry.id, winner)
+                acc.completed.push(i)
+                acc.pushed++
+              } else if (handled === 'remote') {
+                await this.applyRemote(entry.collection, entry.id, conflict.remote)
+                acc.completed.push(i)
+              } else if (handled === 'merged' && conflict.local !== envelope) {
+                // Merged envelope is stored in conflict.local (the winner)
+                const merged = conflict.local
+                await this.remote.put(this.vault, entry.collection, entry.id, merged)
+                await this.applyRemote(entry.collection, entry.id, merged)
+                acc.completed.push(i)
+                acc.pushed++
+              }
+              // handled === 'deferred': leave in dirty log
+            }
+          }
+        } else {
+          throw err
+        }
+      }
+    }
+    } catch (err) {
+      acc.errors.push(err instanceof Error ? err : new Error(String(err)))
+    }
+  }
+
+  /**
+   * core#92 — mark every user-collection record in the local store dirty at its
+   * current version, so the next push sends it (CAS against `_v - 1`, so a
+   * remote that already holds a newer copy resolves through the conflict path
+   * instead of being overwritten). Records already dirty keep their entry.
+   */
+  async markAllDirty(): Promise<void> {
+    await this.ensureLoaded()
+    const snapshot = await this.local.loadAll(this.vault)
+    for (const [collection, records] of Object.entries(snapshot)) {
+      for (const [id, envelope] of Object.entries(records)) {
+        if (this.dirty.some(d => d.collection === collection && d.id === id)) continue
+        this.dirty.push({ vault: this.vault, collection, id, action: 'put', version: envelope._v, timestamp: new Date().toISOString() })
+      }
+    }
+    await this.persistMeta()
+  }
+
   /** Push dirty records to remote adapter. Accepts optional `PushOptions` for partial sync. */
   async push(options?: PushOptions): Promise<PushResult> {
     await this.ensureLoaded()
+    if (options?.full) await this.markAllDirty()
     this.graphBatchController?.begin() // #638 Task 4
 
-    let pushed = 0
     const conflicts: Conflict[] = []
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
@@ -380,117 +502,22 @@ export class SyncEngine {
     const filter = expanded ? new Set([...expanded, ...(this.reservedDictExpander?.(expanded) ?? [])]) : null
 
     const pushTotal = filter ? this.dirty.filter(d => filter.has(d.collection)).length : this.dirty.length
-    let pushBytes = 0
-    for (let i = 0; i < this.dirty.length; i++) {
-      const entry = this.dirty[i]!
-
-      // Partial sync: skip collections not in the filter
-      if (filter && !filter.has(entry.collection)) {
-        continue
-      }
-      this.progress({ direction: 'push', phase: 'records', records: pushed, bytes: pushBytes, total: { records: pushTotal } })
-
-      try {
-        if (entry.action === 'delete') {
-          await this.remote.delete(this.vault, entry.collection, entry.id)
-          completed.push(i)
-          pushed++
-        } else {
-          const envelope = await this.local.get(this.vault, entry.collection, entry.id)
-          if (!envelope) {
-            // Record was deleted locally after being marked dirty
-            completed.push(i)
-            continue
-          }
-
-          if (isTombstoneShape(envelope)) {
-            // #590: a tombstone push is an erasure assertion — unconditional,
-            // no CAS, no conflict resolution. Erasure always wins.
-            await this.remote.put(this.vault, entry.collection, entry.id, envelope)
-            completed.push(i)
-            pushed++
-            continue
-          }
-
-          try {
-            await this.remote.put(
-              this.vault,
-              entry.collection,
-              entry.id,
-              envelope,
-              entry.version - 1,
-            )
-            completed.push(i)
-            pushed++
-            pushBytes += envelopeBodySize(envelope) // core#81
-          } catch (err) {
-            if (isConflictError(err)) {
-              const remoteEnvelope = await this.remote.get(this.vault, entry.collection, entry.id)
-              if (remoteEnvelope) {
-                if (isTombstoneShape(remoteEnvelope)) {
-                  // #590: remote already shredded this record — enforce locally,
-                  // never resolve. Resolvers must not overrule an erasure.
-                  await this.applyRemote(entry.collection, entry.id, remoteEnvelope)
-                  erasures.push(this.reportErasure(entry.collection, entry.id, remoteEnvelope, envelope, 'push'))
-                  completed.push(i)
-                } else if (
-                  remoteEnvelope._v === envelope._v &&
-                  isDeleteMarker(remoteEnvelope) !== isDeleteMarker(envelope) &&
-                  !this.conflictResolvers.get(entry.collection)
-                ) {
-                  // #589: a same-_v delete-vs-edit tie on the push channel. handleConflict's db-level
-                  // 'version' default would resolve it to local-wins; the tie rule consults ONLY the
-                  // per-collection resolver, else delete-wins. (When a per-collection resolver IS set,
-                  // fall through to handleConflict, which already honors it — incl. the merged case.)
-                  if (isDeleteMarker(remoteEnvelope)) {
-                    // remote already deleted → converge locally, drop our (edit) push
-                    await this.applyRemote(entry.collection, entry.id, remoteEnvelope)
-                    completed.push(i)
-                  } else {
-                    // our local is the marker → force the delete onto the remote (unconditional put)
-                    await this.remote.put(this.vault, entry.collection, entry.id, envelope)
-                    completed.push(i)
-                    pushed++
-                  }
-                } else {
-                  const { handled, conflict } = await this.handleConflict(
-                    entry.collection,
-                    entry.id,
-                    envelope,
-                    remoteEnvelope,
-                    'push',
-                  )
-                  conflicts.push(conflict)
-                  if (handled === 'local') {
-                    // #936: supersede, don't overwrite in place — see advancePastRemote.
-                    const winner = await this.advancePastRemote(conflict.local, entry.collection, entry.id, remoteEnvelope)
-                    await this.remote.put(this.vault, entry.collection, entry.id, winner)
-                    if (winner !== conflict.local) await this.applyRemote(entry.collection, entry.id, winner)
-                    completed.push(i)
-                    pushed++
-                  } else if (handled === 'remote') {
-                    await this.applyRemote(entry.collection, entry.id, conflict.remote)
-                    completed.push(i)
-                  } else if (handled === 'merged' && conflict.local !== envelope) {
-                    // Merged envelope is stored in conflict.local (the winner)
-                    const merged = conflict.local
-                    await this.remote.put(this.vault, entry.collection, entry.id, merged)
-                    await this.applyRemote(entry.collection, entry.id, merged)
-                    completed.push(i)
-                    pushed++
-                  }
-                  // handled === 'deferred': leave in dirty log
-                }
-              }
-            } else {
-              throw err
-            }
-          }
-        }
-      } catch (err) {
-        errors.push(err instanceof Error ? err : new Error(String(err)))
+    const acc = { pushed: 0, bytes: 0, completed, conflicts, erasures, errors }
+    const eligible = [...this.dirty.keys()].filter(i => !filter || filter.has(this.dirty[i]!.collection))
+    const width = Math.max(1, Math.floor(options?.concurrency ?? 1))
+    // core#93 — a bounded pool: `width` entries in flight, each with its own CAS
+    // and conflict path. width 1 is exactly the previous serial loop.
+    let next = 0
+    const worker = async (): Promise<void> => {
+      while (next < eligible.length) {
+        const i = eligible[next++]!
+        this.progress({ direction: 'push', phase: 'records', records: acc.pushed, bytes: acc.bytes, total: { records: pushTotal } })
+        await this.#pushOne(i, this.dirty[i]!, acc)
       }
     }
+    await Promise.all(Array.from({ length: Math.min(width, eligible.length) }, () => worker()))
+    const pushed = acc.pushed
+    const pushBytes = acc.bytes
 
     // Remove completed entries from dirty log (reverse order to preserve indices)
     for (const i of completed.sort((a, b) => b - a)) {

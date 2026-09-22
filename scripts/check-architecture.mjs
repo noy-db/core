@@ -1639,7 +1639,9 @@ const KERNEL_SURFACE_BUDGET = {
   // seam, `_reloadKeyringAfterSync`, over the reload logic the pod-restore path
   // already had privately. Sync pulled a newer copy of THIS user's keyring file;
   // the vault must adopt it in place or every widened grant needs a reopen.
-  'packages/hub/src/kernel/vault.ts': 3768,
+  // Bumped 3768→3774 (2026-09-22, core#90): `_enableSync` — the first attach on a
+  // target-less vault switches Collection's sync mode on and rebuilds handles.
+  'packages/hub/src/kernel/vault.ts': 3774,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
@@ -1840,7 +1842,12 @@ const KERNEL_SURFACE_BUDGET = {
   // roster-reload wiring (one line beside the other engine seams), `realign()`
   // as a sibling of push/pull, and `inFlight` on syncTargetStatus(). The
   // mechanisms are in with-sync/{engine,reserved-mirror}.ts.
-  'packages/hub/src/kernel/noydb.ts': 2264,  // see the #1121 note above
+  // Bumped 2264→2292 (2026-09-22, pilot-1 direct cloud shape, core#90/#91/#92/#93/#94):
+  // `attachSyncTarget()` (a target after open — the wiring itself moved to
+  // kernel/sync-wiring.ts so open and attach cannot drift), the per-vault conflict
+  // resolver registry the attach replays, and revoke() deleting `_users` and
+  // dirty-tracking three reserved collections.
+  'packages/hub/src/kernel/noydb.ts': 2292,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

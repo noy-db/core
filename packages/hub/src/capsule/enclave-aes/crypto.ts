@@ -425,8 +425,17 @@ export async function decrypt(
   dek: CryptoKey,
   aad?: Uint8Array,
 ): Promise<string> {
-  const iv = base64ToBuffer(ivBase64)
-  const ciphertext = base64ToBuffer(dataBase64)
+  // A body that is not even base64 (`atob` throws a DOMException) is a corrupted
+  // envelope, and must read as one: the same named error a wrong key produces,
+  // never the raw WebCrypto/`atob` exception (measured by a consumer, core#67).
+  let iv: Uint8Array
+  let ciphertext: Uint8Array
+  try {
+    iv = base64ToBuffer(ivBase64)
+    ciphertext = base64ToBuffer(dataBase64)
+  } catch (err) {
+    throw new DecryptionError(`envelope body is not valid base64: ${err instanceof Error ? err.message : String(err)}`)
+  }
 
   try {
     const plaintext = await subtle.decrypt(

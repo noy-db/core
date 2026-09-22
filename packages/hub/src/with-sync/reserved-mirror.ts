@@ -26,6 +26,7 @@
  * | `_meta/invite-audit-*` | higher `_v` wins | single-use evidence for magic links (core#83) |
  * | `_users` | higher `_v` wins | the directory's user envelopes; a member app renders these |
  * | `_delegations` | higher `_v` wins | delegation tokens; revocation is a delete |
+ * | `_broker`, `_broker_member` | higher `_v` wins | broker seeds (core#91) — sealed under DEKs only their holder has; a fresh device mints from them |
  * | `_history`, `_ledger` | NOT replicated | per-device evidence: the ledger is a hash chain per writer, two devices appending would fork it; `vault.at(T)` runs where history lives |
  * | `_sync` | NOT replicated | this device's dirty log and watermarks |
  * | `_meta/schema-fence`, `_meta/handle`, other `_meta` | NOT replicated | session and instance state; the rest of `_meta` is decided one id at a time |
@@ -49,9 +50,10 @@
  * the acting device and is pushed through the dirty log as
  * `(collection, id, 'delete')`. On PULL, a record the remote lacks and the
  * local holds is deleted locally only when (a) the remote carries at least
- * one record of that collection — a target never pushed to is not evidence
- * of revocation — and (b) no dirty entry protects it (a grant made offline,
- * not yet pushed). Invite audit docs are never deleted; revocation is a
+ * one KEYRING file — a target never pushed to is not evidence of revocation,
+ * but a collection that emptied by revocation is exactly what must propagate
+ * (core#91) — and (b) no dirty entry protects it (a grant made offline, not
+ * yet pushed). Invite audit docs are never deleted; revocation is a
  * field update, which the `_v` rule carries.
  */
 import type { NoydbStore, EncryptedEnvelope } from '../kernel/types.js'
@@ -100,6 +102,13 @@ const RESERVED_REPLICATION: readonly ReservedReplicationRule[] = [
   { collection: '_meta', idPrefix: 'invite-audit-', supersedes: versionSupersedes, propagateDeletes: false },
   { collection: '_users', supersedes: versionSupersedes, propagateDeletes: true },
   { collection: '_delegations', supersedes: versionSupersedes, propagateDeletes: true },
+  // core#91 — the broker seeds. `_broker/<brokerId>` is sealed under the
+  // admin `_broker` DEK (owner/admin only hold it), `_broker_member/<userId>`
+  // under that grantee's own DEK: both are ciphertext to the mover and to every
+  // other device, and both are exactly what a fresh device needs to mint its
+  // first credential. Revocation is a delete that rides the dirty log.
+  { collection: '_broker', supersedes: versionSupersedes, propagateDeletes: true },
+  { collection: '_broker_member', supersedes: versionSupersedes, propagateDeletes: true },
 ]
 
 export interface ReservedMirrorResult {
@@ -174,12 +183,19 @@ export async function pullReserved(
   let copied = 0
   let deleted = 0
   let keyringsCopied: readonly string[] = []
+  // "Has this target ever been pushed to?" is answered by the ROSTER, not by the
+  // collection at hand: a pushed target always carries at least the owner's
+  // keyring file, whereas `_broker_member` or `_delegations` legitimately
+  // become EMPTY when the last record is revoked — and that emptiness is the
+  // revocation this must propagate (core#91), not a never-pushed target.
+  let remoteInitialised = false
   for (const rule of RESERVED_REPLICATION) {
     const remoteIds = (await remote.list(vault, rule.collection)).filter(id => inScope(rule, id))
+    if (rule.collection === KEYRING_COLLECTION) remoteInitialised = remoteIds.length > 0
     const ids = await mirrorRule(rule, remote, local, vault, remoteIds)
     copied += ids.length
     if (rule.collection === KEYRING_COLLECTION) keyringsCopied = ids
-    if (!rule.propagateDeletes || remoteIds.length === 0) continue
+    if (!rule.propagateDeletes || !remoteInitialised) continue
     const remoteSet = new Set(remoteIds)
     const protectedSet = protectedIds.get(rule.collection)
     const localIds = rule.collection === KEYRING_COLLECTION ? localKeyrings : await local.list(vault, rule.collection)
