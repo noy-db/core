@@ -52,6 +52,14 @@ export interface GatePutEvent {
   readonly existingVersion: number
   /** Prior envelope timestamp (`_ts` ISO string), or undefined when none — periods compares against this. */
   readonly existingTs: string | undefined
+  /**
+   * core#74 — where the write comes from. `'local-write'` (the default when
+   * absent) is this device's own `put`; `'sync-apply'` is a record ARRIVING by
+   * sync, evaluated at admission against this device's view. A handler that
+   * only makes sense for the writer (a UI confirmation, say) checks this;
+   * a rule about state (a closed period) does not need to.
+   */
+  readonly origin?: 'local-write' | 'sync-apply'
   readonly userId: string
   readonly role: Role
   /**
@@ -75,6 +83,8 @@ export interface GateDeleteEvent {
   readonly existing: unknown
   readonly existingVersion: number
   readonly existingTs: string | undefined
+  /** core#74 — see `GatePutEvent.origin`. Deletes arriving by sync are not gated today; present for symmetry. */
+  readonly origin?: 'local-write' | 'sync-apply'
   readonly userId: string
   readonly role: Role
 }

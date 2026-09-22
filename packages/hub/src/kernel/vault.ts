@@ -1072,6 +1072,12 @@ export class Vault {
    *  its already-warmed `LookupHandle._syncCache` (membership/altIndex/snapshot reads never see a
    *  stale verdict for a pulled vocabulary edit) and collect the touch into any open graph batch
    *  (the sync-apply wave-reachability seam Task 5's ref edges will use). No-op if never warmed. */
+  /** core#74 — admission of a sync-applied record: the collection's own gates and hooks judge it. Reserved names are never gated. @internal */
+  async _admitRemote(collection: string, id: string, envelope: EncryptedEnvelope): Promise<{ admitted: true } | { admitted: false; reason: string }> {
+    if (collection.startsWith('_')) return { admitted: true }
+    return this.collection(collection)._admitRemote(id, envelope)
+  }
+
   async _invalidateSyncApplied(collection: string, id: string, action: 'put' | 'delete'): Promise<void> {
     const coll = this.collectionCache.get(collection)
     if (coll) {

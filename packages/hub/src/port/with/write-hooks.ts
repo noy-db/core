@@ -16,6 +16,8 @@ export interface WriteEvent {
   readonly userId: string
   readonly timestamp: number
   readonly txId: string
+  /** core#74 — `'sync-apply'` when the record is arriving by sync and this hook runs as its admission gate; absent on a local write. */
+  readonly origin?: 'local-write' | 'sync-apply'
 }
 
 export type WriteHook = (event: WriteEvent) => void | Promise<void>

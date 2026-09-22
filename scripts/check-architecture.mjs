@@ -1296,7 +1296,11 @@ const KERNEL_SURFACE_BUDGET = {
   // accreting in the always-on kernel, and a stripped comment adds no runtime
   // and no bundle bytes. A bump justified by "it's only a few lines" of
   // behaviour is the thing this table is here to refuse.
-  'packages/hub/src/kernel/collection.ts': 4427,
+  // Bumped 4427→4490 (2026-09-22, core#74): `_admitRemote` — the ADMISSION of a record arriving by
+  // sync: the same `beforePut` gate bus and `db.onBeforeWrite` hooks a local put runs, on the
+  // decrypted incoming record against this device's state, with `origin: 'sync-apply'`. Kernel by
+  // nature: it is the write gate, reached from a second door.
+  'packages/hub/src/kernel/collection.ts': 4490,
   // Lowered 4549→4548 (#826/#798/#812 deprecation cut, 2026-07-26): removed the #799 cover delegators + option key, the dead auth/autoSync/syncInterval options, and the /bundle retirement fallout. Ratchets the #799 bumps back down as their comments promised.
   // Bumped 3640→3700 (2026-06-08): deferred-numbering wiring — `sequence()`
   // routing + `runNumberingPass` + the cache-coherent `stamp` closure. The
@@ -1641,7 +1645,9 @@ const KERNEL_SURFACE_BUDGET = {
   // the vault must adopt it in place or every widened grant needs a reopen.
   // Bumped 3768→3774 (2026-09-22, core#90): `_enableSync` — the first attach on a
   // target-less vault switches Collection's sync mode on and rebuilds handles.
-  'packages/hub/src/kernel/vault.ts': 3774,
+  // Bumped 3774→3780 (2026-09-22, core#74): `_admitRemote` — the vault-side seam the sync engine's
+  // admission authority binds (reserved names never gated).
+  'packages/hub/src/kernel/vault.ts': 3780,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
@@ -1860,7 +1866,9 @@ const KERNEL_SURFACE_BUDGET = {
   // Bumped 2362→2380 (2026-09-22, core#100): `#trackRewrites` — a rotation's re-encrypted
   // records enter the sync dirty log as `rekey` entries on every engine (revoke, custodian
   // revoke, rotate), and the merge authority reads the CURRENT keyring through a getter.
-  'packages/hub/src/kernel/noydb.ts': 2380,  // see the #1121 note above
+  // Bumped 2380→2400 (2026-09-22, core#74): `db.rejected(vault)` — the two fates of a record the
+  // admission gate refused (readmit / discard), delegating to the primary engine.
+  'packages/hub/src/kernel/noydb.ts': 2400,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

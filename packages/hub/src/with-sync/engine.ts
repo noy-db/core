@@ -16,11 +16,22 @@ import type {
   ErasureEnforcement,
   SyncProgress,
   RealignResult,
+  SyncApplied, SyncRejection, SyncRejectedApi,
 } from '../kernel/types.js'
 import { NOYDB_SYNC_VERSION } from '../kernel/types.js'
 import { isConflictError, ValidationError } from '../kernel/errors.js'
 import { pushReserved, pullReserved, pullKeyringFile } from './reserved-mirror.js'
+
+/** core#74 — where a device parks the records its admission gate refused. Local-only: never mirrored, never full-pushed. */
+export const REJECTED_COLLECTION = '_sync_rejected'
+/** core#74 — the parking record: the refusal and the untouched envelope, plaintext JSON (the envelope inside is still ciphertext). */
+interface ParkedRejection { readonly rejection: SyncRejection; readonly envelope: EncryptedEnvelope }
+/** The parking record is a plaintext-body envelope; the capsule's canonical body reader returns exactly its JSON. */
+function parseParked(env: EncryptedEnvelope): ParkedRejection {
+  return JSON.parse(envelopeBodyForHash(env)) as ParkedRejection
+}
 import type { MergeAuthority } from '../port/with/merge-authority.js'
+import type { AdmissionAuthority } from '../port/with/admission-authority.js'
 import {
   PERIOD_SUMMARY_COLLECTIONS,
   PERIODS_COLLECTION,
@@ -44,6 +55,10 @@ export interface ReservedLookupSource {
 /** Sync engine: dirty tracking, push, pull, conflict resolution, scheduling. */
 export class SyncEngine {
   private readonly mergeAuthority: MergeAuthority | undefined
+  /** core#74 — the vault's admission gate for incoming records; wired at open like the other vault seams. */
+  private admission: AdmissionAuthority | undefined
+  #applied: SyncApplied[] = []
+  #rejected: SyncRejection[] = []
   private readonly local: NoydbStore
   private readonly remote: NoydbStore
   private readonly strategy: ConflictStrategy
@@ -185,6 +200,37 @@ export class SyncEngine {
   private rosterReload?: { userId: string; reload: () => Promise<void> }
 
   /** Wire the roster-reload seam (core#82). Same injection pattern as `setCacheInvalidator`. */
+  /** core#74 — wire the vault's admission gate. */
+  setAdmission(a: AdmissionAuthority): void {
+    this.admission = a
+  }
+
+  /** core#74 — the parked refusals on this device, and their two fates. */
+  rejected(): SyncRejectedApi {
+    const key = (collection: string, id: string): string => `${collection}::${id}`
+    return {
+      list: async () => {
+        const out: SyncRejection[] = []
+        for (const id of await this.local.list(this.vault, REJECTED_COLLECTION)) {
+          const env = await this.local.get(this.vault, REJECTED_COLLECTION, id)
+          if (!env) continue
+          out.push(parseParked(env).rejection)
+        }
+        return out
+      },
+      readmit: async (collection, id) => {
+        const env = await this.local.get(this.vault, REJECTED_COLLECTION, key(collection, id))
+        if (!env) throw new ValidationError(`sync: no rejected record parked for "${collection}/${id}".`)
+        await this.local.put(this.vault, collection, id, parseParked(env).envelope)
+        await this.local.delete(this.vault, REJECTED_COLLECTION, key(collection, id))
+        await this.cacheInvalidator?.(collection, id, 'put')
+      },
+      discard: async (collection, id) => {
+        await this.local.delete(this.vault, REJECTED_COLLECTION, key(collection, id))
+      },
+    }
+  }
+
   setRosterReload(seam: { userId: string; reload: () => Promise<void> }): void {
     this.rosterReload = seam
   }
@@ -484,6 +530,7 @@ export class SyncEngine {
     await this.ensureLoaded()
     const snapshot = await this.local.loadAll(this.vault)
     for (const [collection, records] of Object.entries(snapshot)) {
+      if (collection === REJECTED_COLLECTION) continue // core#74 — parked refusals are this device's alone
       for (const [id, envelope] of Object.entries(records)) {
         if (this.dirty.some(d => d.collection === collection && d.id === id)) continue
         this.dirty.push({ vault: this.vault, collection, id, action: 'put', version: envelope._v, timestamp: new Date().toISOString() })
@@ -581,6 +628,8 @@ export class SyncEngine {
 
     let pulled = 0
     let reserved = 0
+    this.#applied = []
+    this.#rejected = []
     const conflicts: Conflict[] = []
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
@@ -898,7 +947,14 @@ export class SyncEngine {
       await this.graphBatchController?.flush() // #638 Task 4
     }
 
-    const result: PullResult = { pulled, conflicts, errors, erasures, ...(reserved > 0 && { reserved }), ...(phases !== null ? { phases } : {}) }
+    // core#74 — the callers counted a refused record before admission spoke.
+    pulled = Math.max(0, pulled - this.#rejected.length)
+    const applied = this.#applied, rejected = this.#rejected
+    this.#applied = []; this.#rejected = []
+    const result: PullResult = {
+      pulled, conflicts, errors, erasures, ...(reserved > 0 && { reserved }), ...(phases !== null ? { phases } : {}),
+      ...(applied.length > 0 && { applied }), ...(rejected.length > 0 && { rejected }),
+    }
     this.emitter.emit('sync:pull', result)
     return result
   }
@@ -1252,7 +1308,35 @@ export class SyncEngine {
         'identity and version it claims. The local copy is unchanged.',
       )
     }
+    // core#74 — ADMISSION. The vault runs its gates and hooks on the decrypted
+    // incoming record against this device's state. Erasures are never gated.
+    // A refusal is a fate, not an error: parked with the envelope intact, the
+    // local copy untouched, reported and emitted. `pulled` is corrected at the
+    // end of the run (the callers count before they know).
+    const isErasure = isTombstoneShape(envelope) || isDeleteMarker(envelope)
+    if (this.admission && !isErasure) {
+      const verdict = await this.admission.admit(collection, id, envelope)
+      if (!verdict.admitted) {
+        const rejection: SyncRejection = {
+          vault: this.vault, collection, id, reason: verdict.reason, version: envelope._v,
+          ...(envelope._by !== undefined ? { by: envelope._by } : {}), at: new Date().toISOString(),
+        }
+        const parked: ParkedRejection = { rejection, envelope }
+        await this.local.put(
+          this.vault, REJECTED_COLLECTION, `${collection}::${id}`,
+          buildRecordEnvelope({ collection: REJECTED_COLLECTION, id: `${collection}::${id}`, version: 1 }, { iv: '', data: JSON.stringify(parked) }),
+        )
+        this.#rejected.push(rejection)
+        this.emitter.emit('sync:rejected', rejection)
+        return
+      }
+    }
+    const prior = await this.local.get(this.vault, collection, id)
     await this.local.put(this.vault, collection, id, envelope)
+    this.#applied.push({
+      collection, id, action: isErasure ? 'delete' : 'put',
+      ...(prior && prior._v < envelope._v ? { replaced: { version: prior._v, ...(prior._by !== undefined ? { by: prior._by } : {}) } } : {}),
+    })
     this.pullBytes += envelopeBodySize(envelope) // core#81
     if (this.pullByteSink !== null) {
       // #807: KPI — one applied envelope; bytes ≈ ciphertext payload size.
