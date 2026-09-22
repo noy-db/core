@@ -19,7 +19,7 @@ import type {
 } from '../kernel/types.js'
 import { NOYDB_SYNC_VERSION } from '../kernel/types.js'
 import { isConflictError, ValidationError } from '../kernel/errors.js'
-import { pushReserved, pullReserved } from './reserved-mirror.js'
+import { pushReserved, pullReserved, pullKeyringFile } from './reserved-mirror.js'
 import type { MergeAuthority } from '../port/with/merge-authority.js'
 import {
   PERIOD_SUMMARY_COLLECTIONS,
@@ -490,6 +490,7 @@ export class SyncEngine {
     if (options?.full) await this.markAllDirty()
     this.graphBatchController?.begin() // #638 Task 4
 
+    let reserved = 0
     const conflicts: Conflict[] = []
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
@@ -534,7 +535,16 @@ export class SyncEngine {
     if (!filter) {
       this.progress({ direction: 'push', phase: 'reserved', records: pushed, bytes: pushBytes, total: { records: pushTotal } })
       try {
-        await pushReserved(this.local, this.remote, this.vault)
+        const mirrored = await pushReserved(this.local, this.remote, this.vault)
+        reserved = mirrored.copied
+        // core#96 (pilot-1, finding B) — a local keyring the target supersedes
+        // was discarded by the epoch rule; say so, as a conflict on `_keyring`.
+        for (const stale of mirrored.staleKeyrings ?? []) {
+          conflicts.push({
+            vault: this.vault, collection: '_keyring', id: stale.id, local: stale.local, remote: stale.remote,
+            localVersion: stale.local._v, remoteVersion: stale.remote._v,
+          })
+        }
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
@@ -552,7 +562,7 @@ export class SyncEngine {
       await this.graphBatchController?.flush() // #638 Task 4
     }
 
-    const result: PushResult = { pushed, conflicts, errors, erasures }
+    const result: PushResult = { pushed, conflicts, errors, erasures, ...(reserved > 0 && { reserved }) }
     this.emitter.emit('sync:push', result)
     return result
   }
@@ -562,6 +572,7 @@ export class SyncEngine {
     await this.ensureLoaded()
 
     let pulled = 0
+    let reserved = 0
     const conflicts: Conflict[] = []
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
@@ -584,8 +595,9 @@ export class SyncEngine {
           if (!set) { set = new Set(); protectedIds.set(d.collection, set) }
           set.add(d.id)
         }
-        const { keyringsCopied } = await pullReserved(this.remote, this.local, this.vault, protectedIds)
-        if (this.rosterReload && keyringsCopied.includes(this.rosterReload.userId)) await this.rosterReload.reload()
+        const mirrored = await pullReserved(this.remote, this.local, this.vault, protectedIds)
+        reserved = mirrored.copied + mirrored.deleted
+        if (this.rosterReload && mirrored.keyringsCopied.includes(this.rosterReload.userId)) await this.rosterReload.reload()
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
@@ -878,7 +890,7 @@ export class SyncEngine {
       await this.graphBatchController?.flush() // #638 Task 4
     }
 
-    const result: PullResult = { pulled, conflicts, errors, erasures, ...(phases !== null ? { phases } : {}) }
+    const result: PullResult = { pulled, conflicts, errors, erasures, ...(reserved > 0 && { reserved }), ...(phases !== null ? { phases } : {}) }
     this.emitter.emit('sync:pull', result)
     return result
   }
@@ -1053,6 +1065,19 @@ export class SyncEngine {
    * what the caller can read. Requires a `MergeAuthority` (a vault-attached
    * engine on an encrypted vault).
    */
+  /**
+   * core#96 (pilot-1, finding B) — bring one member's keyring file down from
+   * this target if the target's copy supersedes ours. Called by the kernel
+   * before an authority edit; reloads the caller's own keyring in place when
+   * it is the one refreshed (core#82).
+   */
+  async refreshKeyring(userId: string): Promise<boolean> {
+    await this.ensureLoaded()
+    const copied = await pullKeyringFile(this.remote, this.local, this.vault, userId)
+    if (copied && this.rosterReload && userId === this.rosterReload.userId) await this.rosterReload.reload()
+    return copied
+  }
+
   async realign(): Promise<RealignResult> {
     await this.ensureLoaded()
     if (!this.mergeAuthority) throw new ValidationError('realign: requires a vault-attached engine on an encrypted vault (no MergeAuthority).')

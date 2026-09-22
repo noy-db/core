@@ -1852,7 +1852,12 @@ const KERNEL_SURFACE_BUDGET = {
   // `grant`/`revoke` (#73), seven lines, the same shape — plus the doc blocks on `grant` (it
   // RE-KEYS an existing user) and `updateUser` (the keys now follow the header), which is the
   // one place a consumer reads before choosing between them.
-  'packages/hub/src/kernel/noydb.ts': 2320,  // see the #1121 note above
+  // Bumped 2320→2362 (2026-09-22, core#96 findings A+B): `#refreshRoster` — every authority
+  // edit first pulls the member's keyring file from each sync target, so an edit on a stale
+  // copy never pushes as the epoch rule's loser — and `reloadKeyring` opening with the KEK the
+  // session HOLDS (secret fallback for a restore / same-secret re-key). Kernel by nature: the
+  // refresh sits between the gate and the engine on four verbs; the reload is the kernel's own.
+  'packages/hub/src/kernel/noydb.ts': 2362,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

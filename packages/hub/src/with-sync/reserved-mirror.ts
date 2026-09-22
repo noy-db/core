@@ -82,6 +82,12 @@ function keyringEpoch(envelope: EncryptedEnvelope | null | undefined): number | 
   }
 }
 
+/** What makes two copies of a keyring file "the same edit": epoch, the authenticated authority (its tag), and the display name. */
+function keyringIdentity(envelope: EncryptedEnvelope): string {
+  const file = parseKeyringEnvelope(envelope)
+  return `${file.roster_epoch ?? ''}:${file.roster_tag.data}:${file.display_name}`
+}
+
 function keyringSupersedes(candidate: EncryptedEnvelope, current: EncryptedEnvelope | null): boolean {
   if (!current) return true
   const c = keyringEpoch(candidate)
@@ -121,6 +127,14 @@ export interface ReservedMirrorResult {
   readonly deleted: number
   /** Ids of `_keyring` files copied — the roster reload seam reads this for the caller's own file. */
   readonly keyringsCopied: readonly string[]
+  /**
+   * core#96 (pilot-1, finding B) — push only: local `_keyring` files the epoch
+   * rule did not write and whose content differs from the remote's (the remote
+   * is ahead, or the two diverged at one epoch). The local edit LOST; the
+   * engine reports each as a `Conflict` so an authority edit made on a stale
+   * copy is never silently dropped.
+   */
+  readonly staleKeyrings?: readonly { readonly id: string; readonly local: EncryptedEnvelope; readonly remote: EncryptedEnvelope }[]
 }
 
 function inScope(rule: ReservedReplicationRule, id: string): boolean {
@@ -156,12 +170,38 @@ async function mirrorRule(
 export async function pushReserved(local: NoydbStore, remote: NoydbStore, vault: string): Promise<ReservedMirrorResult> {
   let copied = 0
   let keyringsCopied: readonly string[] = []
+  const staleKeyrings: { id: string; local: EncryptedEnvelope; remote: EncryptedEnvelope }[] = []
   for (const rule of RESERVED_REPLICATION) {
     const ids = await mirrorRule(rule, local, remote, vault)
     copied += ids.length
-    if (rule.collection === KEYRING_COLLECTION) keyringsCopied = ids
+    if (rule.collection === KEYRING_COLLECTION) {
+      keyringsCopied = ids
+      // core#96 — a local file that was NOT written above and differs from the
+      // remote's copy is an edit the epoch rule discarded: the remote is ahead,
+      // or the two diverged at the same epoch (an edit made on a stale copy
+      // bumps to the epoch the remote already holds). Right to discard, wrong
+      // to swallow — reported here, at the one site that knows.
+      for (const id of await local.list(vault, KEYRING_COLLECTION)) {
+        if (ids.includes(id)) continue
+        const [mine, theirs] = await Promise.all([local.get(vault, KEYRING_COLLECTION, id), remote.get(vault, KEYRING_COLLECTION, id)])
+        if (mine && theirs && keyringIdentity(mine) !== keyringIdentity(theirs)) staleKeyrings.push({ id, local: mine, remote: theirs })
+      }
+    }
   }
-  return { copied, deleted: 0, keyringsCopied }
+  return { copied, deleted: 0, keyringsCopied, ...(staleKeyrings.length > 0 && { staleKeyrings }) }
+}
+
+/**
+ * core#96 (pilot-1, finding B) — bring ONE member's keyring file down from the
+ * target if the target's copy supersedes the local one. The kernel calls it
+ * before every authority edit (`grant` on an existing user, `updateUser`,
+ * `revoke`, `recoverUser`), so the edit is made on the current file and its
+ * push wins instead of being discarded by the epoch rule. One GET.
+ */
+export async function pullKeyringFile(remote: NoydbStore, local: NoydbStore, vault: string, userId: string): Promise<boolean> {
+  const rule = RESERVED_REPLICATION[0]!
+  const ids = await mirrorRule(rule, remote, local, vault, [userId])
+  return ids.length > 0
 }
 
 /**
