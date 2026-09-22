@@ -1,5 +1,9 @@
 # Changelog — by-peer
 
+## 0.9.0-pre.0
+
+Its README example no longer names a symbol it did not import (`prose-missing-imports-and-gate-rules`: a name the family publishes, used un-imported, is a missing import — the family prose gate now catches this class). No runtime change; otherwise the lockstep bump to 0.9.0-pre.0 — see `@noy-db/hub` 0.9.0-pre.0 for the line's notes.
+
 ## 0.8.0
 
 Lockstep bump to 0.8.0; no package-level change in this release. See `@noy-db/hub` 0.8.0 for the line's notes.

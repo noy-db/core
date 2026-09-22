@@ -1,7 +1,7 @@
 {
   "name": "@noy-db/by-peer",
-  "version": "0.8.0",
-  "description": "WebRTC peer-to-peer transport for noy-db \u2014 direct browser-to-browser channel with signaling-agnostic handshake",
+  "version": "0.9.0-pre.0",
+  "description": "WebRTC peer-to-peer transport for noy-db — direct browser-to-browser channel with signaling-agnostic handshake",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/by-peer#readme",

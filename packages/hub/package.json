@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/hub",
-  "version": "0.8.0",
+  "version": "0.9.0-pre.0",
   "description": "Zero-knowledge, offline-first, encrypted document store — core library with AES-256-GCM, PBKDF2, multi-user keyring, and sync engine",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",

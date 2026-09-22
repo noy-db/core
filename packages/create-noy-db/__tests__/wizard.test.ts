@@ -10,7 +10,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runWizard } from '../src/wizard/run.js'
 import { validateProjectName } from '../src/wizard/run.js'
-import { applyTokens, ownVersion, renderTemplate, templateDir } from '../src/wizard/render.js'
+import { NOYDB_IN_VERSION, applyTokens, ownVersion, renderTemplate, templateDir } from '../src/wizard/render.js'
 import type { WizardFreshResult } from '../src/wizard/types.js'
 
 /**
@@ -505,7 +505,9 @@ describe('template dependency pins (#703)', () => {
       const expected = `^${await ownVersion()}`
       for (const [dep, range] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) {
         if (/^(@noy-db\/|create-noy-db$)/.test(dep)) {
-          expect(range, dep).toBe(expected)
+          // in-* versions on noy-db/in's own line (NOYDB_IN_VERSION), not this package's.
+          // Invisible while both lines sat at 0.8.0; the 0.9.0-pre.0 bump exposed it.
+          expect(range, dep).toBe(dep.startsWith('@noy-db/in-') ? `^${NOYDB_IN_VERSION}` : expected)
         }
       }
       expect(pkg.dependencies['@noy-db/hub']).toBe(expected)

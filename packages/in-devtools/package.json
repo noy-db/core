@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/in-devtools",
-  "version": "0.8.0",
+  "version": "0.9.0-pre.0",
   "description": "Framework-agnostic read-only inspector for a live noy-db — vaults, collections, schema, stats, records, and live writes.",
   "license": "Apache-2.0",
   "type": "module",

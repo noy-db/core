@@ -1,5 +1,33 @@
 # Changelog — hub
 
+## 0.9.0-pre.0
+
+**The line moves to 0.9.0 on this pre-release: a new package, a milestone, three seam widenings, and fourteen fewer names.** Everything below is additive unless marked ⛔.
+
+**`@noy-db/ports`** — the six conformance kits are one package with one subpath per hub port: `@noy-db/ports/to`, `/as`, `/at`, `/on`, `/by`, `/capsule`. Bind `@noy-db/hub/<port>`, prove it with `@noy-db/ports/<port>`. **Not a break:** function names unchanged, peers unchanged, and the six `@noy-db/test-*-conformance` names keep resolving as re-export shims until the family's satellites have moved. This cut publishes seven conformance names where the last one published six.
+
+**Fourteen fewer names.** The `in-*` framework bindings left this repo for `noy-db/in`; they are no longer on this version line. Nothing about `@noy-db/hub` changed for them.
+
+**Hot replica** (milestone: core#75, core#73, core#81, core#82, core#83) — a `sync-peer` target is now a full replica.
+- The roster travels: push mirrors `_keyring` to every target, pull brings it back before any record, higher `roster_epoch` wins in both directions. `openVault` on an EMPTY local consults the sync-peer before deciding new-vs-existing — a device that lost its store re-opens with the same target and secret, and a granted member opens on its own device with only its secret. `revoke()` propagates.
+- Reserved-record replication is a DECLARED set: `_meta/invite-audit-*` (magic-link onboarding works on a fresh sync-peer device once the issuer pushed), `_users`, `_delegations` travel; `_history`, `_ledger`, `_sync` and every other `_meta` id do not, by decision. `Vault.revokeDelegation()` rides the dirty log.
+- A pulled change to your own keyring file takes effect in the open session — a widened re-grant is readable after the next `pull()`, no reopen.
+- **`sync:progress`** during pull and push (`{ direction, phase, records, bytes, total? }`, throttled), and optional `inFlight` on `syncStatus()` / `syncTargetStatus()`. Types `SyncProgress` and `RealignResult` on the root barrel.
+- **`db.realign(vault)`** — a corrupted LOCAL envelope is replaced from the target's healthy copy; an ordinary pull could not repair it because it wins on `_v`.
+- **Member-scoped broker credentials** (`@noy-db/hub/broker`): every role can mint its own cloud-store credentials. `grant()` mints a per-grantee `_broker_member` DEK and the kernel enrols the member with the host (`{ userId, role, proofKey }`); members prove with canonical v2 (`userId` + `role` inside the MAC); re-grant re-enrols, `revoke()` de-registers, peer recovery re-enrols. The admin path is byte-identical. `BrokerStrategy` gains `enrolMember` / `revokeMember` (the floor stub implements both as no-ops); `@noy-db/hub/broker` exports `BrokerMemberIdentity`; `VerifyBrokerProofArgs.member` selects v2 on the host. Existing members need a re-grant (or magic-link recovery) to be enrolled.
+
+**`/capsule`** (core#42) — ⛔ two published changes a compiler cannot tell you about: **`EnclaveNotSupportedError.group` is widened to `CapsuleGroup`** (it named three of ten groups and could not name `classify`; an exhaustive `switch` on `err.group` has more cases now), and **`capabilities()` reports one more group** — `CapsuleGroup` gains `per-record-keys` (`wrapCek` / `unwrapCek`), which the reference capsule genuinely implements and was under-reporting. Expect ten members, not nine.
+
+**Seams widened, all additive, all already on the root barrel:** `@noy-db/hub/on` gains the echo ceremony's player half (`beginEchoUnlock`, `EchoCeremony`, `BeginEchoUnlockOptions`, `EchoCeremonyRequiredError`, `WrongPromptError`, `WrongEchoError` — core#41); `@noy-db/hub/to` gains `StoreAuth` + `StoreAuthKind`, `@noy-db/hub/by` gains `Unsubscribe` (core#54); `CoverageEvent` and its four companions on `@noy-db/hub/coverage` lose a false `@internal` tag — they were always shipped, and are now a published seam (core#38): additive fields only, `source` stays `string`.
+
+**Refusals that were silent are now thrown, deliberately:** `query().groupBy()` refuses a `queryable: 'none'` field the way `where()`/`orderBy()`/`distinct()` did (#29) — grouping on a virtual computed field used to fold every row into one bucket keyed on `undefined`; a `via()`-spelled virtual computed field is refused on a late-attach call in either spelling (#33).
+
+**Erasure and reclaim, made legible:** `erasureCompleteness(result)` at `@noy-db/hub/forget` (#34) — default-deny over every residue channel; `ForgetResult.blobResidueRecords` at `collection:id` grain, and `blobResidueETags` documented for what it means (legacy chunks were deleted but could not be crypto-shredded — do not intersect with `reclaimedETags`); `compact({ reclaimLegacyBlobs })` returns `unreferencedLegacyBlobs.reclaimedETags` (#28); `Collection.delete()` documents what a `null` blob read proves.
+
+**Classified:** `classified.checksummed({ validate })` (#26), a preset for a checksummed institutional identifier, with `luhnCheck` exported; such a field cannot be uniquely indexed, and the doc says why. `Envelope` documents the two kinds of body: `hasSealedBody` tests `_iv`, not `_data`.
+
+**Prose and surfaces:** three shipped examples that named a symbol they never imported are fixed, and the gate now treats an un-imported published name as a finding; every one of hub's 55 subpaths has a frozen value surface (11 did). Conformance-kit READMEs import the reader's implementation from `'./my-backend.js'`-style paths.
+
 ## 0.8.0
 
 **The capsule seam** (#4). Hub's crypto interior is now one contract behind one door, and an application can replace it at build time without forking hub.

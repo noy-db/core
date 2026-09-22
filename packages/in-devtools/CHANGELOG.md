@@ -1,5 +1,9 @@
 # @noy-db/in-devtools
 
+## 0.9.0-pre.0
+
+Lockstep bump to 0.9.0-pre.0; no package-level change in this release. See `@noy-db/hub` 0.9.0-pre.0 for the line's notes.
+
 ## 0.8.0
 
 Lockstep bump to 0.8.0; no package-level change in this release. See `@noy-db/hub` 0.8.0 for the line's notes.
