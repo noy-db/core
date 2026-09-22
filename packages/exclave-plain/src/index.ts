@@ -139,6 +139,8 @@ export const exportRecipientPublicKeySpki = (): never => refuse('seal')
 export const importRecipientPublicKeySpki = (): never => refuse('seal')
 export const recipientWrap = (): never => refuse('seal')
 export const recipientUnwrap = (): never => refuse('seal')
+export const exportRecipientPrivateKeyPkcs8 = (): never => refuse('seal') // core#96
+export const importRecipientKeyPair = (): never => refuse('seal') // core#96
 
 // deterministic — blind equality needs a key the store must not have.
 export const encryptDeterministic = (): never => refuse('deterministic')

@@ -1,5 +1,6 @@
 ---
 '@noy-db/hub': minor
+'@noy-db/exclave-plain': patch
 ---
 
 **`updateUser` changes what an existing member may do — without their secret** (core#96).
@@ -12,4 +13,4 @@ Now every grantee's keyring carries an **inbox key pair** (`KeyringFile.inbox_ke
 - **drops and rotates** what the member no longer qualifies for, as a narrowing `grant` does (#1097). ⚠️ Behaviour change: a permissions narrowing through `updateUser` used to leave the DEKs in the member's file.
 - **re-registers** a sub-admin whose role moved with a configured broker host (fresh `_broker_member` DEK via the inbox; a promotion to owner/admin de-registers).
 
-`peer-recover` folds a pending delivery into the recovered file and mints a fresh pair. A keyring written before this cannot be amended (`MemberInboxMissingError`, new, root barrel) — re-grant it once with a fresh temporary secret. Members who unlock only through a tier-2 slot (`on-password`'s wrapped-DEK blob) see a delivery at their next tier-1 open. Capsule: `exportRecipientPrivateKeyPkcs8` / `importRecipientKeyPair` (additive, golden updated).
+`peer-recover` folds a pending delivery into the recovered file and mints a fresh pair. A keyring written before this cannot be amended (`MemberInboxMissingError`, new, root barrel) — re-grant it once with a fresh temporary secret. Members who unlock only through a tier-2 slot (`on-password`'s wrapped-DEK blob) see a delivery at their next tier-1 open. Capsule: `exportRecipientPrivateKeyPkcs8` / `importRecipientKeyPair` (additive, golden updated). `@noy-db/exclave-plain` refuses both, as it refuses the whole recipient group.
