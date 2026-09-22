@@ -121,6 +121,11 @@ describe('core#92 — push({ full: true }): everything local is authoritative, s
     expect(full.pushed).toBe(10)
     expect((await remote.list('firm', 'invoices')).length).toBe(10)
     expect((await db1.push('firm')).pushed).toBe(0) // nothing left dirty
+    // core#71 — a SECOND full push (a restore of a pod the target already matches) is a no-op,
+    // not ten conflicts at localVersion 1 / remoteVersion 1 with byte-identical envelopes
+    const again = await db1.push('firm', { full: true })
+    expect(again).toMatchObject({ pushed: 0, conflicts: [], errors: [] })
+    expect(db1.syncTargetStatus('firm')[0]!.dirty).toBe(0)
   })
 })
 
