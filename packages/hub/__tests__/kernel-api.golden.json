@@ -2,6 +2,7 @@
   "Noydb": [
     "activeTabs",
     "assertRecoveryEnrolled",
+    "attachSyncTarget",
     "bootstrapPolicy",
     "changeSecret",
     "checkGate",

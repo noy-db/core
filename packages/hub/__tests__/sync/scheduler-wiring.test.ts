@@ -119,8 +119,13 @@ describe('#897 — a DECLARED policy runs', () => {
       pull: { mode: 'manual' },
     })
     const notes = (await db.openVault('acme')).collection<Note>('notes')
+    // Wait for the on-change push to COMPLETE, not for its first put: a push
+    // writes the record and then the reserved mirror (`_keyring`, core#75), so
+    // sampling `puts()` between the two reads a second put as "after close".
+    let pushes = 0
+    db.on('sync:push', () => { pushes++ })
     await notes.put('n1', { body: 'a' })
-    await vi.waitFor(() => expect(remote.puts()).toBeGreaterThan(0), { timeout: 2000 })
+    await vi.waitFor(() => expect(pushes).toBeGreaterThan(0), { timeout: 2000 })
 
     db.close()
     const after = remote.puts()

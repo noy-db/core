@@ -213,7 +213,7 @@ export class Vault {
   private keyring: UnlockedKeyring
   private readonly encrypted: boolean
   private readonly emitter: NoydbEventEmitter
-  private readonly onDirty: OnDirtyCallback | undefined
+  private onDirty: OnDirtyCallback | undefined
   private readonly onRegisterConflictResolver: ((name: string, resolver: CollectionConflictResolver) => void) | undefined
   private readonly syncAdapter: NoydbStore | undefined
   private readonly getPurgeableTargets: () => readonly { store: NoydbStore; role: 'backup' | 'archive'; label?: string }[]
@@ -3389,6 +3389,12 @@ export class Vault {
    * collection-cache clear, ledger-store reset) that `load()` performs on this
    * Vault's private state.
    */
+  /** core#90 — the first `attachSyncTarget()` on a vault opened without one: from here every write is dirty-tracked. Cached collection handles are rebuilt (as after `load()`); re-acquire handles obtained before the attach. */
+  _enableSync(onDirty: OnDirtyCallback): void {
+    this.onDirty = onDirty
+    this.collectionCache.clear()
+  }
+
   /** core#82 — sync pulled a newer copy of THIS user's keyring file: reload it in place, rebuild the DEK resolver, drop cached collections. */
   async _reloadKeyringAfterSync(): Promise<void> {
     await this.backupContext().reloadKeyringAndRebuildDEK()

@@ -1560,6 +1560,23 @@ export type CollectionConflictResolver = (
 export interface PushOptions {
   /** Only push records belonging to these collections. Omit to push all dirty. */
   collections?: string[]
+  /**
+   * core#92 — "everything local is authoritative, send it": mark EVERY record
+   * in the local store dirty before pushing, so records that reached the store
+   * with no target present (written before `attachSyncTarget()`, or loaded
+   * from a pod — core#71's shape) are pushed. CAS still applies per record:
+   * a remote that already advanced a record resolves through the ordinary
+   * conflict path. Default `false`.
+   */
+  full?: boolean
+  /**
+   * core#93 — bounded parallelism over the dirty entries: this many in-flight
+   * puts at once. Each record keeps its own CAS and conflict path; only the
+   * interleaving changes. Default `1` (serial, byte-for-byte the previous
+   * behaviour). A cloud store with ~45 ms per put goes from N×45 ms to
+   * roughly N×45/concurrency ms.
+   */
+  concurrency?: number
 }
 
 /** Options for targeted pull operations. */

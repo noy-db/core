@@ -1,4 +1,6 @@
 import { buildMergeAuthority } from './merge-authority.js'
+import { wireEngine, type EngineWiringHost } from './sync-wiring.js'
+import type { OnDirtyCallback } from './collection.js'
 import { resolveStrategies, type StrategyBag } from '../port/with/strategies.js'
 import type { RotateResult, RosterVerifyResult, QuarantineResult } from '../with-party/team/keyring.js'
 import type {
@@ -33,6 +35,7 @@ import type {
   VaultPolicy,
   NoydbPolicyApi,
   PolicyCheckGateFn,
+  CollectionConflictResolver,
 } from './types.js'
 import { ValidationError, NoAccessError, InvalidKeyError, KeyringCorruptError, StoreCapabilityError, PermissionDeniedError, DebugPlaintextError, RecoveryNotEnrolledError, ManagedRecoveryNotEnrolledError, EchoCeremonyRequiredError } from './errors.js'
 import {
@@ -148,6 +151,8 @@ export class Noydb {
   private readonly vaultOpening = new Map<string, Promise<Vault>>()
   private readonly keyringCache = new Map<string, UnlockedKeyring>()
   private readonly syncEngines = new Map<string, SyncEngine>()
+  /** core#90 — conflict resolvers registered per vault, replayed onto a target attached after open. */
+  private readonly conflictResolvers = new Map<string, Map<string, CollectionConflictResolver>>()
   /**
    * Per-vault active session tier — defaults to `1` after a secret
    * unlock; tier-2 / tier-3 unlocks downgrade it. Used by
@@ -643,22 +648,16 @@ export class Noydb {
       keyring,
       encrypted: this.options.encrypt !== false,
       emitter: this.emitter,
-      onDirty: targets.length > 0
-        ? async (coll, id, action, version) => {
-            // Fan out dirty tracking to all sync engines for this vault.
-            // 'revert' (satellite fan-out compensation, spec #591) un-dirties
-            // instead of tracking a new change.
-            for (const [key, engine] of this.syncEngines) {
-              if (key === name || key.startsWith(`${name}::`)) {
-                if (action === 'revert') void engine.removeDirty(coll, id)
-                else void engine.trackChange(coll, id, action, version)
-              }
-            }
-          }
-        : undefined,
-      onRegisterConflictResolver: syncEngine
-        ? (resolverName, resolver) => syncEngine.registerConflictResolver(resolverName, resolver)
-        : undefined,
+      // `onDirty` PRESENCE is Collection's sync-mode flag (delete markers instead of
+      // physical deletes, #1439's memo gate), so it stays gated on a target existing;
+      // the first `attachSyncTarget()` on a target-less vault switches it on (core#90).
+      onDirty: targets.length > 0 ? this.#dirtyFanout(name) : undefined,
+      // Recorded per vault so a target attached later (core#90) is registered too.
+      onRegisterConflictResolver: (resolverName, resolver) => {
+        let m = this.conflictResolvers.get(name); if (!m) { m = new Map(); this.conflictResolvers.set(name, m) }
+        m.set(resolverName, resolver)
+        this._forEachSyncEngine(name, e => e.registerConflictResolver(resolverName, resolver))
+      },
       syncAdapter: targets.length > 0 ? targets[0]!.store : undefined,
       getPurgeableTargets: () =>
         targets
@@ -704,13 +703,7 @@ export class Noydb {
     })
     // #598: sync-applied writes must refresh Collection in-memory views.
     this._forEachSyncEngine(name, engine => {
-      engine.setCacheInvalidator((collection, id, action) => comp._invalidateSyncApplied(collection, id, action))
-      engine.setGraphBatchController({ begin: () => comp._beginGraphBatch(), flush: () => comp._flushGraphBatch() })
-      engine.setReservedLookupSource({ collections: () => comp._reservedLookupCollectionNames() }) // #650 Task 4
-      engine.setReservedDictExpander(names => comp._reservedDictDepsOf(names)) // #653
-      engine.setPeriodPullSource({ periods: () => comp.listPeriods() }) // #807 period-scoped pull windows
-      engine.setRosterReload({ userId: this.options.user, reload: () => comp._reloadKeyringAfterSync() }) // core#82
-      engine.setCollectionNames(() => [...(this.keyringCache.get(name)?.deks.keys() ?? [])].filter(n => !n.startsWith('_'))) // core#81 paged pull
+      wireEngine(this.#wiring, name, comp, engine)
     })
     // Initialise the optional guard + derivation registries via dynamic-import — no-ops when the
     // corresponding strategies array is empty/unset, keeping the service code out of the floor bundle.
@@ -788,12 +781,13 @@ export class Noydb {
     factors?: FactorProofBundle,
   ): Promise<void> {
     await this.strategies.team.revoke(this.team, vault, options, factors)
-    // core#75 — a revocation travels through the dirty log (no file is left for the epoch mirror to compare).
-    for (const [key, engine] of this.syncEngines) {
-      if (key === vault || key.startsWith(`${vault}::`)) await engine.trackChange('_keyring', options.userId, 'delete', 1)
-    }
-    // core#73 — de-register the member with the broker host (no-op without a broker).
+    // core#94 — the directory envelope goes with the keyring; core#73 — the broker host is told (no-op without a broker).
+    await this.options.store.delete(vault, '_users', options.userId)
     await this.strategies.broker.revokeMember({ store: this.options.store, vault, keyring: await this._getKeyringInternal(vault) }, options.userId)
+    // core#75/#91/#94 — every revocation travels through the dirty log (no record is left for the mirror to compare).
+    for (const coll of ['_keyring', '_users', '_broker_member']) {
+      await Promise.all([...this.syncEngines].filter(([k]) => k === vault || k.startsWith(`${vault}::`)).map(([, e]) => e.trackChange(coll, options.userId, 'delete', 1)))
+    }
   }
 
   /**
@@ -1578,6 +1572,37 @@ export class Noydb {
     }
     return engine
   }
+
+  /** Dirty tracking fans out to every engine of the vault; 'revert' (satellite fan-out compensation, spec #591) un-dirties instead. */
+  #dirtyFanout(name: string): OnDirtyCallback {
+    return async (coll, id, action, version) => {
+      for (const [key, engine] of this.syncEngines) {
+        if (key === name || key.startsWith(`${name}::`)) {
+          if (action === 'revert') void engine.removeDirty(coll, id)
+          else void engine.trackChange(coll, id, action, version)
+        }
+      }
+    }
+  }
+
+  /** core#90 — attach a sync target to an OPEN vault (primary when it had none, else keyed by position); records written before it are sent by `push({ full: true })`. Rationale in `kernel/sync-wiring.ts`. */
+  async attachSyncTarget(vault: string, target: NoydbStore | SyncTarget): Promise<void> {
+    const comp = this.vault(vault)
+    const t = normalizeSyncTargets(target)[0]!
+    const declared = t.policy ?? this.options.syncPolicy
+    const engine = this.strategies.sync.buildSyncEngine({
+      local: this.options.store, remote: t.store, vault, strategy: this.options.conflict ?? 'version', emitter: this.emitter,
+      syncPolicy: declared ?? INDEXED_STORE_POLICY, role: t.role, mergeAuthority: buildMergeAuthority(await this._getKeyringInternal(vault)),
+      ...(t.label !== undefined ? { label: t.label } : {}),
+    })
+    const existing = [...this.syncEngines.keys()].filter(k => k === vault || k.startsWith(`${vault}::`)).length
+    this.syncEngines.set(existing === 0 ? vault : `${vault}::${existing}`, engine)
+    if (existing === 0) comp._enableSync(this.#dirtyFanout(vault)) // the vault had no target: switch on sync mode
+    wireEngine(this.#wiring, vault, comp, engine)
+    if (declared) engine.startScheduler()
+  }
+
+  get #wiring(): EngineWiringHost { return { user: this.options.user, keyringCache: this.keyringCache, conflictResolvers: this.conflictResolvers } }
 
   _forEachSyncEngine(vault: string, fn: (engine: SyncEngine) => void): void {
     for (const [key, engine] of this.syncEngines) if (key === vault || key.startsWith(`${vault}::`)) fn(engine)

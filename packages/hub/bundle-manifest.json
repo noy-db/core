@@ -1,73 +1,73 @@
 {
   "scenarios": {
     "floor": {
-      "minifiedBytes": 1792,
-      "gzippedBytes": 561
+      "minifiedBytes": 1680,
+      "gzippedBytes": 530
     },
     "query-find": {
       "minifiedBytes": 28822,
-      "gzippedBytes": 9711
+      "gzippedBytes": 9712
     },
     "query-find-relate": {
       "minifiedBytes": 61296,
       "gzippedBytes": 19519
     },
     "query-find-reduce": {
-      "minifiedBytes": 57577,
-      "gzippedBytes": 18785
+      "minifiedBytes": 57674,
+      "gzippedBytes": 18813
     },
     "query-root-barrel": {
-      "minifiedBytes": 33179,
-      "gzippedBytes": 11367
+      "minifiedBytes": 33165,
+      "gzippedBytes": 11353
     },
     "query-find-live": {
       "minifiedBytes": 38258,
-      "gzippedBytes": 12710
+      "gzippedBytes": 12709
     },
     "lazy": {
-      "minifiedBytes": 1880,
-      "gzippedBytes": 634
+      "minifiedBytes": 1768,
+      "gzippedBytes": 603
     },
     "team": {
-      "minifiedBytes": 2149,
-      "gzippedBytes": 737
+      "minifiedBytes": 2032,
+      "gzippedBytes": 707
     },
     "broker": {
-      "minifiedBytes": 2876,
-      "gzippedBytes": 1179
+      "minifiedBytes": 3004,
+      "gzippedBytes": 1181
     },
     "history": {
-      "minifiedBytes": 5488,
-      "gzippedBytes": 2032
+      "minifiedBytes": 5380,
+      "gzippedBytes": 2004
     },
     "classified": {
-      "minifiedBytes": 3142,
-      "gzippedBytes": 1118
+      "minifiedBytes": 3030,
+      "gzippedBytes": 1088
     },
     "blobs": {
-      "minifiedBytes": 1963,
-      "gzippedBytes": 696
+      "minifiedBytes": 1851,
+      "gzippedBytes": 669
     },
     "analytics": {
-      "minifiedBytes": 3005,
-      "gzippedBytes": 1157
+      "minifiedBytes": 2893,
+      "gzippedBytes": 1127
     },
     "search": {
-      "minifiedBytes": 1834,
-      "gzippedBytes": 594
+      "minifiedBytes": 1722,
+      "gzippedBytes": 564
     },
     "search-ann": {
-      "minifiedBytes": 1863,
-      "gzippedBytes": 618
+      "minifiedBytes": 1751,
+      "gzippedBytes": 588
     },
     "coverage": {
-      "minifiedBytes": 6595,
-      "gzippedBytes": 2792
+      "minifiedBytes": 6483,
+      "gzippedBytes": 2753
     },
     "all-on": {
-      "minifiedBytes": 69306,
-      "gzippedBytes": 22380
+      "minifiedBytes": 74053,
+      "gzippedBytes": 23607
     }
   },
-  "updatedAt": "2026-09-06T12:09:02.251Z"
+  "updatedAt": "2026-09-22T06:59:26.910Z"
 }
