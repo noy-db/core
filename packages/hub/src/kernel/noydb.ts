@@ -38,6 +38,7 @@ import type {
   PolicyCheckGateFn,
   CollectionConflictResolver,
   SyncRejectedApi,
+  ReplaceRemoteResult,
 } from './types.js'
 import { ValidationError, NoAccessError, InvalidKeyError, KeyringCorruptError, StoreCapabilityError, PermissionDeniedError, DebugPlaintextError, RecoveryNotEnrolledError, ManagedRecoveryNotEnrolledError, EchoCeremonyRequiredError } from './errors.js'
 import {
@@ -687,6 +688,12 @@ export class Noydb {
       // Encrypted compartments need this so post-load decrypts work
       // against the loaded session's wrapped DEKs; plaintext
       // compartments leave it null and load() skips the refresh.
+      // core#71 — a restore resets every engine attached to this vault.
+      onRestore: async () => {
+        const engines: SyncEngine[] = []
+        this._forEachSyncEngine(name, e => { engines.push(e) })
+        for (const e of engines) await e.resetAfterRestore()
+      },
       reloadKeyring:
         this.options.encrypt !== false
           ? async () => {
@@ -1413,6 +1420,21 @@ export class Noydb {
   }
 
   /**
+   * core#72 — make THIS device's vault authoritative on its primary target:
+   * every local record is written unconditionally (re-versioned above the
+   * target's copy where the target moved on), every id the target holds that
+   * the local vault does not gets a delete marker, the reserved collections
+   * are mirrored, and a new restore EPOCH is written on the target. Every
+   * other device's next pull crosses that epoch: its unpushed edits are parked
+   * (`db.rejected(vault)`, reason `restore-epoch`), its dirty log dropped, the
+   * target adopted wholesale. The act of a restore (`vault.load` then this), or
+   * of declaring one replica the truth. Owner/admin, ledgered by the pushes.
+   */
+  async replaceRemote(vault: string): Promise<ReplaceRemoteResult> {
+    return this.getSyncEngine(vault).replaceRemote()
+  }
+
+  /**
    * Bidirectional sync: pull then push for all targets.
    * `sync-peer` targets do pull+push; `backup`/`archive` targets do push-only.
    */
@@ -1624,9 +1646,9 @@ export class Noydb {
     const targets: SyncTargetStatus[] = []
     for (const [key, engine] of this.syncEngines) {
       if (key !== vault && !key.startsWith(`${vault}::`)) continue
-      const { dirty, lastPush, lastPull, inFlight } = engine.status()
+      const { dirty, lastPush, lastPull, inFlight, epoch } = engine.status()
       const { label, role } = engine
-      targets.push({ label, role, dirty, lastPush, lastPull, caughtUp: dirty === 0, ...(inFlight ? { inFlight } : {}) })
+      targets.push({ label, role, dirty, lastPush, lastPull, caughtUp: dirty === 0, ...(inFlight ? { inFlight } : {}), ...(epoch !== undefined ? { epoch } : {}) })
     }
     return targets
   }

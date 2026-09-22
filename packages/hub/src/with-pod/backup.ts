@@ -59,6 +59,13 @@ export interface BackupContext {
    * callback (plaintext vaults / test constructions).
    */
   reloadKeyringAndRebuildDEK(): Promise<void>
+  /**
+   * core#71 — reset every sync engine attached to the vault after a restore:
+   * the dirty log, the watermarks, the adopted epoch. A restore is a new base;
+   * the pre-restore dirty entries refer to records the load just replaced.
+   * Absent on test constructions without sync.
+   */
+  resetSync?(): Promise<void>
   /** Clear the vault's collection cache (post-load). */
   clearCollectionCache(): void
   /** Reset the ledger store so the next `ledger()` rebuilds its head cache. */
@@ -242,6 +249,14 @@ export async function loadVault(ctx: BackupContext, backupJson: string): Promise
   //    freshly-loaded entries.
   ctx.clearCollectionCache()
   ctx.resetLedgerStore()
+
+  // 6. core#71 — a restore is a new base for sync: the pre-restore dirty log
+  //    named records the load replaced, and the watermarks described a state
+  //    that is gone. `replaceRemote` (core#72) is the explicit act that makes
+  //    the restore authoritative on the target; without it, `load()` stays a
+  //    local view — and now says so in `syncTargetStatus()` instead of pushing
+  //    stale entries.
+  await ctx.resetSync?.()
 
   // 5. Run the verification gate. A backup with no ledgerHead cannot be
   //    integrity-checked, and skipping silently would collapse

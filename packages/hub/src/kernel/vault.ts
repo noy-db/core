@@ -291,6 +291,7 @@ export class Vault {
    *  `load()` after the on-disk keyring file has been replaced. Provided by Noydb at openVault()
    *  time; `undefined` in tests that construct Vault directly (load() then skips the refresh). */
   private readonly reloadKeyring: (() => Promise<UnlockedKeyring>) | undefined
+  private readonly onRestore: (() => Promise<void>) | undefined
   private readonly collectionCache = new Map<string, Collection<unknown>>()
   private satelliteRegistry: SatelliteRegistry | null = null // spec #591, archetype-③
   /** Vault-level schema cutover fence/controller. */
@@ -437,6 +438,8 @@ export class Vault {
     onDirty?: OnDirtyCallback | undefined
     historyConfig?: HistoryConfig | undefined
     reloadKeyring?: (() => Promise<UnlockedKeyring>) | undefined
+    /** core#71 — reset the vault's sync engines after a restore (`load()`). */
+    onRestore?: (() => Promise<void>) | undefined
     /** Vault-default locale. */
     locale?: string | undefined
     /** Translator callback from Noydb. */
@@ -531,6 +534,7 @@ export class Vault {
     void opts.guardStrategies
     this.historyConfig = opts.historyConfig ?? { enabled: true }
     this.reloadKeyring = opts.reloadKeyring
+    this.onRestore = opts.onRestore
     this.locale = opts.locale
     this.vaultMeta = opts.meta
     this.translateText = opts.plaintextTranslator
@@ -3425,6 +3429,7 @@ export class Vault {
       },
       clearCollectionCache: () => this.collectionCache.clear(),
       resetLedgerStore: () => { this.ledgerStore = null },
+      ...(this.onRestore !== undefined ? { resetSync: this.onRestore } : {}),
       exportStream: (opts: ExportStreamOptions) => this.exportStream(opts),
     }
   }

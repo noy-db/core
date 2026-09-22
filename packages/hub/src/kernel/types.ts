@@ -1509,6 +1509,34 @@ export interface SyncMetadata {
   readonly last_push: string | null
   readonly last_pull: string | null
   readonly dirty: DirtyEntry[]
+  /** core#72 — the target's restore epoch this device last adopted (`_sync/epoch` on the target). Absent before any restore. */
+  readonly epoch?: number
+}
+
+/**
+ * core#72 — the record a restorer writes on the target at `_sync/epoch`:
+ * "the vault was REPLACED; merge nothing across this line, resync." Peers read
+ * it at the start of every pull; a newer epoch than the one they adopted parks
+ * their pre-epoch local edits and adopts the target wholesale.
+ */
+export interface SyncEpochRecord {
+  readonly epoch: number
+  readonly at: string
+  readonly by: string
+  readonly replaced: number
+  readonly tombstoned: number
+}
+
+/** core#72 — what `db.replaceRemote(vault)` did. */
+export interface ReplaceRemoteResult {
+  /** The epoch now on the target. */
+  readonly epoch: number
+  /** Local records written to the target unconditionally (re-versioned above the target's copy where needed). */
+  readonly replaced: number
+  /** Ids the target held that the local vault does not: delete markers written, so every peer removes them. */
+  readonly tombstoned: number
+  /** Reserved-collection records mirrored (keyrings, users, broker seeds). */
+  readonly reserved: number
 }
 
 export interface Conflict {
@@ -1777,6 +1805,17 @@ export interface PullResult {
    * non-empty.
    */
   readonly rejected?: readonly SyncRejection[]
+  /** core#72 — the target's restore epoch, when the target carries one. */
+  readonly epoch?: number
+  /**
+   * core#72 — this pull crossed a restore epoch: the target was REPLACED since
+   * this device last synced (`db.replaceRemote` on another device). Every
+   * local edit not yet pushed was parked under `_sync_rejected` (reason
+   * `restore-epoch`, listed by `db.rejected(vault)`), the dirty log was
+   * dropped, and the target's state was adopted wholesale — records the
+   * restore removed arrive as delete markers.
+   */
+  readonly resynced?: true
   /**
    * #807: present on period-scoped pulls only — per-phase KPI counters
    * (`summaries` = the `_periods` navigation index + companions; `records`
@@ -1810,6 +1849,8 @@ export interface SyncStatus {
   readonly lastPush: string | null
   /** As {@link SyncStatus.lastPush}, for pulls: last pull that had no errors. */
   readonly lastPull: string | null
+  /** core#72 — the target's restore epoch this device has adopted, when any. */
+  readonly epoch?: number
   /** core#81 — the running sync's latest progress sample, or absent when idle. */
   readonly inFlight?: SyncProgress
   /**
@@ -1903,6 +1944,8 @@ export interface SyncTargetStatus {
   readonly lastPush: string | null
   /** Last pull that completed with no errors, or `null`. */
   readonly lastPull: string | null
+  /** core#72 — the target's restore epoch this device has adopted, when any. */
+  readonly epoch?: number
   /**
    * Nothing queued for this target — `dirty === 0`.
    *
@@ -1960,6 +2003,10 @@ export interface NoydbEventMap {
   'sync:conflict': Conflict
   /** core#74 — a pulled record refused by this device's admission gate; parked under `_sync_rejected`. */
   'sync:rejected': SyncRejection
+  /** core#72 — this device replaced a target: the epoch it wrote and the counts. */
+  'sync:replace': ReplaceRemoteResult & { readonly vault: string }
+  /** core#72 — a pull crossed a restore epoch on the target; the local dirty log was parked and the target adopted. */
+  'sync:epoch': { readonly vault: string; readonly from: number | null; readonly to: number; readonly parked: number }
   'write:conflict': WriteConflict
   'sync:online': void
   'sync:offline': void
