@@ -166,4 +166,19 @@ describe('core#74 — applied[]: what a pull did, and what it replaced', () => {
     expect(entry.replaced?.by).toBe('B')
     expect(await B.v.collection<Note>('notes').get('n1')).toEqual({ n: 20, period: 'p' })
   })
+
+  it('a device\'s OWN record, re-versioned past the remote after a conflict it won, is not judged as sync-apply', async () => {
+    const { openMember } = await firm()
+    const B = await openMember('B')
+    const C = await openMember('C')
+    const judged: string[] = []
+    C.db.onBeforeWrite((e) => { if (e.origin === 'sync-apply') judged.push(`${e.docId}:${e.userId}`) })
+    await B.v.collection<Note>('notes').put('n1', { n: 10, period: 'p' }); await B.db.push('firm')
+    await C.v.collection<Note>('notes').put('n1', { n: 20, period: 'p' })
+    await C.db.push('firm')                        // tie → C wins, re-versioned to v3 and written back locally
+    expect(judged).toEqual([])                     // its own write is not an arrival
+    const r = await C.db.pull('firm')
+    expect(r.rejected).toBeUndefined()
+    expect(judged).toEqual([])                     // and the pull holds v3 already: nothing arrives
+  })
 })
