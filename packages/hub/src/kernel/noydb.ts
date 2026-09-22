@@ -302,6 +302,7 @@ export class Noydb {
       checkPolicyOperation: (vault, op) => this.checkPolicyOperation(vault, op),
       getKeyringInternal: (vault, opts) => this._getKeyringInternal(vault, opts),
       enrolBrokerMember: (vault, member) => this.#enrolBrokerMember(vault, member),
+      refreshRoster: (vault, userId) => this.#refreshRoster(vault, userId),
       assertRecoveryEnrolled: (vault, policy, opts) =>
         this.assertRecoveryEnrolled(vault, policy, opts),
       openVault: (vault, opts) => this.openVault(vault, opts),
@@ -686,17 +687,40 @@ export class Noydb {
       // against the loaded session's wrapped DEKs; plaintext
       // compartments leave it null and load() skips the refresh.
       reloadKeyring:
-        this.options.encrypt !== false && this.options.secret
+        this.options.encrypt !== false
           ? async () => {
+              // core#96 (pilot-1, finding A) — reload with the KEK this session
+              // HOLDS, not the secret it was opened with: after an in-session
+              // `rotateSecret` that secret is stale, and the reload used to
+              // fail into `PullResult.errors` — the box delivered by
+              // `updateUser` sat in the file undrained until a reopen. The
+              // secret is the fallback for a session that holds no KEK.
+              const held = this.keyringCache.get(name)?.kek ?? null
+              const secret = this.options.secret as string | undefined
+              if (!held && !secret) {
+                throw new ValidationError(
+                  `reloadKeyring: vault "${name}" holds no KEK (tier-2 or session open) — reopen the vault to adopt the roster change.`,
+                )
+              }
               // Drop the cached keyring so the next loadKeyring
               // call reads fresh from the adapter, then update the
               // cache so subsequent openVault calls see the
               // refreshed keyring too.
               this.keyringCache.delete(name)
-              const refreshed = await loadKeyring(this.options.store, name, {
-                userId: this.options.user,
-                secret: this.options.secret as string,
-              })
+              let refreshed: UnlockedKeyring
+              try {
+                refreshed = await loadKeyring(this.options.store, name, {
+                  userId: this.options.user,
+                  ...(held ? { kek: held } : { secret: secret! }),
+                })
+              } catch (err) {
+                // The file no longer opens under the held KEK: a pod restore
+                // (the dump's file, its own salt) or a re-key by this same
+                // secret. Re-derive from the secret when there is one; a
+                // file re-keyed under a DIFFERENT secret stays InvalidKeyError.
+                if (!(err instanceof InvalidKeyError) || !held || !secret) throw err
+                refreshed = await loadKeyring(this.options.store, name, { userId: this.options.user, secret })
+              }
               this.keyringCache.set(name, refreshed)
               return refreshed
             }
@@ -764,8 +788,24 @@ export class Noydb {
     options: GrantOptions,
     factors?: FactorProofBundle,
   ): Promise<void> {
+    await this.#refreshRoster(vault, options.userId)
     await this.strategies.team.grant(this.team, vault, options, factors)
     await this.#enrolBrokerMember(vault, { userId: options.userId, secret: options.secret })
+  }
+
+  /**
+   * core#96 (pilot-1, finding B) — before an AUTHORITY edit of a member's
+   * keyring, bring that file down from every sync target that supersedes
+   * ours. The roster replicates by epoch ("higher wins"), so an edit made on a
+   * stale local copy would push as the loser and be discarded; refreshing
+   * first makes the edit land on the current file. One GET per target; a
+   * target that cannot be reached fails the edit (fail-closed — the edit
+   * would otherwise be a silent no-op on that target).
+   */
+  async #refreshRoster(vault: string, userId: string): Promise<void> {
+    const engines: SyncEngine[] = []
+    this._forEachSyncEngine(vault, e => { engines.push(e) })
+    for (const e of engines) await e.refreshKeyring(userId)
   }
 
   /** core#73 — register a (re-)granted or recovered sub-admin member with the broker host; a no-op without a broker. */
@@ -788,6 +828,7 @@ export class Noydb {
     options: RevokeOptions,
     factors?: FactorProofBundle,
   ): Promise<void> {
+    await this.#refreshRoster(vault, options.userId)
     await this.strategies.team.revoke(this.team, vault, options, factors)
     // core#94 — the directory envelope goes with the keyring; core#73 — the broker host is told (no-op without a broker).
     await this.options.store.delete(vault, '_users', options.userId)
@@ -924,6 +965,7 @@ export class Noydb {
     factors?: FactorProofBundle,
   ): Promise<void> {
     await this.checkGate(vault, 'update-user', factors)
+    await this.#refreshRoster(vault, options.userId)
     const keyring = await this._getKeyringInternal(vault)
     const { roleChanged, brokerMemberDek } = await updateKeyringIdentity(this.options.store, vault, keyring, options)
     // core#96 — the broker host scopes by role, so a role change re-registers

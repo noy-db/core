@@ -1661,6 +1661,14 @@ export interface PushResult {
   readonly errors: Error[]
   /** #590: tombstone enforcements applied during this run (never resolver-visible). */
   readonly erasures?: ErasureEnforcement[]
+  /**
+   * core#96 — reserved-collection records mirrored by this run (`_keyring`,
+   * `_users`, `_broker*`, …): they travel outside the dirty log, so `pushed`
+   * / `pulled` never count them. Present when non-zero, so "did my new key
+   * get out" is observable. A local `_keyring` the target already supersedes
+   * is reported in `conflicts` (collection `_keyring`), never silently dropped.
+   */
+  readonly reserved?: number
 }
 
 /**
@@ -1697,6 +1705,8 @@ export interface PullResult {
   readonly errors: Error[]
   /** #590: tombstone enforcements applied during this run (never resolver-visible). */
   readonly erasures?: ErasureEnforcement[]
+  /** core#96 — reserved-collection records mirrored (copied + deleted) by this run; see `PushResult.reserved`. */
+  readonly reserved?: number
   /**
    * #807: present on period-scoped pulls only — per-phase KPI counters
    * (`summaries` = the `_periods` navigation index + companions; `records`

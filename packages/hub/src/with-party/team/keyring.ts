@@ -287,8 +287,18 @@ export interface LoadKeyringOptions {
    * That user's secret — a single string for a standard keyring, or the
    * structured 3-part {@link EchoSecretParts} for an echo keyring (spec
    * #940, AG-1: a single string can never unlock an echo keyring).
+   * One of `secret` / `kek` is required.
    */
-  readonly secret: string | EchoSecretParts
+  readonly secret?: string | EchoSecretParts
+  /**
+   * core#96 — a KEK this session already HOLDS, instead of re-deriving one
+   * from a secret. The in-session roster reload (core#82) uses it: the secret
+   * the vault was opened with is stale after an in-session `rotateSecret`,
+   * and 600K PBKDF2 iterations are not needed to adopt a file this KEK
+   * already opens. A file re-keyed under this member by somebody else fails
+   * the canary and reports `InvalidKeyError` — a defined event, not a hang.
+   */
+  readonly kek?: EnclaveKey
 }
 
 /**
@@ -382,7 +392,10 @@ export async function loadKeyring(
   // expired slot 600K iterations and buys an honest error.
 
   const salt = base64ToBuffer(keyringFile.salt)
-  const kek = await deriveKekForKeyring(keyringFile, secret, salt)
+  if (opts.kek === undefined && secret === undefined) {
+    throw new ValidationError(`loadKeyring: one of \`secret\` / \`kek\` is required (user "${userId}").`)
+  }
+  const kek = opts.kek ?? await deriveKekForKeyring(keyringFile, secret!, salt)
 
   // Verify the canary first when present. A canary success proves the
   // KEK is correct independent of any DEK byte — so subsequent DEK

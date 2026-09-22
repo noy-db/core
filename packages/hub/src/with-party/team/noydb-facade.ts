@@ -106,6 +106,8 @@ export interface TeamFacadeDeps {
   ): Promise<UnlockedKeyring>
   /** core#73 — re-enrol a recovered member with the broker host (kernel-resident; no-op without a broker). */
   enrolBrokerMember(vault: string, member: { readonly userId: string; readonly secret: string }): Promise<void>
+  /** core#96 — pull a member's keyring file from every sync target before an authority edit. */
+  refreshRoster(vault: string, userId: string): Promise<void>
   /** Managed-recovery enrolment check (kernel-resident). */
   assertRecoveryEnrolled(
     vault: string,
@@ -968,6 +970,7 @@ export class TeamFacade {
     factors?: FactorProofBundle,
   ): Promise<void> {
     await this.deps.checkGate(vault, 'peer-recover-user', factors)
+    await this.deps.refreshRoster(vault, options.userId)
     const callerKeyring = await this.deps.getKeyringInternal(vault)
     await keyringRecoverUser(this.deps.options.store, vault, callerKeyring, options)
     // core#73 — recovery minted a fresh `_broker_member` DEK; the old enrolment is dead.
