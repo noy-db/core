@@ -38,6 +38,7 @@
     "quarantineKeyring",
     "queryAcross",
     "realign",
+    "rejected",
     "resetSessionTimer",
     "restoreSnapshot",
     "revoke",

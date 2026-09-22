@@ -37,6 +37,7 @@ import type {
   NoydbPolicyApi,
   PolicyCheckGateFn,
   CollectionConflictResolver,
+  SyncRejectedApi,
 } from './types.js'
 import { ValidationError, NoAccessError, InvalidKeyError, KeyringCorruptError, StoreCapabilityError, PermissionDeniedError, DebugPlaintextError, RecoveryNotEnrolledError, ManagedRecoveryNotEnrolledError, EchoCeremonyRequiredError } from './errors.js'
 import {
@@ -427,7 +428,7 @@ export class Noydb {
       }
       const facade = v._getReadOnlyFacade()
       if (!facade) return
-      const ctx = { existing, vault: facade, userId: e.userId, role: e.role }
+      const ctx = { existing, vault: facade, userId: e.userId, role: e.role, ...(e.origin !== undefined ? { origin: e.origin } : {}) } // core#74
       await registry.runChecks(e.collection, incoming, ctx)
       const { GuardExecutor } = await import('../with-audit/guards/executor.js')
       for (const g of guards) {
@@ -454,7 +455,7 @@ export class Noydb {
       if (e.internal) return
       const facade = v._getReadOnlyFacade()
       if (!facade) return
-      const ctx = { existing, vault: facade, userId: e.userId, role: e.role }
+      const ctx = { existing, vault: facade, userId: e.userId, role: e.role, ...(e.origin !== undefined ? { origin: e.origin } : {}) } // core#74
       await registry.runOnDelete(e.collection, existing ?? {}, ctx)
     })
   }
@@ -1017,6 +1018,19 @@ export class Noydb {
    * reaching into internals. See `noy-db rotate` for the CLI wrapper.
    * Opt-in (#267): throws {@link TeamNotEnabledError} without `withTeam()`.
    */
+  /**
+   * core#74 — the records this device's admission gate refused on pull
+   * (`PullResult.rejected`, `sync:rejected`), parked under `_sync_rejected`
+   * with the envelope intact. `list()` them; `readmit()` applies one after all
+   * (bypassing the gate); `discard()` drops the parking record. Per device:
+   * a refusal is local to the device that judged it.
+   */
+  rejected(vault: string): SyncRejectedApi {
+    const engine = this.syncEngines.get(vault)
+    if (!engine) throw new ValidationError(`rejected: vault "${vault}" has no sync target.`)
+    return engine.rejected()
+  }
+
   async rotate(vault: string, collections: string[]): Promise<RotateResult> {
     const result = await this.strategies.team.rotate(this.team, vault, collections)
     await this.#trackRewrites(vault, result.rewritten)

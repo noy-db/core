@@ -1649,6 +1649,63 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
   }
 
   /**
+   * core#74 — ADMISSION of a record arriving by sync. Runs the same
+   * `beforePut` gate bus (guards, periods) and `db.onBeforeWrite` hooks a
+   * local `put` runs, on the DECRYPTED incoming record against this device's
+   * current state, with `origin: 'sync-apply'`. A throw is a refusal; the
+   * engine parks the envelope and leaves the local copy untouched.
+   *
+   * Not gated, deliberately: tombstones and delete markers (erasure wins, as
+   * on every other path), elevated envelopes (#707 — invisible to gate
+   * handlers), and a record this session holds no key for (it cannot judge;
+   * the merge authority's stated residue, #1042). Schema validation does not
+   * run — the writer validated. Zero cost when nothing is registered.
+   * @internal
+   */
+  async _admitRemote(id: string, envelope: EncryptedEnvelope): Promise<{ admitted: true } | { admitted: false; reason: string }> {
+    const gates = this.subsystemBus?.hasGateHandlers('beforePut') ?? false
+    const hooks = this.#hooksActive()
+    if (!gates && !hooks) return { admitted: true }
+    if ((envelope._tier ?? 0) > 0) return { admitted: true }
+    let incoming: unknown
+    try {
+      incoming = await this.codec.decryptRecord({ collection: this.name, id }, envelope, { skipValidation: true })
+    } catch {
+      return { admitted: true }
+    }
+    try {
+      if (gates) {
+        const { env: existingEnv, record: existingRecord } = await this.resolveGatePrior('beforePut', id)
+        const gateEvent: GatePutEvent = {
+          op: existingEnv ? 'update' : 'create',
+          vault: this.vault, collection: this.name, docId: id,
+          incoming,
+          existing: this.via ? this.via.canonicalizeStored(existingRecord as Record<string, unknown>) : existingRecord,
+          existingVersion: existingEnv?._v ?? 0,
+          existingTs: existingEnv?._ts,
+          origin: 'sync-apply',
+          userId: envelope._by ?? this.keyring.userId,
+          role: this.keyring.role,
+          ...(this.computed !== undefined ? { computedFieldNames: new Set(Object.keys(this.computed)) } : {}),
+        }
+        await this.subsystemBus!.dispatchGate('beforePut', gateEvent)
+      }
+      if (hooks) {
+        const prior = await this.#priorForHook(id)
+        await this.writeHooks!.runBefore({
+          op: prior.record === null ? 'create' : 'update',
+          vault: this.vault, collection: this.name, docId: id, before: prior.record, after: incoming,
+          userId: envelope._by ?? this.keyring.userId, timestamp: Date.now(), txId: generateULID(),
+          baseVersion: prior.version, version: envelope._v, origin: 'sync-apply',
+        })
+      }
+    } catch (err) {
+      return { admitted: false, reason: err instanceof Error ? err.message : String(err) }
+    }
+    return { admitted: true }
+  }
+
+  /**
    * @internal — resolve the prior record for a hook's `before` and
    * its version. Critically, this uses the SAME basis `_putInternal` writes from
    * (the in-memory cache in eager mode; lru-then-adapter in lazy) — NOT a fresh

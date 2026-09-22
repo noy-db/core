@@ -1528,6 +1528,39 @@ export interface Conflict {
   readonly resolve?: (winner: EncryptedEnvelope | null) => void
 }
 
+/** core#74 — one record a pull applied. */
+export interface SyncApplied {
+  readonly collection: string
+  readonly id: string
+  readonly action: 'put' | 'delete'
+  /** The local copy this replaced, when there was one at a lower version: its version and its author (`_by`). */
+  readonly replaced?: { readonly version: number; readonly by?: string }
+}
+
+/** core#74 — one record a pull refused at admission. Emitted as `sync:rejected` and listed by `db.rejected(vault)`. */
+export interface SyncRejection {
+  readonly vault: string
+  readonly collection: string
+  readonly id: string
+  /** The gate's or hook's message. */
+  readonly reason: string
+  /** The refused envelope's version. */
+  readonly version: number
+  /** The refused envelope's author, when it carries one. */
+  readonly by?: string
+  /** ISO time of the refusal on this device. */
+  readonly at: string
+}
+
+/** core#74 — what `db.rejected(vault)` returns: the parked envelopes and their two fates. */
+export interface SyncRejectedApi {
+  list(): Promise<readonly SyncRejection[]>
+  /** Apply the parked envelope after all — bypassing the gate that refused it — and drop the parking record. */
+  readmit(collection: string, id: string): Promise<void>
+  /** Drop the parking record; the local copy stays as it was. */
+  discard(collection: string, id: string): Promise<void>
+}
+
 /**
  * #590: sync suppressed a live envelope because a crypto-shred tombstone is
  * terminal for its record id. Reported on push/pull results (`erasures`) and
@@ -1726,6 +1759,25 @@ export interface PullResult {
   /** core#96 — reserved-collection records mirrored (copied + deleted) by this run; see `PushResult.reserved`. */
   readonly reserved?: number
   /**
+   * core#74 — every record this pull APPLIED, in order, with what it replaced
+   * when the local copy was superseded. This is the per-record visibility a
+   * count cannot give: an app can list what arrived, and a writer whose record
+   * was overwritten by a newer version from another device sees `replaced`
+   * — the "you lost" the conflict path never told it (same-id concurrent edits
+   * resolve to the LAST pusher, reported to that pusher only). Present when
+   * non-empty.
+   */
+  readonly applied?: readonly SyncApplied[]
+  /**
+   * core#74 — records this pull REFUSED at admission: a `beforePut` gate or a
+   * `db.onBeforeWrite` hook on this device threw for the incoming record (a
+   * write into a period closed here, say). Each is parked under
+   * `_sync_rejected` with the envelope intact; the local copy is untouched.
+   * `db.rejected(vault)` lists, readmits or discards them. Present when
+   * non-empty.
+   */
+  readonly rejected?: readonly SyncRejection[]
+  /**
    * #807: present on period-scoped pulls only — per-phase KPI counters
    * (`summaries` = the `_periods` navigation index + companions; `records`
    * = everything after it). `records`/`bytes` count envelopes applied to
@@ -1906,6 +1958,8 @@ export interface NoydbEventMap {
   'sync:progress': SyncProgress
   'sync:erasure': ErasureEnforcement
   'sync:conflict': Conflict
+  /** core#74 — a pulled record refused by this device's admission gate; parked under `_sync_rejected`. */
+  'sync:rejected': SyncRejection
   'write:conflict': WriteConflict
   'sync:online': void
   'sync:offline': void
