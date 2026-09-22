@@ -1,4 +1,4 @@
-import { buildRecordEnvelope } from '../capsule/index.js'
+import { buildRecordEnvelope, envelopeBodyForHash } from '../capsule/index.js'
 import type {
   NoydbStore,
   DirtyEntry,
@@ -401,7 +401,13 @@ export class SyncEngine {
         if (isConflictError(err)) {
           const remoteEnvelope = await this.remote.get(this.vault, entry.collection, entry.id)
           if (remoteEnvelope) {
-            if (isTombstoneShape(remoteEnvelope)) {
+            if (remoteEnvelope._v === envelope._v && envelopeBodyForHash(remoteEnvelope) === envelopeBodyForHash(envelope)) {
+              // core#71 (pilot-1's restore run) — the target already holds THIS
+              // envelope: a `push({ full: true })` after a restore, or a replay.
+              // The CAS refused it because the remote is at the version we
+              // expected to advance past; nothing to resolve, nothing to report.
+              acc.completed.push(i)
+            } else if (isTombstoneShape(remoteEnvelope)) {
               // #590: remote already shredded this record — enforce locally,
               // never resolve. Resolvers must not overrule an erasure.
               await this.applyRemote(entry.collection, entry.id, remoteEnvelope)
