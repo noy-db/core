@@ -746,14 +746,7 @@ export class SyncEngine {
     this.#rejected = []
     const conflicts: Conflict[] = []
     const errors: Error[] = []
-    // core#72 — before the reserved phase and before any record. An unreachable
-    // target is a pull error like any other, not a throw out of `pull()`.
     let crossed = { epoch: 0, resynced: false, parked: 0 }
-    try {
-      crossed = await this.#crossEpoch()
-    } catch (err) {
-      errors.push(err instanceof Error ? err : new Error(String(err)))
-    }
     const erasures: ErasureEnforcement[] = []
 
     // core#75 / core#83 — the reserved set comes FIRST, before any record: a
@@ -780,6 +773,17 @@ export class SyncEngine {
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
+    }
+
+    // core#72 — cross the target's restore epoch AFTER the reserved phase (the
+    // roster mirrors by its own epoch and a fresh member device needs its seed
+    // before its own mint can serve a request — core#97) and BEFORE any record:
+    // unpushed local edits are parked before the target's records land. An
+    // unreachable target is a pull error like any other, not a throw.
+    try {
+      crossed = await this.#crossEpoch()
+    } catch (err) {
+      errors.push(err instanceof Error ? err : new Error(String(err)))
     }
 
     // ── #807 period-scoped pull: validate the option, sync the period summaries
