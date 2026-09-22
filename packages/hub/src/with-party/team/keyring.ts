@@ -972,7 +972,7 @@ export async function grant(
       (name) => !name.startsWith('_') && !(name in wrappedDeks),
     )
     if (dropped.length > 0) {
-      await rotateKeys(store, vault, callerKeyring, { collections: dropped })
+      await rotateKeys(store, vault, callerKeyring, { collections: dropped, exclude: [options.userId] })
     }
   }
 
@@ -1204,6 +1204,7 @@ export async function revoke(
   if (affectedCollections.size > 0) {
     const rotation = await rotateKeys(store, vault, callerKeyring, {
       collections: [...affectedCollections],
+      exclude: usersToRevoke, // core#100 / #1043 — never deliver to the member(s) being revoked
     })
     const { unverified } = rotation
     rewritten = rotation.rewritten
@@ -1453,8 +1454,8 @@ export async function quarantineKeyring(
 
   const rotated = [...callerKeyring.deks.keys()].filter((c) => c !== ROSTER_KEY_ID)
   const result = rotated.length > 0
-    ? await rotateKeys(store, vault, callerKeyring, { collections: rotated })
-    : { needsRegrant: [], unverified: [] }
+    ? await rotateKeys(store, vault, callerKeyring, { collections: rotated, exclude: [userId] })
+    : { needsRegrant: [], unverified: [], rewritten: [] }
 
   return {
     userId,
@@ -1649,7 +1650,7 @@ export async function updateKeyringIdentity(
   // file from it, overwriting the edit just written.
   const rotate = [...new Set(dropped)].filter((name) => !name.startsWith('_'))
   if (rotate.length > 0 && options.userId !== callerKeyring.userId) {
-    await rotateKeys(store, vault, callerKeyring, { collections: rotate })
+    await rotateKeys(store, vault, callerKeyring, { collections: rotate, exclude: [options.userId] })
   }
   return { roleChanged, ...(brokerMemberDek !== undefined && { brokerMemberDek }) }
 }
@@ -1717,6 +1718,16 @@ export interface RevokeResult {
 export interface RotateKeysOptions {
   /** Collections whose DEKs are re-minted. */
   readonly collections: readonly string[]
+  /**
+   * core#100 — members who must NOT be delivered the new keys: the member
+   * being revoked or quarantined (a store that suppresses the `_keyring`
+   * delete leaves their file in place — #1043 — and delivering to it would
+   * hand the revoked member the very key the rotation exists to take away),
+   * and a member being narrowed (the collection just left their file, but a
+   * pending inbox slot for it cannot be pulled out of its box). They get the
+   * drop, and appear in `needsRegrant` as before.
+   */
+  readonly exclude?: readonly string[]
 }
 
 /**
@@ -2118,7 +2129,7 @@ export async function rotateKeys(
     const pendingSlots = new Set(inboxSlots(userKeyringFile))
     for (const collName of collections) {
       const held = collName in updatedDeks || pendingSlots.has(collName)
-      if (held && userKeyringFile.inbox_key !== undefined) {
+      if (held && userKeyringFile.inbox_key !== undefined && !opts.exclude?.includes(userId)) {
         deliver.set(collName, newDeks.get(collName)!) // a later box wins the slot at drain
         delete updatedDeks[collName]
         continue

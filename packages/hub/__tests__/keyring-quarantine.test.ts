@@ -251,8 +251,11 @@ describe('#1121 — what the review of the first draft found', () => {
     await forgeRole(store, 'carol', 'admin')
     const result = await db.quarantineKeyring(VAULT, 'carol')
 
-    // bob keeps his keyring but loses the rotated collections until re-granted.
-    expect(result.needsRegrant.some((r) => r.userId === 'bob' && r.collection === 'invoices')).toBe(true)
+    // bob keeps his keyring AND the rotated collection: core#100 seals the
+    // new key to his inbox; nothing to re-grant.
+    expect(result.needsRegrant).toEqual([])
+    const bob = JSON.parse((await store.get(VAULT, '_keyring', 'bob'))!._data!) as { inbox?: { slots: string[] }[] }
+    expect(bob.inbox?.flatMap((b) => b.slots)).toContain('invoices')
   })
 
   it('names OTHER forged members it met while rotating', async () => {

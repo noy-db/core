@@ -57,10 +57,14 @@ describe('rotate() re-grant reporting (#854)', () => {
     })
   })
 
-  it('reports every (member, collection) pair whose access it dropped', async () => {
+  it('core#100 — a member with an inbox is DELIVERED the new key, not reported: needsRegrant is empty and his file carries the box', async () => {
     const result = await ownerDb.rotate(VAULT, ['invoices'])
 
-    expect(result.needsRegrant).toEqual([{ userId: 'bob', collection: 'invoices' }])
+    expect(result.needsRegrant).toEqual([])
+    expect(result.rewritten.some((r) => r.collection === 'invoices')).toBe(true)
+    const bob = JSON.parse((await adapter.get(VAULT, '_keyring', 'bob'))!._data!) as { inbox?: { slots: string[] }[]; deks: Record<string, string> }
+    expect(bob.inbox?.flatMap((b) => b.slots)).toEqual(['invoices'])
+    expect(Object.keys(bob.deks)).not.toContain('invoices') // the old key is out of his file; the new one is in the box
   })
 
   it('does NOT report a member who never held the rotated collection', async () => {
@@ -70,12 +74,13 @@ describe('rotate() re-grant reporting (#854)', () => {
     expect(result.needsRegrant).toEqual([])
   })
 
-  it('reports one entry per (member, collection), not per member', async () => {
+  it('one box per rotation, every rotated slot the member held inside it', async () => {
     const result = await ownerDb.rotate(VAULT, ['invoices', 'payments'])
 
-    expect(result.needsRegrant).toHaveLength(2)
-    expect(result.needsRegrant).toContainEqual({ userId: 'bob', collection: 'invoices' })
-    expect(result.needsRegrant).toContainEqual({ userId: 'bob', collection: 'payments' })
+    expect(result.needsRegrant).toEqual([])
+    const bob = JSON.parse((await adapter.get(VAULT, '_keyring', 'bob'))!._data!) as { inbox?: { slots: string[] }[] }
+    expect(bob.inbox).toHaveLength(1)
+    expect([...bob.inbox![0]!.slots].sort()).toEqual(['invoices', 'payments'])
   })
 
   it('never reports the caller — their own keyring is re-wrapped in place', async () => {

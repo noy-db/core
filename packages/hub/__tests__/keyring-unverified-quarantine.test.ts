@@ -75,9 +75,12 @@ describe('#1114 — rotation skips an unverifiable member instead of failing the
     // that skipped everyone, which is the failure this row exists to exclude.
     expect(result.unverified.map((u) => u.userId)).toEqual(['carol'])
     expect(result.unverified[0]?.reason).toBe('roster-tag-mismatch')
-    // bob was NOT skipped — he is a real, rotated member.
-    expect(result.needsRegrant.some((r) => r.userId === 'bob')).toBe(true)
-    expect(result.needsRegrant.some((r) => r.userId === 'carol')).toBe(false)
+    // bob was NOT skipped — he is a real, rotated member: core#100 delivers the
+    // new key to his inbox instead of reporting him, so the proof he was
+    // processed is the box on his file.
+    expect(result.needsRegrant).toEqual([])
+    const bob = JSON.parse((await store.get(VAULT, '_keyring', 'bob'))!._data!) as { inbox?: { slots: string[] }[] }
+    expect(bob.inbox?.flatMap((b) => b.slots)).toEqual(['invoices'])
   })
 
   it('leaves the skipped member FAIL-CLOSED — untouched file, no new key', async () => {
@@ -107,7 +110,9 @@ describe('#1114 — rotation skips an unverifiable member instead of failing the
     const result = await db.rotate(VAULT, ['invoices'])
 
     expect(result.unverified).toEqual([])
-    expect(result.needsRegrant.some((r) => r.userId === 'bob')).toBe(true)
+    expect(result.needsRegrant).toEqual([]) // core#100 — delivered, not dropped
+    const bob = JSON.parse((await store.get(VAULT, '_keyring', 'bob'))!._data!) as { inbox?: { slots: string[] }[] }
+    expect(bob.inbox?.flatMap((b) => b.slots)).toEqual(['invoices'])
   })
 
   it('THE POINT: revoking a healthy member succeeds despite an unrelated forged file', async () => {
