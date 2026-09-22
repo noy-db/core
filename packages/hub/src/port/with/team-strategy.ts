@@ -22,13 +22,13 @@
  * @internal
  */
 import type { GrantOptions, RevokeOptions, FactorProofBundle } from '../../kernel/types.js'
-import type { RotateResult, RosterVerifyResult, QuarantineResult } from '../../with-party/team/keyring.js'
+import type { RotateResult, RevokeResult, RosterVerifyResult, QuarantineResult } from '../../with-party/team/keyring.js'
 import { TeamNotEnabledError } from '../../kernel/errors.js'
 import type { TeamFacade } from '../../with-party/team/noydb-facade.js'
 
 export interface TeamStrategy {
   grant(team: TeamFacade, vault: string, options: GrantOptions, factors?: FactorProofBundle): Promise<void>
-  revoke(team: TeamFacade, vault: string, options: RevokeOptions, factors?: FactorProofBundle): Promise<void>
+  revoke(team: TeamFacade, vault: string, options: RevokeOptions, factors?: FactorProofBundle): Promise<RevokeResult>
   rotate(team: TeamFacade, vault: string, collections: string[]): Promise<RotateResult>
   /** #1121 — read-only sweep naming every `_keyring` file that fails authentication. */
   verifyRoster(team: TeamFacade, vault: string): Promise<RosterVerifyResult>

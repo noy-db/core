@@ -115,7 +115,7 @@ describe('finding B — an authority edit on a stale copy is never silently lost
     expect((await file(localO, 'u1')).roster_epoch).toBe(targetEpoch + 1)
     const r = await dbO.push('firm')
     expect(r.conflicts).toEqual([])
-    expect((await file(remote, 'u1')).inbox?.slots).toEqual(['extra'])
+    expect((await file(remote, 'u1')).inbox?.flatMap(b => b.slots)).toEqual(['extra'])
     const dbB = await open(memoryStore(), remote, 'u1', U)
     const vB = await dbB.openVault('firm'); await dbB.pull('firm')
     expect(await vB.collection<Inv>('extra').get('e1')).toEqual({ n: 5 })

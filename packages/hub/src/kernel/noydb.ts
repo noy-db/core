@@ -2,7 +2,7 @@ import { buildMergeAuthority } from './merge-authority.js'
 import { wireEngine, type EngineWiringHost } from './sync-wiring.js'
 import type { OnDirtyCallback } from './collection.js'
 import { resolveStrategies, type StrategyBag } from '../port/with/strategies.js'
-import type { RotateResult, RosterVerifyResult, QuarantineResult } from '../with-party/team/keyring.js'
+import type { RotateResult, RevokeResult, RosterVerifyResult, QuarantineResult } from '../with-party/team/keyring.js'
 import type { EnclaveKey } from '../capsule/index.js'
 import type {
   NoydbOptions,
@@ -587,7 +587,7 @@ export class Noydb {
       await this.bootstrapPolicy(name)
     }
 
-    const mergeAuthority = buildMergeAuthority(keyring) // #1042 — see merge-authority.ts
+    const mergeAuthority = buildMergeAuthority(() => this.keyringCache.get(name) ?? keyring) // #1042 — see merge-authority.ts; core#100 — the CURRENT keyring
     // Set up sync engine(s) — handles bare NoydbStore, SyncTarget, or SyncTarget[]
     let syncEngine: SyncEngine | undefined
     const targets = normalizeSyncTargets(this.options.sync)
@@ -829,7 +829,8 @@ export class Noydb {
     factors?: FactorProofBundle,
   ): Promise<void> {
     await this.#refreshRoster(vault, options.userId)
-    await this.strategies.team.revoke(this.team, vault, options, factors)
+    const { rewritten } = await this.strategies.team.revoke(this.team, vault, options, factors)
+    await this.#trackRewrites(vault, rewritten)
     // core#94 — the directory envelope goes with the keyring; core#73 — the broker host is told (no-op without a broker).
     await this.options.store.delete(vault, '_users', options.userId)
     await this.strategies.broker.revokeMember({ store: this.options.store, vault, keyring: await this._getKeyringInternal(vault) }, options.userId)
@@ -893,7 +894,7 @@ export class Noydb {
   /** @internal — revoke-custodian engine, reached only via withCustody().
    * Mirrors `_grantCustodianImpl` (#267: engine passed in). */
   async _revokeCustodianImpl(
-    engine: (adapter: NoydbStore, vault: string, callerKeyring: UnlockedKeyring, options: RevokeOptions) => Promise<void>,
+    engine: (adapter: NoydbStore, vault: string, callerKeyring: UnlockedKeyring, options: RevokeOptions) => Promise<RevokeResult>,
     vault: string,
     options: RevokeOptions,
     factors?: FactorProofBundle,
@@ -902,7 +903,8 @@ export class Noydb {
     await this.checkGate(vault, 'revoke-user', factors)
     const keyring = await this._getKeyringInternal(vault)
     if (keyring.role !== 'owner') throw new PermissionDeniedError('only the Deed owner can revoke a custodian')
-    await engine(this.options.store, vault, keyring, options)
+    const { rewritten } = await engine(this.options.store, vault, keyring, options)
+    await this.#trackRewrites(vault, rewritten) // core#100
   }
 
   /**
@@ -1016,7 +1018,22 @@ export class Noydb {
    * Opt-in (#267): throws {@link TeamNotEnabledError} without `withTeam()`.
    */
   async rotate(vault: string, collections: string[]): Promise<RotateResult> {
-    return this.strategies.team.rotate(this.team, vault, collections)
+    const result = await this.strategies.team.rotate(this.team, vault, collections)
+    await this.#trackRewrites(vault, result.rewritten)
+    return result
+  }
+
+  /**
+   * core#100 — a rotation re-encrypts records through the raw store, which the
+   * sync dirty log cannot see; without this a replica kept the OLD ciphertext
+   * until each record was edited again — a revoked member with store access
+   * read on, and a survivor handed the new DEK read `TamperedError`.
+   */
+  async #trackRewrites(vault: string, rewritten: RotateResult['rewritten']): Promise<void> {
+    if (rewritten.length === 0) return
+    const engines: SyncEngine[] = []
+    this._forEachSyncEngine(vault, e => { engines.push(e) })
+    for (const e of engines) for (const r of rewritten) await e.trackChange(r.collection, r.id, 'rekey', r.version)
   }
 
   /**
@@ -1663,9 +1680,10 @@ export class Noydb {
     const comp = this.vault(vault)
     const t = normalizeSyncTargets(target)[0]!
     const declared = t.policy ?? this.options.syncPolicy
+    const keyring = await this._getKeyringInternal(vault)
     const engine = this.strategies.sync.buildSyncEngine({
       local: this.options.store, remote: t.store, vault, strategy: this.options.conflict ?? 'version', emitter: this.emitter,
-      syncPolicy: declared ?? INDEXED_STORE_POLICY, role: t.role, mergeAuthority: buildMergeAuthority(await this._getKeyringInternal(vault)),
+      syncPolicy: declared ?? INDEXED_STORE_POLICY, role: t.role, mergeAuthority: buildMergeAuthority(() => this.keyringCache.get(vault) ?? keyring),
       ...(t.label !== undefined ? { label: t.label } : {}),
     })
     const existing = [...this.syncEngines.keys()].filter(k => k === vault || k.startsWith(`${vault}::`)).length

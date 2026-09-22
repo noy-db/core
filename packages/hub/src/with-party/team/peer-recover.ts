@@ -38,7 +38,7 @@ import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
 import { buildRecordEnvelope, deriveKey, generateSalt, wrapKey, bufferToBase64, generateDEK } from '../../capsule/index.js'
 import { BROKER_MEMBER_COLLECTION } from './reserved-secret-collections.js'
 import { INBOX_KEY_ID } from '../../kernel/constants.js'
-import { mintInboxKey } from './keyring.js'
+import { mintInboxKey, inboxSlots } from './keyring.js'
 import { NoAccessError, PermissionDeniedError, PrivilegeEscalationError } from '../../kernel/errors.js'
 import { assertStrongSecret, type SecretPolicy } from '../../kernel/validation.js'
 import type { UnlockedKeyring } from './keyring.js'
@@ -166,7 +166,7 @@ export async function recoverUser(
   //    grant, never the grantor's); a fresh inbox pair is minted below. A DEK
   //    still in the target's undrained inbox is one they were handed and may
   //    hold: it goes straight into the recovered file, under the new KEK.
-  const carriedSlots = [...Object.keys(target.deks), ...(target.inbox?.slots ?? [])]
+  const carriedSlots = [...Object.keys(target.deks), ...inboxSlots(target)]
   for (const coll of carriedSlots) {
     if (coll === BROKER_MEMBER_COLLECTION || coll === INBOX_KEY_ID) continue
     if (!callerKeyring.deks.has(coll)) {

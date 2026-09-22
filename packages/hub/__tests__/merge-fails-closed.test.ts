@@ -24,6 +24,7 @@ import { describe, it, expect } from 'vitest'
 import { createNoydb } from '../src/kernel/noydb.js'
 import { memoryStore } from '../src/index.js'
 import { withSync } from '../src/with-sync/index.js'
+import { withTeam } from '../src/with-party/team/index.js'
 import type { NoydbStore, EncryptedEnvelope } from '../src/kernel/types.js'
 
 interface Doc { secret: string }
@@ -160,36 +161,46 @@ describe('#1042 — applyRemote verifies before committing', () => {
   })
 
   it('5. RESIDUE, stated not hidden: a peer with NO key for the collection accepts unverified', async () => {
-    // B has never written to `docs`, so it holds no DEK for it and cannot judge
-    // what it is given. It accepts — deliberately.
+    // A member who holds no DEK for a collection cannot judge what it is given.
+    // It accepts — deliberately.
     //
     // Rejecting instead would break replication of data a peer legitimately
     // holds but this client is not cleared to read, turning a confidentiality
-    // boundary into a replication failure. The forged record is inert here: B
-    // cannot decrypt it either, and — the part that matters — it displaced
-    // nothing, because B had no copy to lose.
+    // boundary into a replication failure. The forged record is inert here: the
+    // member cannot decrypt it either, and — the part that matters — it
+    // displaced nothing, because the member had no copy to lose.
     //
     // Closing this needs the vault head (#1044), which detects substitution
     // without holding the key. Asserted so the boundary cannot move silently.
-    const { remote, a, openB, localB } = await peers()
-    // B joins knowing only `docs`. A then writes a SECOND collection, whose DEK
-    // B never receives — the realistic shape of "data this peer is not cleared
-    // to read".
-    await a.vault.collection<Doc>(COLL).put('seed', { secret: 'x' })
-    await a.db.push(VAULT)
-    const b = await openB()
+    //
+    // core#100 — the peer has to be a MEMBER without the key, not the owner's
+    // second device: the owner's keyring gains a DEK the moment the owner writes
+    // a new collection, that file replicates first (core#75), and the session's
+    // merge authority now reads the CURRENT keyring after the in-session reload
+    // — so an owner device DOES judge, and refuses the forgery. That refusal is
+    // the fail-closed path (case 1); this row is about the member who cannot.
+    const remote = memoryStore()
+    const localA = memoryStore()
+    const dbA = await createNoydb({ syncStrategy: withSync(), teamStrategy: withTeam(), store: localA, sync: remote, user: 'owner', secret: 'pw', validateSecret: false })
+    const vaultA = await dbA.openVault(VAULT)
+    await vaultA.collection<Doc>(COLL).put('seed', { secret: 'x' })
+    await dbA.grant(VAULT, { userId: 'member', displayName: 'M', role: 'operator', secret: 'member-pw', permissions: { [COLL]: 'rw' } })
+    await dbA.push(VAULT)
 
     const OTHER = 'restricted'
-    await a.vault.collection<Doc>(OTHER).put('good-1', { secret: 'one' })
-    await a.vault.collection<Doc>(OTHER).put('bad', { secret: 'two' })
-    await a.db.push(VAULT)
+    await vaultA.collection<Doc>(OTHER).put('good-1', { secret: 'one' })
+    await vaultA.collection<Doc>(OTHER).put('bad', { secret: 'two' })
+    await dbA.push(VAULT)
     const good1 = (await remote.get(VAULT, OTHER, 'good-1'))!
     await remote.put(VAULT, OTHER, 'bad', good1)
 
-    const result = await b.db.pull(VAULT)
+    const localB = memoryStore()
+    const dbB = await createNoydb({ syncStrategy: withSync(), teamStrategy: withTeam(), store: localB, sync: remote, user: 'member', secret: 'member-pw', validateSecret: false })
+    const vaultB = await dbB.openVault(VAULT)
+    const result = await dbB.pull(VAULT)
     expect(result.errors).toEqual([])                              // no key → no judgement
     expect(await localB.get(VAULT, OTHER, 'bad')).not.toBeNull()   // accepted…
-    await expect(b.vault.collection<Doc>(OTHER).get('bad')).rejects.toThrow() // …but unreadable
+    await expect(vaultB.collection<Doc>(OTHER).get('bad')).rejects.toThrow() // …but unreadable
   })
 
   it('7. a ROLLED-BACK remote is rejected — the stale body cannot be relabelled as current', async () => {

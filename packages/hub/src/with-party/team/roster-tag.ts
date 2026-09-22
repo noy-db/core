@@ -147,7 +147,7 @@ export function rosterCanonical(file: RosterAuthorityFields): string {
     // unstrippable as `dek_slots`. Contents are self-authenticating (AES-GCM
     // under a CEK only the private half unwraps) and stay out.
     ...(file.inbox_key !== undefined ? { inbox_pub: file.inbox_key.pub } : {}),
-    ...(file.inbox !== undefined ? { inbox_slots: [...file.inbox.slots].sort() } : {}),
+    ...(file.inbox !== undefined ? { inbox_slots: [...new Set(file.inbox.flatMap((box) => box.slots))].sort() } : {}),
   })
 }
 

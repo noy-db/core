@@ -80,7 +80,7 @@ describe('core#96 — updateUser widens a member the owner holds no secret for',
     await dbO.updateUser('firm', { userId: 'u1', permissions: { notes: 'rw', invoices: 'rw' } })
     await dbO.push('firm')
     const delivered = await file(remote, 'u1')
-    expect(delivered.inbox?.slots).toEqual(['invoices'])
+    expect(delivered.inbox?.flatMap(b => b.slots)).toEqual(['invoices'])
     expect(Object.keys(delivered.deks)).not.toContain('invoices')
     expect(delivered.inbox_key?.pub).toBeTruthy()
 
@@ -106,12 +106,12 @@ describe('core#96 — updateUser widens a member the owner holds no secret for',
     expect(await vU.collection<Inv>('invoices').get('inv-1')).toEqual({ n: 10 })
   })
 
-  it('a second widening before the first is drained re-seals the whole pending set', async () => {
+  it('a second widening before the first is drained appends a second box; both drain', async () => {
     const { remote, dbO } = await setup()
     await dbO.updateUser('firm', { userId: 'u1', permissions: { notes: 'rw', invoices: 'rw' } })
     await dbO.updateUser('firm', { userId: 'u1', permissions: { notes: 'rw', invoices: 'rw', salaries: 'ro' } })
     await dbO.push('firm')
-    expect((await file(remote, 'u1')).inbox?.slots).toEqual(['invoices', 'salaries'])
+    expect((await file(remote, 'u1')).inbox?.flatMap(b => b.slots).sort()).toEqual(['invoices', 'salaries'])
     const dbB = await open(memoryStore(), remote, 'u1', U2)
     const vB = await dbB.openVault('firm'); await dbB.pull('firm')
     expect(await vB.collection<Inv>('salaries').get('s1')).toEqual({ n: 100 })

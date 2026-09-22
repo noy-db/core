@@ -38,16 +38,20 @@ import type { EnclaveKey } from '../capsule/index.js'
  */
 export function buildMergeAuthority(
   /**
+   * A GETTER for the DEK map (core#100): the vault reloads its keyring in
+   * place after a pull that replaced its file (core#82) — a delivered DEK, a
+   * rotation — and an authority that captured the object at wiring kept
+   * verifying with the map that no longer opened the records.
    * Just the DEK map, not the whole keyring. `port-layering` refused a type
    * import of `UnlockedKeyring` from `with-party` — correctly, and the narrower
    * shape is better anyway: this needs to look up keys, not to know what a
    * keyring is.
    */
-  keyring: { readonly deks: ReadonlyMap<string, EnclaveKey> },
+  keyring: () => { readonly deks: ReadonlyMap<string, EnclaveKey> },
 ): MergeAuthority {
   return {
     verify: async (collection, id, envelope) => {
-      const dek = keyring.deks.get(dekKey(collection, envelope._tier ?? 0))
+      const dek = keyring().deks.get(dekKey(collection, envelope._tier ?? 0))
       if (dek === undefined) return true // no key → cannot judge; see above
       return verifyRecordIdentity({ collection, id }, envelope, dek)
     },
@@ -58,7 +62,7 @@ export function buildMergeAuthority(
       // vacuous-authenticity rule `verifyRecordIdentity` applies.
       if (!hasSealedBody(envelope)) return { ...envelope, _v: toVersion }
 
-      const dek = keyring.deks.get(dekKey(collection, envelope._tier ?? 0))
+      const dek = keyring().deks.get(dekKey(collection, envelope._tier ?? 0))
       if (dek === undefined) {
         // Unreachable through the sync engine, and stated loudly rather than
         // papered over: `advance` is only called on a local-wins conflict, and
