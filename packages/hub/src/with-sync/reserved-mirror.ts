@@ -99,16 +99,19 @@ function versionSupersedes(candidate: EncryptedEnvelope, current: EncryptedEnvel
 /** The declared set. Order matters: the roster travels FIRST, before anything it gates. */
 const RESERVED_REPLICATION: readonly ReservedReplicationRule[] = [
   { collection: KEYRING_COLLECTION, supersedes: keyringSupersedes, propagateDeletes: true },
-  { collection: '_meta', idPrefix: 'invite-audit-', supersedes: versionSupersedes, propagateDeletes: false },
-  { collection: '_users', supersedes: versionSupersedes, propagateDeletes: true },
-  { collection: '_delegations', supersedes: versionSupersedes, propagateDeletes: true },
   // core#91 — the broker seeds. `_broker/<brokerId>` is sealed under the
   // admin `_broker` DEK (owner/admin only hold it), `_broker_member/<userId>`
   // under that grantee's own DEK: both are ciphertext to the mover and to every
   // other device, and both are exactly what a fresh device needs to mint its
   // first credential. Revocation is a delete that rides the dirty log.
-  { collection: '_broker', supersedes: versionSupersedes, propagateDeletes: true },
+  // core#97 — SECOND, right behind the roster: on a fresh device every target
+  // request before the seed has landed cannot be served by the device's own
+  // mint, so the seed travels before anything else a first pull carries.
   { collection: '_broker_member', supersedes: versionSupersedes, propagateDeletes: true },
+  { collection: '_broker', supersedes: versionSupersedes, propagateDeletes: true },
+  { collection: '_meta', idPrefix: 'invite-audit-', supersedes: versionSupersedes, propagateDeletes: false },
+  { collection: '_users', supersedes: versionSupersedes, propagateDeletes: true },
+  { collection: '_delegations', supersedes: versionSupersedes, propagateDeletes: true },
 ]
 
 export interface ReservedMirrorResult {
