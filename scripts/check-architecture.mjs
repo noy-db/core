@@ -2068,34 +2068,66 @@ function checkKernelSurface() {
   }
 }
 
-// ─── Check 8: no-outbound-klum-import (NO @noy-db package may depend on @klum-db) ───
-function checkNoOutboundKlumImport() {
-  // The dependency runs ONE way: @klum-db/* (orchestration) → @noy-db/* (vault).
+// ─── Check 8: no-outbound-lobby-import (NO @noy-db package may depend on the lobby) ───
+function checkNoOutboundLobbyImport() {
+  // The dependency runs ONE way: the lobby (orchestration) → @noy-db/* (vault).
   // No @noy-db package — hub core OR any edge adapter (e.g. as-xlsx, FR-9) — may
-  // import @klum-db. Scan every package's src EXCEPT the @klum-db packages
-  // themselves (which legitimately import each other / re-export klum symbols).
+  // import it. Scan every package's src EXCEPT the lobby package itself.
+  //
+  // ⛔⛔ THIS GUARD SPENT ITS WHOLE LIFE SCANNING FOR A SCOPE THAT NEVER EXISTED
+  // (core#105, measured 2026-09-22). It matched `@klum-db/`; the lobby has been
+  // `@noy-db/lobby` since the 2026-09-06 reset and `npm view @klum-db/lobby` is a
+  // 404. So the regexes could not match, the law was documented in four places and
+  // enforced in none, and a core package importing the lobby would have passed
+  // silently. ⭐ The tell was available the whole time and nobody looked: the
+  // self-exemption skipped packages named `@klum-db/*`, and NO PACKAGE IN THE TREE
+  // HAS EVER HAD THAT NAME — a guard whose exemption branch is unreachable is a
+  // guard whose main branch is too.
+  //
+  // ⚠️ AND THE OBVIOUS REPOINT IS A SECOND TRAP: the exemption cannot become
+  // `startsWith('@noy-db/')`, which would exempt every package in the repo and
+  // recreate the same silence with a live-looking regex. It is an EXACT name match.
+  // There is no lobby package in this repo today, so that branch is unreachable
+  // here as well — but for the opposite reason, and it is kept because the lobby
+  // stub has lived here before.
+  // The specifier: the lobby bare, or any subpath of it. `lobby-adapter` must not match.
+  const SPEC = String.raw`['"]@noy-db\/lobby(?:\/[^'"]*)?['"]`
+  // ⚠️ BOTH ENDS ARE ANCHORED, and the tail anchor is not decoration. Without it
+  // `^\s*(?:import|export)\b[^\n]*?\bfrom\s+<SPEC>` matches
+  //   export const msg = "moved: import it from '@noy-db/lobby' instead"
+  // because the line opens with `export` and `[^\n]*?` walks straight through the
+  // string literal. Requiring the specifier to END the statement is what makes this
+  // an import matcher rather than a line-mentions-the-lobby matcher. Found by the
+  // test below, not by reading — the predecessor carried a comment claiming the
+  // line anchor alone prevented this.
+  const lobbyStatic = new RegExp(String.raw`^\s*(?:import|export)\b[^\n]*?\bfrom\s+${SPEC}\s*;?\s*$`, 'm')
+  // A SIDE-EFFECT import has no `from` clause and matched neither regex before
+  // (core#105). The via-layering guard has caught this form since #632; this one
+  // never did.
+  const lobbySideEffect = new RegExp(String.raw`^\s*import\s+${SPEC}\s*;?\s*$`, 'm')
+  const lobbyDynamic = new RegExp(String.raw`\bimport\s*\(\s*${SPEC}\s*\)`)
   //
   // Use stripComments (NOT stripCommentsAndStrings): import specifiers ARE
-  // string literals — blanking string bodies makes this a no-op. Line-anchor
-  // to real import/export statements so FederationMovedError's runtime message
-  // (which contains "from '@klum-db/lobby'" mid-line) doesn't false-positive.
+  // string literals — blanking string bodies makes this a no-op. Line-anchor to
+  // real import/export statements so a runtime message or doc string carrying the
+  // specifier mid-line cannot false-positive. (The class that used to do that,
+  // FederationMovedError, is gone; the anchor is kept because it costs nothing and
+  // the next such message will not announce itself.)
   //
-  // Accepted limitation: a hand-split multi-line import where `from` lands on
-  // a `}`-leading line is NOT matched. That's fine — no @noy-db package declares
-  // @klum-db/* as a dependency, so any real outbound import also fails that
-  // package's build/typecheck (hard backstop that covers the multi-line edge case).
-  const klumStatic = /^\s*(?:import|export)\b[^\n]*?\bfrom\s+['"]@klum-db\//m
-  const klumDynamic = /\bimport\s*\(\s*['"]@klum-db\//
+  // Accepted limitation: a hand-split multi-line import where `from` lands on a
+  // `}`-leading line is NOT matched. That is tolerable — no @noy-db package
+  // declares the lobby as a dependency, so any real outbound import also fails
+  // that package's build/typecheck (hard backstop for the multi-line edge case).
   for (const pkgDir of listPackageDirs()) {
     let name
     try { name = readPackageJson(pkgDir).name } catch { continue }
-    if (typeof name === 'string' && name.startsWith('@klum-db/')) continue // klum packages may import klum
+    if (name === '@noy-db/lobby') continue // the lobby may import itself
     walkTsFiles(join(pkgDir, 'src'), (file, content) => {
       const code = stripComments(content)
-      if (klumStatic.test(code) || klumDynamic.test(code)) {
+      if (lobbyStatic.test(code) || lobbySideEffect.test(code) || lobbyDynamic.test(code)) {
         fail(
-          'no-outbound-klum-import',
-          `${relative(ROOT, file)} imports from @klum-db. No @noy-db package (hub core OR edge adapter) may depend on the orchestration package — the dependency runs the other way (@klum-db/lobby depends on @noy-db/hub/cargo + edge adapters).`,
+          'no-outbound-lobby-import',
+          `${relative(ROOT, file)} imports from @noy-db/lobby. No @noy-db package (hub core OR edge adapter) may depend on the orchestration package — the dependency runs the other way (@noy-db/lobby depends on @noy-db/hub/cargo + edge adapters).`,
           file,
         )
       }
@@ -3459,7 +3491,7 @@ checkSourcesTracked()
 checkTestsTypechecked()
 checkKernelSurface()
 checkNoDebugPlaintextInSource()
-checkNoOutboundKlumImport()
+checkNoOutboundLobbyImport()
 checkFamilyPortHasBinder()
 checkHubSatelliteDeps()
 checkOnFamilyClassification()
