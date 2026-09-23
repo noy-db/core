@@ -1,8 +1,8 @@
 {
   "scenarios": {
     "floor": {
-      "minifiedBytes": 1680,
-      "gzippedBytes": 530
+      "minifiedBytes": 1736,
+      "gzippedBytes": 541
     },
     "query-find": {
       "minifiedBytes": 28822,
@@ -17,57 +17,57 @@
       "gzippedBytes": 18813
     },
     "query-root-barrel": {
-      "minifiedBytes": 33165,
-      "gzippedBytes": 11353
+      "minifiedBytes": 33222,
+      "gzippedBytes": 11376
     },
     "query-find-live": {
       "minifiedBytes": 38258,
       "gzippedBytes": 12709
     },
     "lazy": {
-      "minifiedBytes": 1768,
-      "gzippedBytes": 603
+      "minifiedBytes": 1824,
+      "gzippedBytes": 614
     },
     "team": {
-      "minifiedBytes": 2032,
-      "gzippedBytes": 707
+      "minifiedBytes": 2088,
+      "gzippedBytes": 718
     },
     "broker": {
-      "minifiedBytes": 3004,
-      "gzippedBytes": 1181
+      "minifiedBytes": 3060,
+      "gzippedBytes": 1199
     },
     "history": {
-      "minifiedBytes": 5380,
-      "gzippedBytes": 2004
+      "minifiedBytes": 5441,
+      "gzippedBytes": 2020
     },
     "classified": {
-      "minifiedBytes": 3030,
-      "gzippedBytes": 1088
+      "minifiedBytes": 3086,
+      "gzippedBytes": 1100
     },
     "blobs": {
-      "minifiedBytes": 1851,
-      "gzippedBytes": 669
+      "minifiedBytes": 1907,
+      "gzippedBytes": 685
     },
     "analytics": {
-      "minifiedBytes": 2893,
-      "gzippedBytes": 1127
+      "minifiedBytes": 2949,
+      "gzippedBytes": 1143
     },
     "search": {
-      "minifiedBytes": 1722,
-      "gzippedBytes": 564
+      "minifiedBytes": 1778,
+      "gzippedBytes": 576
     },
     "search-ann": {
-      "minifiedBytes": 1751,
-      "gzippedBytes": 588
+      "minifiedBytes": 1807,
+      "gzippedBytes": 600
     },
     "coverage": {
-      "minifiedBytes": 6483,
-      "gzippedBytes": 2753
+      "minifiedBytes": 6539,
+      "gzippedBytes": 2770
     },
     "all-on": {
-      "minifiedBytes": 74053,
-      "gzippedBytes": 23607
+      "minifiedBytes": 81087,
+      "gzippedBytes": 25592
     }
   },
-  "updatedAt": "2026-09-22T06:59:26.910Z"
+  "updatedAt": "2026-09-23T11:56:38.881Z"
 }
