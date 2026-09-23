@@ -965,6 +965,26 @@ export class Noydb {
    * }, { factors: [{ kind: 'totp' }] })
    * ```
    *
+   * ## ⚠️ A NARROWING DOES NOT REACH A SESSION THAT IS ALREADY OPEN
+   *
+   * This writes the target's keyring. It does not, and cannot, reach into a
+   * `Noydb` the target already has open somewhere else: an eager collection
+   * holds the records it hydrated, and nothing polls the keyring, so that
+   * session keeps serving rows it read while it still had the key. A FRESH
+   * open throws `NoAccessError` correctly (core#101), and so does that session
+   * for any collection it had not already hydrated.
+   *
+   * ⭐ This is a property of the session, not a bug and not a race: a
+   * long-lived admin console — one that holds a vault open while changing
+   * somebody's permissions — must RE-OPEN the affected session rather than
+   * expect its next read to start failing. Reported by the consumer designing
+   * exactly that console, which is the only place it bites.
+   *
+   * ⛔ It is not a confidentiality hole: the narrowed user never gains access
+   * they did not have, they retain a view of data they were already permitted
+   * to read, and a key rotation (`rotate()`) means everything written after it
+   * is unreadable to them. What is stale is the OLD rows, not the new ones.
+   *
    * @throws `NoAccessError` when no keyring exists for the target.
    * @throws `PermissionDeniedError` when the role hierarchy rejects.
    * @throws `ValidationError` when no field is provided.
