@@ -3,6 +3,7 @@ import { populateCollectionRegistries } from '../port/with/collection-registries
 import { NO_BLOBS } from '../port/with/blob-strategy.js'
 import { resolveExportSource } from './export-scope.js'
 import { sealRejection, openRejection } from './rejection-seal.js'
+import type { RestoreToHost } from '../port/with/restore-host.js'
 import type { StrategyBag } from '../port/with/strategies.js'
 import type {
   NoydbFormat,
@@ -14,6 +15,10 @@ import type {
   NoydbStore,
   EncryptedEnvelope,
   SyncRejection,
+  LoadPodOptions,
+  LoadPodResult,
+  RestoreToOptions,
+  RestoreToResult,
   HistoryConfig,
   ExportStreamOptions,
   ExportChunk,
@@ -3434,7 +3439,14 @@ export class Vault {
           this.getDEK = this.makeGetDEK()
         }
       },
-      clearCollectionCache: () => this.collectionCache.clear(),
+      // core#122 — invalidate the instances BEFORE dropping the map. A handle
+      // the caller already holds is one of these objects, so clearing the map
+      // alone fixes the next `vault.collection()` and leaves the caller reading
+      // pre-restore data from the handle they were told to use.
+      clearCollectionCache: () => {
+        for (const c of this.collectionCache.values()) c._invalidateAfterRestore()
+        this.collectionCache.clear()
+      },
       resetLedgerStore: () => { this.ledgerStore = null },
       ...(this.onRestore !== undefined ? { resetSync: this.onRestore } : {}),
       exportStream: (opts: ExportStreamOptions) => this.exportStream(opts),
@@ -3463,9 +3475,39 @@ export class Vault {
    * with a console warning and skip the integrity check entirely
    * — there's no chain to verify against.
    */
-  async load(backupJson: string): Promise<void> {
+  /**
+   * core#76 — restore this vault to its state at `timestamp`, as FORWARD
+   * WRITES. Every record whose state at T differs from its state now is put
+   * back at T's value; every record that exists now and did not exist at T is
+   * deleted.
+   *
+   * ⭐ The writes go through `Collection.put`/`.delete`, so guards, periods,
+   * history and the ledger all see them. The restore is therefore an audited,
+   * reversible event that replicates through ordinary sync — no pod, and none
+   * of the state-replacement machinery core#71/#72 exists to make safe.
+   *
+   * `{ dryRun: true }` returns the same report having written nothing.
+   *
+   * ⚠️ Bounded by history retention, and ⛔ blobs are not restored — see the
+   * module header on `with-commit/history/restore-to.ts`, which states both
+   * limits and why the blob one is not reported rather than reported empty.
+   */
+  async restoreTo(timestamp: string | Date, options?: RestoreToOptions): Promise<RestoreToResult> {
+    const iso = timestamp instanceof Date ? timestamp.toISOString() : timestamp
+    const { restoreTo } = await import('../with-commit/history/restore-to.js')
+    const instant = this.at(iso)
+    return restoreTo({
+      adapter: this.adapter,
+      vault: this.name,
+      instantCollection: (name) => instant.collection(name),
+      liveCollection: (name) => this.collection(name) as unknown as ReturnType<RestoreToHost['liveCollection']>,
+      liveCollectionNames: async () => Object.keys(await this.adapter.loadAll(this.name)),
+    }, iso, options)
+  }
+
+  async load(backupJson: string, options?: LoadPodOptions): Promise<LoadPodResult> {
     const { loadVault } = await import('../with-pod/backup.js')
-    return loadVault(this.backupContext(), backupJson)
+    return loadVault(this.backupContext(), backupJson, options)
   }
 
   /**

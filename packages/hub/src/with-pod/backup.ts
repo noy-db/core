@@ -35,6 +35,8 @@ import type {
   EncryptedEnvelope,
   VaultBackup,
   VaultSnapshot,
+  LoadPodOptions,
+  LoadPodResult,
   ExportStreamOptions,
   ExportChunk,
 } from '../kernel/types.js'
@@ -227,11 +229,79 @@ export async function dumpVault(ctx: BackupContext): Promise<string> {
  * every data envelope's payload hash. Legacy backups (no `ledgerHead`) load
  * with a console warning and skip the integrity check.
  */
-export async function loadVault(ctx: BackupContext, backupJson: string): Promise<void> {
+/**
+ * core#77 — reconcile ONE collection against the pod's rows: write what
+ * differs, delete what the pod does not carry, leave the rest untouched.
+ *
+ * Identity is `(id, _v)`, not a content hash — chunk rows are not
+ * content-addressed today. That is enough to avoid rewriting 10 GB that has
+ * not changed; it is NOT enough to dedupe across records, and nothing here
+ * claims otherwise.
+ *
+ * ⛔ The DELETE half is what keeps this a restore rather than a merge: an id
+ * the store holds and the pod does not is removed, exactly as `saveAll`
+ * removes it in replace mode (core#111 — a restore rewinds).
+ */
+async function reconcileCollection(
+  ctx: BackupContext,
+  collection: string,
+  podRows: Record<string, EncryptedEnvelope>,
+): Promise<{ written: number; skipped: number; deleted: number }> {
+  let written = 0, skipped = 0, deleted = 0
+  for (const [id, envelope] of Object.entries(podRows)) {
+    const local = await ctx.adapter.get(ctx.vault, collection, id)
+    if (local && local._v === envelope._v) { skipped++; continue }
+    await ctx.adapter.put(ctx.vault, collection, id, envelope)
+    written++
+  }
+  for (const id of await ctx.adapter.list(ctx.vault, collection)) {
+    if (id in podRows) continue
+    await ctx.adapter.delete(ctx.vault, collection, id)
+    deleted++
+  }
+  return { written, skipped, deleted }
+}
+
+/** Fold the per-collection counters into the returned report. */
+function podReport(mode: 'replace' | 'incremental', per: Record<string, { written: number; skipped: number; deleted: number }>): LoadPodResult {
+  let written = 0, skipped = 0, deleted = 0
+  for (const r of Object.values(per)) { written += r.written; skipped += r.skipped; deleted += r.deleted }
+  return { mode, written, skipped, deleted, collections: per }
+}
+
+export async function loadVault(
+  ctx: BackupContext,
+  backupJson: string,
+  options?: LoadPodOptions,
+): Promise<LoadPodResult> {
   const backup = JSON.parse(backupJson) as VaultBackup
+  const mode = options?.mode ?? 'replace'
+  const per: Record<string, { written: number; skipped: number; deleted: number }> = {}
+
+  // core#77 — a pod from ANOTHER vault is refused in incremental mode. In
+  // replace mode `saveAll` overwrites wholesale and the result is at least
+  // coherent; "write only the differences" between unrelated vaults is not a
+  // restore, it is a silent union of two histories, and the keyrings that
+  // arrive with it would not open what is already here.
+  if (mode === 'incremental' && backup._compartment !== ctx.vault) {
+    throw new BackupLedgerError(
+      `Incremental load refused: this pod was taken from vault "${backup._compartment}" ` +
+      `and is being loaded into "${ctx.vault}". Incremental mode reconciles a vault against ` +
+      `its OWN pod; use mode: 'replace' to overwrite this vault with a foreign pod.`,
+    )
+  }
 
   // 1. Restore data collections.
-  await ctx.adapter.saveAll(ctx.vault, backup.collections)
+  if (mode === 'incremental') {
+    const localData = await ctx.adapter.loadAll(ctx.vault)
+    const names = new Set([...Object.keys(backup.collections), ...Object.keys(localData)])
+    for (const name of names) {
+      const r = await reconcileCollection(ctx, name, backup.collections[name] ?? {})
+      if (r.written || r.skipped || r.deleted) per[name] = r
+    }
+  } else {
+    await ctx.adapter.saveAll(ctx.vault, backup.collections)
+  }
 
   // 2. Restore keyrings.
   for (const [userId, keyringFile] of Object.entries(backup.keyrings)) {
@@ -267,15 +337,31 @@ export async function loadVault(ctx: BackupContext, backupJson: string): Promise
   // (`loadAll` skips them). Those rows are already orphaned — `saveAll` has
   // just removed the collection they describe — so they are unreachable
   // rather than misleading.
-  for (const internalName of internalCollectionNames(Object.keys(backup.collections))) {
-    for (const id of await ctx.adapter.list(ctx.vault, internalName)) {
-      await ctx.adapter.delete(ctx.vault, internalName, id)
+  //
+  // core#77 — in INCREMENTAL mode the same names are reconciled instead of
+  // cleared and rewritten. ⭐ This is the half that matters for the 10 GB
+  // case: `_blob_chunks` is an internal collection, so a clear-and-rewrite
+  // here would re-upload every chunk and leave "incremental" saving only the
+  // record envelopes. Reconciling reaches the SAME end state — extras are
+  // still deleted, so the restore still rewinds — at a cost proportional to
+  // what actually differs.
+  const internalNamesToLoad = internalCollectionNames(Object.keys(backup.collections))
+  if (mode === 'incremental') {
+    for (const internalName of internalNamesToLoad) {
+      const r = await reconcileCollection(ctx, internalName, backup._internal?.[internalName] ?? {})
+      if (r.written || r.skipped || r.deleted) per[internalName] = r
     }
-  }
-  if (backup._internal) {
-    for (const [internalName, records] of Object.entries(backup._internal)) {
-      for (const [id, envelope] of Object.entries(records)) {
-        await ctx.adapter.put(ctx.vault, internalName, id, envelope)
+  } else {
+    for (const internalName of internalNamesToLoad) {
+      for (const id of await ctx.adapter.list(ctx.vault, internalName)) {
+        await ctx.adapter.delete(ctx.vault, internalName, id)
+      }
+    }
+    if (backup._internal) {
+      for (const [internalName, records] of Object.entries(backup._internal)) {
+        for (const [id, envelope] of Object.entries(records)) {
+          await ctx.adapter.put(ctx.vault, internalName, id, envelope)
+        }
       }
     }
   }
@@ -333,7 +419,7 @@ export async function loadVault(ctx: BackupContext, backupJson: string): Promise
         `enable the ledger on both the exporter and this reader if tamper detection is wanted.`,
       )
     }
-    return
+    return podReport(mode, per)
   }
 
   const result = await verifyBackupIntegrity(ctx)
@@ -359,6 +445,7 @@ export async function loadVault(ctx: BackupContext, backupJson: string): Promise
       `but reconstructed "${result.head}".`,
     )
   }
+  return podReport(mode, per)
 }
 
 /**

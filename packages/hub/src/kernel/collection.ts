@@ -2939,6 +2939,56 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
   }
 
   /**
+   * @internal core#122 — forget everything read from the store, so the next
+   * read re-hydrates.
+   *
+   * ⭐ Why this is needed even though the vault drops its collection cache on
+   * restore: `vault.collection(name)` hands back the instance FROM that cache,
+   * so a handle the caller is already holding IS one of the objects in it.
+   * Dropping the map makes the NEXT `vault.collection()` build a fresh
+   * instance and leaves the caller's handle answering from its own pre-restore
+   * cache — correct for the next caller, invisible to the current one, and the
+   * natural shape of restore code holds the handle across the load.
+   *
+   * ⛔ Not a general "refresh": it deliberately does NOT re-read here. The
+   * next read pays for it, so a restore that touches fifty collections does
+   * not hydrate fifty times for a caller who will look at one.
+   */
+  _invalidateAfterRestore(): void {
+    this.cache.clear()
+    this.markerIds.clear()
+    this.hydrated = false
+  }
+
+  /**
+   * core#103 — `list()` with the hub-assigned id alongside each record.
+   *
+   * ⭐ The id is not derivable from a record, so a caller keyed on it
+   * previously had to `get()` per row after `list()`. Tuple order mirrors
+   * `putMany`: `[id, record]` reads the same going in and coming out.
+   *
+   * Same eager-mode requirement and the same locale/Via pipeline as `list()`
+   * — deliberately, so the two cannot drift into answering differently about
+   * the same collection. `list()` is unchanged.
+   */
+  async listEntries(locale?: LocaleReadOptions): Promise<Array<readonly [id: string, record: T]>> {
+    if (this.lazy) {
+      throw new Error(
+        `Collection "${this.name}": listEntries() is not available in lazy mode (prefetch: false). ` +
+        `Use collection.listPageEntries({ limit }) to page through the collection.`,
+      )
+    }
+    if (this.materializedViewSource !== undefined) {
+      const { resolveStaleMVOnRead } = await import('../with-formula/materialized-views/stale.js')
+      await resolveStaleMVOnRead(this.materializedViewSource, this.name, this.#dispatchCtx({ collection: this.name, id: 'resolve-on-read' }))
+    }
+    await this.ensureHydrated()
+    const entries = [...this.cache.entries()].map(([id, e]) => [id, e.record] as const)
+    if (!this.via) return entries
+    return Promise.all(entries.map(async ([id, r]) => [id, await this.applyLocaleToRecord(r, locale)] as const))
+  }
+
+  /**
    * Scan-mode full-text search over a plain-text `field`. Decrypts the
    * collection in memory and ranks records by BM25 against the tokenized query.
    * **Zero added store leakage** — pure client-side scan; nothing searchable is
@@ -3474,11 +3524,30 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     items: T[]
     nextCursor: string | null
   }> {
+    const page = await this.listPageEntries(opts)
+    return { items: page.items.map(([, record]) => record), nextCursor: page.nextCursor }
+  }
+
+  /**
+   * core#103 — `listPage()` with the hub-assigned id alongside each record.
+   *
+   * ⭐ The id is not derivable from the record. An app that stores its own key
+   * in a field is fine; one that relies on the id hub assigned had no bulk
+   * read that returned it and had to `get()` per row to find out — which is
+   * the shape pilot-1 hit writing a rule keyed on the record id.
+   *
+   * Tuple order mirrors `putMany`, so `[id, record]` reads the same way going
+   * in and coming out. `listPage()` is unchanged and delegates here.
+   */
+  async listPageEntries(opts: { cursor?: string; limit?: number } = {}): Promise<{
+    items: Array<readonly [id: string, record: T]>
+    nextCursor: string | null
+  }> {
     const limit = opts.limit ?? 100
 
     if (this.adapter.listPage) {
       const result = await this.adapter.listPage(this.vault, this.name, opts.cursor, limit)
-      const decrypted: T[] = []
+      const decrypted: Array<readonly [id: string, record: T]> = []
       for (const { record, version, id } of await this.decryptPage(result.items)) {
         // Update cache opportunistically — if the page-fetched record isn't
         // in cache yet, populate it. This makes a subsequent .get(id) free.
@@ -3489,7 +3558,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
         if (!this.lazy && !this.cache.has(id)) {
           this.cache.set(id, { record, version })
         }
-        decrypted.push(record)
+        decrypted.push([id, record] as const)
       }
       return { items: decrypted, nextCursor: result.nextCursor }
     }
@@ -3501,14 +3570,14 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     const ids = (await this.adapter.list(this.vault, this.name)).slice().sort()
     const start = opts.cursor ? parseInt(opts.cursor, 10) : 0
     const end = Math.min(start + limit, ids.length)
-    const items: T[] = []
+    const items: Array<readonly [id: string, record: T]> = []
     for (let i = start; i < end; i++) {
       const id = ids[i]!
       const envelope = await this.adapter.get(this.vault, this.name, id)
       if (envelope && (envelope._tier ?? 0) === 0) {
         const record = await this.codec.decryptRecord({ collection: this.name, id }, envelope, { sealedAsHandles: true })
         if (record === null) continue // shredded (tombstone) — skip
-        items.push(record)
+        items.push([id, record] as const)
         // Same lazy-mode skip as the native path: don't pollute the LRU
         // with sequential scan results.
         if (!this.lazy && !this.cache.has(id)) {

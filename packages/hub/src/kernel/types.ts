@@ -1319,6 +1319,73 @@ export interface KeyringInboxBox {
 
 // ─── Backup ────────────────────────────────────────────────────────────
 
+/** core#76 — scope and mode for `vault.restoreTo(T)`. */
+export interface RestoreToOptions {
+  /**
+   * Restrict the restore to these collections. Omitted, every collection that
+   * is live now OR appears in history is considered — the union matters,
+   * because a collection dropped since T is absent from the live store and a
+   * restore that skipped it would decline to bring back exactly what was lost.
+   */
+  readonly collections?: readonly string[]
+  /**
+   * Compute the diff and write NOTHING. The result names every id that would
+   * be written or deleted, per collection, so an admin sees the blast radius
+   * before committing to it.
+   */
+  readonly dryRun?: boolean
+}
+
+/** core#76 — what `restoreTo(T)` did, or (with `dryRun`) would do. */
+export interface RestoreToResult {
+  /** The target instant, as given. */
+  readonly restoredTo: string
+  /** True when nothing was written. */
+  readonly dryRun: boolean
+  /** Records put back to their state at T. */
+  readonly written: number
+  /** Records that exist now and did not exist at T. */
+  readonly deleted: number
+  /** Records already identical to their state at T. */
+  readonly unchanged: number
+  /** Per collection, only where something happened. */
+  readonly collections: Readonly<Record<string, { written: string[]; deleted: string[]; unchanged: number }>>
+}
+
+/** core#77 — how `vault.load()` reconciles a pod against the current store. */
+export interface LoadPodOptions {
+  /**
+   * `'replace'` (default) is the historical behaviour: `saveAll` the data
+   * collections and rewrite the internal ones. Whole-vault replace,
+   * destructive on SQL adapters, and every envelope is written whether or not
+   * the store already holds it byte-identical.
+   *
+   * `'incremental'` writes only what DIFFERS — envelopes whose `(id, _v)` the
+   * store does not already have — and deletes ids the pod does not carry. ⭐
+   * The END STATE IS THE SAME; only the cost differs. In particular a restore
+   * still rewinds (core#111): ids absent from the pod are deleted, never left
+   * behind, so this is not a merge.
+   *
+   * ⛔ Valid only when the pod and the store are the same vault. A pod from
+   * another vault is refused, because "write only the differences" between
+   * unrelated vaults is not a restore, it is a silent union.
+   */
+  readonly mode?: 'replace' | 'incremental'
+}
+
+/** core#77 — what an incremental load did, per collection and in total. */
+export interface LoadPodResult {
+  readonly mode: 'replace' | 'incremental'
+  /** Envelopes written because the store lacked them at that version. */
+  readonly written: number
+  /** Envelopes already present byte-for-version — the saving. */
+  readonly skipped: number
+  /** Ids the store held and the pod does not carry. */
+  readonly deleted: number
+  /** Per collection, only where something happened. */
+  readonly collections: Readonly<Record<string, { written: number; skipped: number; deleted: number }>>
+}
+
 export interface VaultBackup {
   readonly _noydb_backup: typeof NOYDB_BACKUP_VERSION
   readonly _compartment: string

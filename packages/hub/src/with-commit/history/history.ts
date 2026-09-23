@@ -47,9 +47,18 @@ export function historyIdentity(collection: string, recordId: string, version: n
   return { collection: HISTORY_COLLECTION, id: historyId(collection, recordId, version), version }
 }
 
-// Unused today, kept for future history-id parsing utilities.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function parseHistoryId(id: string): { collection: string; recordId: string; version: number } | null {
+/**
+ * core#76 — the inverse of `historyId`. Used by `restoreTo(T)` to discover
+ * collections that exist in history but not in the live store, which is
+ * exactly the case a point-in-time restore has to cover: a collection dropped
+ * since T would otherwise be invisible to a restore meant to bring T back.
+ *
+ * ⚠️ A collection name containing `:` would parse wrong here. That is not
+ * reachable today — `vault.collection()` rejects those names — and this
+ * function is deliberately not hardened against it, because the guard belongs
+ * at the naming boundary, not in every parser downstream of it.
+ */
+export function parseHistoryId(id: string): { collection: string; recordId: string; version: number } | null {
   const lastColon = id.lastIndexOf(':')
   if (lastColon < 0) return null
   const versionStr = id.slice(lastColon + 1)
