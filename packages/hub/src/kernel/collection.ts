@@ -1686,15 +1686,24 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
       return { admitted: true }
     }
     try {
+      // core#108 (pilot-1, witnessed on real DynamoDB): under `push-recheck`
+      // the record is ALREADY STORED, so the prior lookup returns the record
+      // itself and a first-ever create was reported as `op: 'update'` — a rule
+      // keyed on `'create'` could never fire. `_v === 1` is exactly "no earlier
+      // version existed", so that case is knowable and is now exact: create,
+      // with no prior. For `_v > 1` the true prior is a version this device no
+      // longer holds; `'update'` is right and the prior stays the stored copy,
+      // which is the degeneracy documented on `_admitRemote` above.
+      const selfIsPrior = origin === 'push-recheck' && envelope._v === 1
       if (gates) {
         const { env: existingEnv, record: existingRecord } = await this.resolveGatePrior('beforePut', id)
         const gateEvent: GatePutEvent = {
-          op: existingEnv ? 'update' : 'create',
+          op: existingEnv && !selfIsPrior ? 'update' : 'create',
           vault: this.vault, collection: this.name, docId: id,
           incoming,
-          existing: this.via ? this.via.canonicalizeStored(existingRecord as Record<string, unknown>) : existingRecord,
-          existingVersion: existingEnv?._v ?? 0,
-          existingTs: existingEnv?._ts,
+          existing: selfIsPrior ? null : (this.via ? this.via.canonicalizeStored(existingRecord as Record<string, unknown>) : existingRecord),
+          existingVersion: selfIsPrior ? 0 : (existingEnv?._v ?? 0),
+          existingTs: selfIsPrior ? undefined : existingEnv?._ts,
           origin,
           userId: envelope._by ?? this.keyring.userId,
           role: this.keyring.role,
@@ -1705,8 +1714,8 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
       if (hooks) {
         const prior = await this.#priorForHook(id)
         await this.writeHooks!.runBefore({
-          op: prior.record === null ? 'create' : 'update',
-          vault: this.vault, collection: this.name, docId: id, before: prior.record, after: incoming,
+          op: prior.record === null || selfIsPrior ? 'create' : 'update',
+          vault: this.vault, collection: this.name, docId: id, before: selfIsPrior ? null : prior.record, after: incoming,
           userId: envelope._by ?? this.keyring.userId, timestamp: Date.now(), txId: generateULID(),
           baseVersion: prior.version, version: envelope._v, origin,
         })

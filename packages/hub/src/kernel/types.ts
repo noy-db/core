@@ -1576,11 +1576,23 @@ export interface SyncRejection {
   readonly version: number
   /** The refused envelope's author, when it carries one. */
   readonly by?: string
-  /** ISO time of the refusal on this device. */
+  /** ISO time of the refusal — when it was JUDGED, on the judging device. */
   readonly at: string
   /**
-   * core#108 — which judgement refused it. `'sync-apply'` (absent, the
-   * default) is a record that ARRIVED here and was turned away. `'push-recheck'`
+   * core#107 (pilot-1, witnessed) — ISO time the refused RECORD was written,
+   * from its envelope. Present when the envelope carries one.
+   *
+   * ⭐ Why both: an arbiter judges at PULL time, not at write time, so a
+   * record legitimately written and pushed while a period was open can be
+   * refused later when it re-closes. Under report-only that is harmless, but
+   * a notice saying only `at` reads as "your push was wrong". With `recordAt`
+   * a UI can say what actually happened — written then, refused now.
+   */
+  readonly recordAt?: string
+  /**
+   * core#108 — which judgement refused it. Set on every path since core#107;
+   * ⚠️ absent only on a rejection parked by an older hub. `'sync-apply'` is a
+   * record that ARRIVED here and was turned away. `'push-recheck'`
    * is this device's OWN record, refused on the way out: it is still in the
    * local store and still dirty, so it pushes by itself as soon as it passes
    * again. ⛔ `readmit()` is a sync-apply affordance — for a push-recheck
@@ -1782,6 +1794,13 @@ export interface PushResult {
    * WITHHELD: nothing left for them, the local copy is untouched, and they
    * stay dirty so a later push carries them once the rule passes. Present
    * when non-zero.
+   *
+   * ⛔ NOT AN ERROR, and a sync indicator must not render it as one (pilot-1,
+   * on the shipped behaviour). `pushed: 0` with `rejected` present means
+   * "N records waiting on a rule", not "N records failed": nothing was lost,
+   * nothing needs resubmitting, and the next push carries them by itself once
+   * the rule passes. The failure fates are `errors` and `conflicts`; this is
+   * a third thing and reads as a queue, not a fault.
    */
   readonly rejected?: SyncRejection[]
 }

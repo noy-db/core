@@ -1306,7 +1306,12 @@ const KERNEL_SURFACE_BUDGET = {
   // a prior-comparing rule sees a no-op diff. ⚠️ Zero new statements — do not read this bump as
   // capability growth, and do not "reclaim" it by deleting the comment: the degenerate prior is
   // invisible at the call site and the comment is the only thing that says so.
-  'packages/hub/src/kernel/collection.ts': 4500,
+  // Bumped 4500→4510 (2026-09-23, core#108 follow-up): `selfIsPrior`. pilot-1 witnessed a
+  // first-ever create arriving at a push-recheck rule as `op: 'update'` — the record is already
+  // stored, so the prior lookup returns the record itself. `_v === 1` is knowable, so that case is
+  // now exact (create, no prior) and only `_v > 1` stays degenerate. One statement; the rest is the
+  // comment explaining why the obvious reading of the prior lookup is wrong here.
+  'packages/hub/src/kernel/collection.ts': 4510,
   // Lowered 4549→4548 (#826/#798/#812 deprecation cut, 2026-07-26): removed the #799 cover delegators + option key, the dead auth/autoSync/syncInterval options, and the /bundle retirement fallout. Ratchets the #799 bumps back down as their comments promised.
   // Bumped 3640→3700 (2026-06-08): deferred-numbering wiring — `sequence()`
   // routing + `runNumberingPass` + the cache-coherent `stamp` closure. The

@@ -153,3 +153,46 @@ describe('core#108 — a dirty record is re-judged before it is pushed', () => {
     expect(await remote.get('firm', 'notes', 'f1')).toBeNull()
   })
 })
+
+/**
+ * core#108/#107 follow-ups, all three witnessed by pilot-1 on real DynamoDB
+ * before they were fixed here.
+ */
+describe('core#108/#107 — what the witness found', () => {
+  it("a first-ever create is reported as 'create', not 'update' (the record is already stored)", async () => {
+    const { dbO, vO, openMember } = await firm()
+    const C = await openMember()
+    const ops: string[] = []
+    C.db.onBeforeWrite(async (e) => {
+      if (e.collection !== 'notes') return
+      if (e.origin === 'push-recheck') ops.push(`${e.op}:${e.before === null ? 'no-prior' : 'prior'}`)
+      const close = await C.db.vault(e.vault).collection<Close>('closes').get((e.after as Note).period)
+      if (close?.closed) throw new Error('PERIOD_CLOSED')
+    })
+    await C.v.collection<Note>('notes').put('fresh', { n: 1, period: '2026-09' })
+    await C.db.push('firm')
+    expect(ops).toEqual(['create:no-prior'])
+
+    // and a genuine second version still reads as an update
+    ops.length = 0
+    await C.v.collection<Note>('notes').put('fresh', { n: 2, period: '2026-09' })
+    await C.db.push('firm')
+    expect(ops).toEqual(['update:prior'])
+    void dbO; void vO
+  })
+
+  it('every refusal carries an origin, including sync-apply, and a recordAt distinct from at', async () => {
+    const { dbO, vO, openMember } = await firm()
+    const C = await openMember(); closedPeriodRule(C.db)
+    await C.v.collection<Note>('notes').put('c9', { n: 1, period: '2026-08' })
+    await closePeriod(dbO, vO, '2026-08', true)
+    await C.db.pull('firm')
+    const r = await C.db.push('firm')
+
+    const rej = r.rejected![0]!
+    expect(rej.origin).toBe('push-recheck')
+    // the record was written before the refusal was made
+    expect(rej.recordAt).toBeTruthy()
+    expect(Date.parse(rej.recordAt!)).toBeLessThanOrEqual(Date.parse(rej.at))
+  })
+})

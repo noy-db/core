@@ -51,6 +51,16 @@ import { bootstrapKeyrings } from './reserved-mirror.js'
  * tolerable is the report-only ruling — a replicated refusal never deletes,
  * tombstones or retracts anything, so the worst a forged one does is show
  * somebody a notice about their own record.
+ *
+ * ⚠️ THE CONDITION THAT WOULD MAKE THAT NON-BOUNDARY A REAL ONE, named by
+ * pilot-1 when they accepted it: every member is currently staff of the same
+ * firm, and a forged refusal is sealed under the refused record's own
+ * collection DEK — so a forger can only show a notice about a record they
+ * could already read. ⛔ If EXTERNAL `client`-role users ever hold
+ * collections of their own, "who may write `_sync_rejections`" stops being
+ * cosmetic and this needs an authority design, not a flag. Do not read the
+ * paragraph above as a general safety argument; it is an argument about one
+ * topology, and this is the trigger to re-open it.
  */
 export interface WithSyncOptions {
   readonly arbiter?: boolean
