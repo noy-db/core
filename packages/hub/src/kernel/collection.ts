@@ -1662,7 +1662,19 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
    * run — the writer validated. Zero cost when nothing is registered.
    * @internal
    */
-  async _admitRemote(id: string, envelope: EncryptedEnvelope): Promise<{ admitted: true } | { admitted: false; reason: string }> {
+  /**
+   * @internal core#74 — judge a record against THIS device's gates and hooks.
+   *
+   * ⚠️ core#108: under `'push-recheck'` the record is already in the local
+   * store, so `resolveGatePrior` returns the record itself and `existing`
+   * equals `incoming` — the state it was written over is gone and cannot be
+   * reconstructed. That makes the re-check sound for rules that read AMBIENT
+   * state (a closed period, a revoked clearance) and degenerate for rules
+   * that compare against a prior, which see a no-op diff and pass. Widening
+   * it would need the pre-write snapshot kept in the dirty log, which is a
+   * different feature; do not "fix" it by synthesising a prior here.
+   */
+  async _admitRemote(id: string, envelope: EncryptedEnvelope, origin: 'sync-apply' | 'push-recheck' = 'sync-apply'): Promise<{ admitted: true } | { admitted: false; reason: string }> {
     const gates = this.subsystemBus?.hasGateHandlers('beforePut') ?? false
     const hooks = this.#hooksActive()
     if (!gates && !hooks) return { admitted: true }
@@ -1683,7 +1695,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
           existing: this.via ? this.via.canonicalizeStored(existingRecord as Record<string, unknown>) : existingRecord,
           existingVersion: existingEnv?._v ?? 0,
           existingTs: existingEnv?._ts,
-          origin: 'sync-apply',
+          origin,
           userId: envelope._by ?? this.keyring.userId,
           role: this.keyring.role,
           ...(this.computed !== undefined ? { computedFieldNames: new Set(Object.keys(this.computed)) } : {}),
@@ -1696,7 +1708,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
           op: prior.record === null ? 'create' : 'update',
           vault: this.vault, collection: this.name, docId: id, before: prior.record, after: incoming,
           userId: envelope._by ?? this.keyring.userId, timestamp: Date.now(), txId: generateULID(),
-          baseVersion: prior.version, version: envelope._v, origin: 'sync-apply',
+          baseVersion: prior.version, version: envelope._v, origin,
         })
       }
     } catch (err) {

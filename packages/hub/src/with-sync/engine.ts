@@ -60,6 +60,8 @@ export class SyncEngine {
   private admission: AdmissionAuthority | undefined
   #applied: SyncApplied[] = []
   #rejected: SyncRejection[] = []
+  /** core#108 — this device's own records, refused by its own gates on the way OUT. */
+  #pushRejected: SyncRejection[] = []
   private readonly local: NoydbStore
   private readonly remote: NoydbStore
   private readonly strategy: ConflictStrategy
@@ -522,6 +524,55 @@ export class SyncEngine {
     if (this.dirty.length !== before) await this.persistMeta()
   }
 
+  /**
+   * core#74/#108 — park a refused envelope under `_sync_rejected` and announce
+   * it. One helper for both fates: a record that ARRIVED and was turned away,
+   * and (core#108) this device's own record refused on the way out. The
+   * parking key is `collection::id`, so re-refusing the same record overwrites
+   * rather than accumulating.
+   */
+  async #park(collection: string, id: string, envelope: EncryptedEnvelope, reason: string, origin: 'sync-apply' | 'push-recheck'): Promise<SyncRejection> {
+    const rejection: SyncRejection = {
+      vault: this.vault, collection, id, reason, version: envelope._v,
+      ...(envelope._by !== undefined ? { by: envelope._by } : {}), at: new Date().toISOString(),
+      ...(origin === 'push-recheck' ? { origin } : {}),
+    }
+    const parked: ParkedRejection = { rejection, envelope }
+    await this.local.put(
+      this.vault, REJECTED_COLLECTION, `${collection}::${id}`,
+      buildRecordEnvelope({ collection: REJECTED_COLLECTION, id: `${collection}::${id}`, version: 1 }, { iv: '', data: JSON.stringify(parked) }),
+    )
+    this.emitter.emit('sync:rejected', rejection)
+    return rejection
+  }
+
+  /**
+   * core#108 — re-run this device's OWN gates against a dirty record before it
+   * is pushed. A record written offline may no longer pass the rules this
+   * device now holds (a period closed while it was away); today it pushes and
+   * every OTHER device refuses it at admission, so the writer is the last to
+   * know. Judging it here means the writer's own device catches it the moment
+   * it reconnects, before anyone else sees the record.
+   *
+   * Returns `true` when the entry was WITHHELD. The entry stays dirty and the
+   * local copy is untouched, so nothing is lost and a later push carries it
+   * unchanged once the rule passes again — which is why a refusal here needs
+   * no `readmit()` and no dirty-log surgery.
+   *
+   * ⛔ `rekey` is never re-checked: core#100 rewrites the SAME content under a
+   * new key, so judging it would refuse a record for its content having been
+   * legal at write time — the same wrong answer core#74 fixed with
+   * `admit: false` for a device's own re-versioned records.
+   */
+  async #withheldByRecheck(entry: DirtyEntry, envelope: EncryptedEnvelope): Promise<boolean> {
+    if (!this.admission || entry.action === 'rekey') return false
+    if (isTombstoneShape(envelope) || isDeleteMarker(envelope)) return false
+    const verdict = await this.admission.admit(entry.collection, entry.id, envelope, 'push-recheck')
+    if (verdict.admitted) return false
+    this.#pushRejected.push(await this.#park(entry.collection, entry.id, envelope, verdict.reason, 'push-recheck'))
+    return true
+  }
+
   /** One dirty entry of `push()`: the CAS put, the tombstone assertion, the delete, and every conflict branch. Extracted so `push({ concurrency })` can run entries in a bounded pool (core#93). */
   async #pushOne(i: number, entry: DirtyEntry, acc: { pushed: number; bytes: number; completed: number[]; conflicts: Conflict[]; erasures: ErasureEnforcement[]; errors: Error[] }): Promise<void> {
   try {
@@ -545,6 +596,11 @@ export class SyncEngine {
         acc.pushed++
         return
       }
+
+      // core#108 — this device's own gates, against current local state. A
+      // refusal WITHHOLDS the record: not pushed, not completed (so it stays
+      // dirty and goes out by itself once the rule passes), local copy intact.
+      if (await this.#withheldByRecheck(entry, envelope)) return
 
       try {
         await this.remote.put(
@@ -660,6 +716,7 @@ export class SyncEngine {
     this.graphBatchController?.begin() // #638 Task 4
 
     let reserved = 0
+    this.#pushRejected = []
     const conflicts: Conflict[] = []
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
@@ -731,7 +788,9 @@ export class SyncEngine {
       await this.graphBatchController?.flush() // #638 Task 4
     }
 
-    const result: PushResult = { pushed, conflicts, errors, erasures, ...(reserved > 0 && { reserved }) }
+    const pushRejected = this.#pushRejected
+    this.#pushRejected = []
+    const result: PushResult = { pushed, conflicts, errors, erasures, ...(reserved > 0 && { reserved }), ...(pushRejected.length > 0 && { rejected: pushRejected }) }
     this.emitter.emit('sync:push', result)
     return result
   }
@@ -1102,6 +1161,7 @@ export class SyncEngine {
     await this.ensureLoaded()
 
     let pushed = 0
+    this.#pushRejected = []
     const conflicts: Conflict[] = []
     const erasures: ErasureEnforcement[] = []
     const errors: Error[] = []
@@ -1131,6 +1191,11 @@ export class SyncEngine {
             pushed++
             continue
           }
+
+          // core#108 — same re-check as `push()`. This path duplicates the CAS
+          // logic rather than sharing `#pushOne`, so the gate has to be wired
+          // twice; leaving it out here would make `pushFiltered` the way round it.
+          if (await this.#withheldByRecheck(entry, envelope)) continue
 
           try {
             await this.remote.put(
@@ -1216,7 +1281,9 @@ export class SyncEngine {
     this.recordOutcome('push', errors)
     await this.persistMeta()
 
-    const result: PushResult = { pushed, conflicts, errors, erasures }
+    const pushRejected = this.#pushRejected
+    this.#pushRejected = []
+    const result: PushResult = { pushed, conflicts, errors, erasures, ...(pushRejected.length > 0 && { rejected: pushRejected }) }
     this.emitter.emit('sync:push', result)
     return result
   }
@@ -1448,17 +1515,7 @@ export class SyncEngine {
     if (this.admission && !isErasure && opts?.admit !== false) {
       const verdict = await this.admission.admit(collection, id, envelope)
       if (!verdict.admitted) {
-        const rejection: SyncRejection = {
-          vault: this.vault, collection, id, reason: verdict.reason, version: envelope._v,
-          ...(envelope._by !== undefined ? { by: envelope._by } : {}), at: new Date().toISOString(),
-        }
-        const parked: ParkedRejection = { rejection, envelope }
-        await this.local.put(
-          this.vault, REJECTED_COLLECTION, `${collection}::${id}`,
-          buildRecordEnvelope({ collection: REJECTED_COLLECTION, id: `${collection}::${id}`, version: 1 }, { iv: '', data: JSON.stringify(parked) }),
-        )
-        this.#rejected.push(rejection)
-        this.emitter.emit('sync:rejected', rejection)
+        this.#rejected.push(await this.#park(collection, id, envelope, verdict.reason, 'sync-apply'))
         return
       }
     }

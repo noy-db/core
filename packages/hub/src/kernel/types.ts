@@ -1578,6 +1578,15 @@ export interface SyncRejection {
   readonly by?: string
   /** ISO time of the refusal on this device. */
   readonly at: string
+  /**
+   * core#108 — which judgement refused it. `'sync-apply'` (absent, the
+   * default) is a record that ARRIVED here and was turned away. `'push-recheck'`
+   * is this device's OWN record, refused on the way out: it is still in the
+   * local store and still dirty, so it pushes by itself as soon as it passes
+   * again. ⛔ `readmit()` is a sync-apply affordance — for a push-recheck
+   * parking there is nothing to re-apply, the record never left.
+   */
+  readonly origin?: 'sync-apply' | 'push-recheck'
 }
 
 /** core#74 — what `db.rejected(vault)` returns: the parked envelopes and their two fates. */
@@ -1761,6 +1770,14 @@ export interface PushResult {
    * is reported in `conflicts` (collection `_keyring`), never silently dropped.
    */
   readonly reserved?: number
+  /**
+   * core#108 — this device's own dirty records, refused by its OWN gates when
+   * re-judged against current local state just before the push. They were
+   * WITHHELD: nothing left for them, the local copy is untouched, and they
+   * stay dirty so a later push carries them once the rule passes. Present
+   * when non-zero.
+   */
+  readonly rejected?: SyncRejection[]
 }
 
 /**

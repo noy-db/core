@@ -1300,7 +1300,13 @@ const KERNEL_SURFACE_BUDGET = {
   // sync: the same `beforePut` gate bus and `db.onBeforeWrite` hooks a local put runs, on the
   // decrypted incoming record against this device's state, with `origin: 'sync-apply'`. Kernel by
   // nature: it is the write gate, reached from a second door.
-  'packages/hub/src/kernel/collection.ts': 4490,
+  // Bumped 4490→4500 (2026-09-23, core#108): `_admitRemote` gained an `origin` parameter so the
+  // same door serves the PUSH-side re-check. Every one of these lines is the doc comment warning
+  // that under `'push-recheck'` the record is already stored, so `existing` equals `incoming` and
+  // a prior-comparing rule sees a no-op diff. ⚠️ Zero new statements — do not read this bump as
+  // capability growth, and do not "reclaim" it by deleting the comment: the degenerate prior is
+  // invisible at the call site and the comment is the only thing that says so.
+  'packages/hub/src/kernel/collection.ts': 4500,
   // Lowered 4549→4548 (#826/#798/#812 deprecation cut, 2026-07-26): removed the #799 cover delegators + option key, the dead auth/autoSync/syncInterval options, and the /bundle retirement fallout. Ratchets the #799 bumps back down as their comments promised.
   // Bumped 3640→3700 (2026-06-08): deferred-numbering wiring — `sequence()`
   // routing + `runNumberingPass` + the cache-coherent `stamp` closure. The
