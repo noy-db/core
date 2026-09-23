@@ -68,6 +68,11 @@ describe('core#101 — no key is an error, never an empty read', () => {
     // behaviour — the session does not poll — and is NOT what core#101 asked
     // for. Pinned here so the distinction is visible: a reader who finds this
     // surprising is looking at staleness, not at an access check.
+    //
+    // ⭐ Now also a DOCUMENTED property, on `Noydb.updateUser` — the consumer
+    // designing a long-lived admin console reported that "re-open the session"
+    // is a design constraint for them, not a footnote, and a caveat that lives
+    // only in a message is one nobody downstream can read.
     const { store, dbO, vO } = await firm()
     await dbO.updateUser('v1', { userId: 'bob', permissions: { extra: 'rw', invoices: 'rw' } })
     const bobDb = await open(store, 'bob', U)

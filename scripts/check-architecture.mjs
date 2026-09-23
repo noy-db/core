@@ -1896,7 +1896,13 @@ const KERNEL_SURFACE_BUDGET = {
   // Bumped 2380→2400 (2026-09-22, core#74): `db.rejected(vault)` — the two fates of a record the
   // admission gate refused (readmit / discard), delegating to the primary engine.
   // Bumped 2400→2420 (2026-09-22, core#72): `replaceRemote(vault)` and the restore reset wired into the vault.
-  'packages/hub/src/kernel/noydb.ts': 2420,  // see the #1121 note above
+  // Bumped 2420→2460 (2026-09-23, core#101 follow-up): ZERO new statements — entirely the doc
+  // block on `updateUser` saying that a narrowing does not reach an already-open session. The
+  // consumer building a long-lived admin console reported that re-opening is a design constraint
+  // for them; a caveat that lives only in a message is one no downstream reader can find.
+  // ⛔ Do not reclaim these lines by trimming that block: the behaviour is invisible at the call
+  // site and correct, so the doc is the only thing that can warn anybody.
+  'packages/hub/src/kernel/noydb.ts': 2460,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

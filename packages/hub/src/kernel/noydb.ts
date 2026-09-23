@@ -965,6 +965,46 @@ export class Noydb {
    * }, { factors: [{ kind: 'totp' }] })
    * ```
    *
+   * ## ⚠️ A NARROWING DOES NOT REACH A SESSION THAT IS ALREADY OPEN
+   *
+   * This writes the target's keyring. It cannot reach into a `Noydb` the
+   * target already has open: an eager collection holds the records it
+   * hydrated, and nothing polls the keyring, so that session keeps serving
+   * rows it read while it still had the key. A FRESH open throws
+   * `NoAccessError` correctly (core#101), and so does that session for any
+   * collection it had not already hydrated.
+   *
+   * ⭐ A long-lived admin console — one holding a vault open while changing
+   * somebody's permissions — must RE-OPEN the affected session rather than
+   * expect its next read to start failing.
+   *
+   * ## What the window is, MEASURED — it is narrower than it sounds
+   *
+   * The consumer building that console asked the two questions a security
+   * reviewer asks, and reasoning would have got both wrong in the cautious
+   * direction. Measured on a synced vault, after `updateUser` narrowed the
+   * member away and `rotate()` re-keyed:
+   *
+   * 1. **Records arriving AFTER the narrowing are not readable.** A `pull()`
+   *    into the open session brings the new roster, the session reloads its
+   *    keyring, and reads then throw `NoAccessError` — including for rows it
+   *    had already cached. ⭐ So with sync on, the window CLOSES at the next
+   *    pull; it is not open until re-open.
+   * 2. **Writes are refused locally.** `put()` throws `ReadOnlyError` on the
+   *    narrowed collection — the record is never encrypted, never queued, and
+   *    `push()` carries nothing. Nothing reaches the remote to be judged, so
+   *    this does not even rest on the admission gate (core#74).
+   *
+   * ⛔ So it is not a confidentiality hole and not a write hole: no access is
+   * gained, nothing new becomes readable, and nothing can be written. What
+   * survives is a read of rows the session ALREADY HELD, on a device with no
+   * sync or one that has not pulled since.
+   *
+   * ⚠️ Which is still the window that matters when a narrowing is
+   * security-motivated rather than administrative — a departing member, a
+   * suspected device. `rotate()` is the answer there and a console should
+   * REQUIRE it for that case rather than offer it.
+   *
    * @throws `NoAccessError` when no keyring exists for the target.
    * @throws `PermissionDeniedError` when the role hierarchy rejects.
    * @throws `ValidationError` when no field is provided.
