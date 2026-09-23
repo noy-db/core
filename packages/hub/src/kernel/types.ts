@@ -1585,8 +1585,14 @@ export interface SyncRejection {
    * local store and still dirty, so it pushes by itself as soon as it passes
    * again. ⛔ `readmit()` is a sync-apply affordance — for a push-recheck
    * parking there is nothing to re-apply, the record never left.
+   *
+   * core#107 — `'arbiter'` is a refusal made on ANOTHER device (the vault's
+   * configured arbiter) and replicated here, which is how the writer finds
+   * out at all. It is REPORT ONLY: the local record is untouched, never
+   * deleted or hidden, and `readmit()` is meaningless for it too — this
+   * device never refused anything.
    */
-  readonly origin?: 'sync-apply' | 'push-recheck'
+  readonly origin?: 'sync-apply' | 'push-recheck' | 'arbiter'
 }
 
 /** core#74 — what `db.rejected(vault)` returns: the parked envelopes and their two fates. */

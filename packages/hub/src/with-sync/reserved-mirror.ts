@@ -28,6 +28,7 @@
  * | `_delegations` | higher `_v` wins | delegation tokens; revocation is a delete |
  * | `_broker`, `_broker_member` | higher `_v` wins | broker seeds (core#91) — sealed under DEKs only their holder has; a fresh device mints from them |
  * | `_history`, `_ledger` | NOT replicated | per-device evidence: the ledger is a hash chain per writer, two devices appending would fork it; `vault.at(T)` runs where history lives |
+ * | `_sync_rejections` | higher `_v` wins | core#107 — the arbiter's refusals, sealed under the refused record's own collection DEK |
  * | `_sync` | NOT replicated | this device's dirty log and watermarks |
  * | `_meta/schema-fence`, `_meta/handle`, other `_meta` | NOT replicated | session and instance state; the rest of `_meta` is decided one id at a time |
  *
@@ -58,6 +59,7 @@
  */
 import type { NoydbStore, EncryptedEnvelope } from '../kernel/types.js'
 import { parseKeyringEnvelope } from '../with-party/team/keyring.js'
+import { REJECTIONS_COLLECTION } from '../kernel/rejection-seal.js'
 
 const KEYRING_COLLECTION = '_keyring'
 
@@ -118,6 +120,13 @@ const RESERVED_REPLICATION: readonly ReservedReplicationRule[] = [
   { collection: '_meta', idPrefix: 'invite-audit-', supersedes: versionSupersedes, propagateDeletes: false },
   { collection: '_users', supersedes: versionSupersedes, propagateDeletes: true },
   { collection: '_delegations', supersedes: versionSupersedes, propagateDeletes: true },
+  // core#107 — the arbiter's admission refusals, so the WRITER learns its
+  // offline record was rejected instead of the verdict staying on the device
+  // that made it. Sealed under the refused record's OWN collection DEK, so
+  // this mover still reads nothing (`_v` is on the envelope) and a member
+  // without that collection receives ciphertext they quietly skip.
+  // `propagateDeletes: true` — clearing a refusal is how it stops being shown.
+  { collection: REJECTIONS_COLLECTION, supersedes: versionSupersedes, propagateDeletes: true },
 ]
 
 export interface ReservedMirrorResult {

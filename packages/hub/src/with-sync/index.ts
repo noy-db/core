@@ -29,6 +29,7 @@
  */
 
 export { withSync } from './active.js'
+export type { WithSyncOptions } from './active.js' // core#107
 export type { SyncStrategy } from './strategy.js'
 
 /** The un-opted-in stub for this service — exported so callers can compare against it (#844). */

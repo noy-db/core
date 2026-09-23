@@ -38,11 +38,29 @@ import { SyncTransaction } from './transaction.js'
 import { PresenceHandle } from './presence.js'
 import { bootstrapKeyrings } from './reserved-mirror.js'
 
-export function withSync(): SyncStrategy {
+/**
+ * core#107 — `arbiter: true` makes this device the vault's ARBITER: its
+ * admission refusals are replicated so the writer finds out, instead of
+ * staying local to the device that judged them.
+ *
+ * ⚠️ One arbiter, named by configuration on the device that is to be it
+ * (the admin host, or the daemon) — ruled over a quorum because the failure
+ * mode is legible: no arbiter configured means no replication, which is
+ * exactly the pre-core#107 behaviour. It is NOT an authority proof: nothing
+ * stops a member hand-writing `_sync_rejections`, and the reason that is
+ * tolerable is the report-only ruling — a replicated refusal never deletes,
+ * tombstones or retracts anything, so the worst a forged one does is show
+ * somebody a notice about their own record.
+ */
+export interface WithSyncOptions {
+  readonly arbiter?: boolean
+}
+
+export function withSync(options?: WithSyncOptions): SyncStrategy {
   return {
     bootstrapKeyrings,
     buildSyncEngine(opts: BuildSyncEngineOptions): SyncEngine {
-      return new SyncEngine(opts)
+      return new SyncEngine({ ...opts, ...(options?.arbiter === true && { arbiter: true }) })
     },
     buildSyncTransaction(vault: Vault, engine: SyncEngine): SyncTransaction {
       return new SyncTransaction(vault, engine)

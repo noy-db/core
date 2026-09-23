@@ -56,6 +56,8 @@ export interface BuildSyncEngineOptions {
   label?: string
   /** #1042 — the merge's verify/re-stamp capability, bound to the keys by the caller. */
   mergeAuthority?: MergeAuthority
+  /** core#107 — this device is the vault's arbiter: its admission refusals replicate. */
+  arbiter?: boolean
 }
 
 /**
