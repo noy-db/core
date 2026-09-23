@@ -428,7 +428,7 @@ export class Vault {
   } | null = null
 
   /**
-   * Optional translator callback threaded from `Noydb.invokeTranslator`.
+   * Optional translator callback threaded from `Noydb._invokeTranslator`.
    * Present only when `plaintextTranslator` was configured on `createNoydb()`.
    */
   private readonly translateText:
@@ -589,12 +589,12 @@ export class Vault {
     // closures over Noydb.grantCustodian/revokeCustodian (owner-only) and the
     // liberate ceremony (custodian-only). All three route through the opt-in
     // custodyStrategy (S4): grant/revoke via the gated Noydb methods, liberate
-    // via `noydb.custodyStrategy` (which lazily imports the liberateVault
+    // via `noydb._custodyStrategy` (which lazily imports the liberateVault
     // engine). No logic here — CustodyApi is a pure delegation shell.
     this.custody = new CustodyApi(
       (options, factors) => this.noydb.grantCustodian(this.name, options, factors),
       (options, factors) => this.noydb.revokeCustodian(this.name, options, factors),
-      (opts) => this.noydb.custodyStrategy.liberate(this, opts),
+      (opts) => this.noydb._custodyStrategy.liberate(this, opts),
     )
   }
 

@@ -384,12 +384,12 @@ function isElevatorOrOwner<T>(ctx: TiersContext<T>): boolean {
  * structurally — no cast needed at the `tiersContext()` call site).
  */
 export interface DerivedOutputsHost<T> {
-  dispatchMaterializedViewsOnDelete(id: string): Promise<{ deleted: number; residueUndecodable: string[]; residueDeclined: string[] }>
-  dispatchArrayDerivationsOnDelete(id: string, eraseRecordShapeToo?: boolean): Promise<number>
-  dispatchRollupsOnDelete(id: string, deleted: T): Promise<unknown>
+  _dispatchMaterializedViewsOnDelete(id: string): Promise<{ deleted: number; residueUndecodable: string[]; residueDeclined: string[] }>
+  _dispatchArrayDerivationsOnDelete(id: string, eraseRecordShapeToo?: boolean): Promise<number>
+  _dispatchRollupsOnDelete(id: string, deleted: T): Promise<unknown>
   /** Task 2 (#722) add-direction: the same local-write dispatchers an ordinary `put()` fires. */
-  dispatchMaterializedViews(id: string, record: T): Promise<void>
-  dispatchDerivations(id: string, record: T, version: number): Promise<void>
+  _dispatchMaterializedViews(id: string, record: T): Promise<void>
+  _dispatchDerivations(id: string, record: T, version: number): Promise<void>
 }
 
 /**
@@ -408,9 +408,9 @@ export async function syncDerivedOutputs<T>(
   version?: number,
 ): Promise<void> {
   if (elevated) {
-    await host.dispatchMaterializedViewsOnDelete(id)
-    await host.dispatchArrayDerivationsOnDelete(id, true)
-    if (record !== null) await host.dispatchRollupsOnDelete(id, record)
+    await host._dispatchMaterializedViewsOnDelete(id)
+    await host._dispatchArrayDerivationsOnDelete(id, true)
+    if (record !== null) await host._dispatchRollupsOnDelete(id, record)
     return
   }
   // Task 2 (#722) recompute-as-add: the record rejoined tier 0 (demote(→0) /
@@ -419,8 +419,8 @@ export async function syncDerivedOutputs<T>(
   // `_onRecordMutated('local-write')`), same order. `record === null` only
   // when a caller demotes a tombstone/delete-marker to 0 — nothing to add.
   if (record === null) return
-  await host.dispatchDerivations(id, record, version ?? 0)
-  await host.dispatchMaterializedViews(id, record)
+  await host._dispatchDerivations(id, record, version ?? 0)
+  await host._dispatchMaterializedViews(id, record)
 }
 
 /**

@@ -1902,7 +1902,13 @@ const KERNEL_SURFACE_BUDGET = {
   // for them; a caveat that lives only in a message is one no downstream reader can find.
   // ⛔ Do not reclaim these lines by trimming that block: the behaviour is invisible at the call
   // site and correct, so the doc is the only thing that can warn anybody.
-  'packages/hub/src/kernel/noydb.ts': 2460,  // see the #1121 note above
+  // Bumped 2460→2480 (2026-09-23, core#128): the `@internal` tags on `mesh` and `isClosed` were
+  // REMOVED, not honoured — both are genuinely public (`db.mesh` is a documented handle and a
+  // `createNoydb` option; `isClosed` exists so outward orchestrators can read it), so prefixing
+  // them would have broken the readers they exist for. These lines are the two blocks saying so.
+  // ⭐ Net effect of #128 on this file is SMALLER surface, not larger: two accessors lost their
+  // public names to `_`, and the kernel-api golden shrank by 8.
+  'packages/hub/src/kernel/noydb.ts': 2480,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

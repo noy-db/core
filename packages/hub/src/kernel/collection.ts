@@ -2251,7 +2251,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
    * @internal `wave` (#638 Task 4): when present (the sync/cutover/restore dispatch wave),
    * an eager MV already refreshed this wave is skipped (per-target dedup, keyed on spec name).
    */
-  async dispatchMaterializedViews(id: string, record: T, wave?: WaveContext): Promise<void> {
+  async _dispatchMaterializedViews(id: string, record: T, wave?: WaveContext): Promise<void> {
     if (this.materializedViewSource === undefined) return
     // S4 gate: dynamic import only — see #derivationDeleteCtx (#842).
     const { dispatchMaterializedViews } = await import('../with-formula/materialized-views/dispatch.js')
@@ -2426,7 +2426,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
    * and from `forgetDerivedFanout` (#638 Task 6), which needs the per-target outcome to fill
    * `ForgetResult.derivedAggregatesRecomputed`/`derivedResidueFrozen`). `wave` (#640): per-target dedup for the sync-apply path; `undefined` on local-delete (byte-identical).
    */
-  async dispatchRollupsOnDelete(id: string, deleted: T, wave?: WaveContext): Promise<ReadonlyArray<{ readonly into: string; readonly parentId: string; readonly outcome: RollupOutcome }>> {
+  async _dispatchRollupsOnDelete(id: string, deleted: T, wave?: WaveContext): Promise<ReadonlyArray<{ readonly into: string; readonly parentId: string; readonly outcome: RollupOutcome }>> {
     const results: Array<{ into: string; parentId: string; outcome: RollupOutcome }> = []
     for (const intent of this._rollupDeleteIntents(deleted)) {
       const spec = findRollupSpecForIntent(this.derivationSource?.registry(), this.name, intent)
@@ -2448,14 +2448,14 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
 
   /** @internal `wave` (#638 Task 4) — threaded to `recomputeRollup` for the sync/cutover/restore
    *  dispatch wave's per-target dedup; `undefined` on the local-write path (byte-identical). */
-  async dispatchDerivations(id: string, record: T, version: number, wave?: WaveContext, prior?: Record<string, unknown> | null): Promise<void> {
+  async _dispatchDerivations(id: string, record: T, version: number, wave?: WaveContext, prior?: Record<string, unknown> | null): Promise<void> {
     if (this.derivationSource === undefined) return
     const { dispatchDerivations } = await import('../with-formula/derivations/dispatch.js')
     return dispatchDerivations(this.#derivationDispatchCtx(), id, record as unknown as Record<string, unknown>, version, wave, prior)
   }
 
   /** @internal — trigger fan-out for a deleted parent (#1249); see dispatch.ts. */
-  async dispatchTriggerDerivationsOnDelete(id: string, deleted: T): Promise<void> {
+  async _dispatchTriggerDerivationsOnDelete(id: string, deleted: T): Promise<void> {
     if (this.derivationSource === undefined) return
     const { dispatchTriggerDerivationsOnDelete } = await import('../with-formula/derivations/dispatch.js')
     return dispatchTriggerDerivationsOnDelete(this.#derivationDispatchCtx(), id, deleted as unknown as Record<string, unknown>) }
@@ -2794,13 +2794,13 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     // extractor) — without cascade the rows become unfindable orphans. (Deleting a TRIGGER parent
     // is a different event and DOES fan out — see dispatchTriggerDerivationsOnDelete, #1249.)
     if (!internal) {
-      await this.dispatchMaterializedViewsOnDelete(id)
-      await this.dispatchArrayDerivationsOnDelete(id)
+      await this._dispatchMaterializedViewsOnDelete(id)
+      await this._dispatchArrayDerivationsOnDelete(id)
       // Rollup-on-delete: recompute the parent aggregate now
       // that this child is gone. `existing.record` carries the deleted child's
       // FK; the recompute gathers the REMAINING children (this one already
       // removed from the store/cache above).
-      if (existing) { await this.dispatchRollupsOnDelete(id, existing.record); await this.dispatchTriggerDerivationsOnDelete(id, existing.record) }
+      if (existing) { await this._dispatchRollupsOnDelete(id, existing.record); await this._dispatchTriggerDerivationsOnDelete(id, existing.record) }
     }
     return true
   }
@@ -2878,7 +2878,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
    * erasure too — forget()'s fanout, GDPR residue. A delete-of-absent contributes 0 either way.
    * @internal
    */
-  async dispatchArrayDerivationsOnDelete(id: string, eraseRecordShapeToo = false): Promise<number> {
+  async _dispatchArrayDerivationsOnDelete(id: string, eraseRecordShapeToo = false): Promise<number> {
     if (this.derivationSource === undefined) return 0
     // S4 gate: the spine may not statically import a with-* service, and this
     // keeps the derivation chunk out of the floor bundle (#842).
@@ -2895,7 +2895,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
    * manual serves empty until `refreshView()`. `residueUndecodable`/`residueDeclined` (#776/#785) carry `outputCollection:id` entries whose ownership stamp `invalidateMVAtRest` could not decode, resp. decoded+stamp-matched but declined erasure — surfaced, not erased.
    * @internal
    */
-  async dispatchMaterializedViewsOnDelete(id: string): Promise<{ deleted: number; residueUndecodable: string[]; residueDeclined: string[] }> {
+  async _dispatchMaterializedViewsOnDelete(id: string): Promise<{ deleted: number; residueUndecodable: string[]; residueDeclined: string[] }> {
     if (this.materializedViewSource === undefined) return { deleted: 0, residueUndecodable: [], residueDeclined: [] }
     // S4 gate: dynamic import only — see #derivationDeleteCtx (#842).
     const { dispatchMaterializedViewsOnDelete } = await import('../with-formula/materialized-views/dispatch.js')
@@ -3832,8 +3832,8 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
         this.emitter.emit('change', { vault: this.vault, collection: this.name, id, action: 'put' } satisfies ChangeEvent)
         this.searchIndexStore?.markDirty(); this.fieldIndexStore?.markDirty() // zero-cost unless declared
         await this.onAccess?.('put', id)
-        await this.dispatchDerivations(id, record, version, undefined, ctx!.prior)
-        await this.dispatchMaterializedViews(id, record)
+        await this._dispatchDerivations(id, record, version, undefined, ctx!.prior)
+        await this._dispatchMaterializedViews(id, record)
         return
       }
       case 'local-delete': {
