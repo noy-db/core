@@ -1782,6 +1782,13 @@ export interface PushResult {
    * WITHHELD: nothing left for them, the local copy is untouched, and they
    * stay dirty so a later push carries them once the rule passes. Present
    * when non-zero.
+   *
+   * ⛔ NOT AN ERROR, and a sync indicator must not render it as one (pilot-1,
+   * on the shipped behaviour). `pushed: 0` with `rejected` present means
+   * "N records waiting on a rule", not "N records failed": nothing was lost,
+   * nothing needs resubmitting, and the next push carries them by itself once
+   * the rule passes. The failure fates are `errors` and `conflicts`; this is
+   * a third thing and reads as a queue, not a fault.
    */
   readonly rejected?: SyncRejection[]
 }
