@@ -12,6 +12,16 @@
  * be under a KEK. The slot NAMES stay readable to any member holding the
  * `_delegations` DEK — an audit can enumerate what was delegated to whom
  * without being able to use any of it.
+ *
+ * ⭐ THE FIRST CASE IS THE REGRESSION PROPERTY FOR THIS WHOLE CLASS, and its
+ * controls are what make it one. The defect it pins — the same shape core#56
+ * removed from the magic-link path — is a write that SUCCEEDS and produces
+ * something the intended reader cannot open, which no assertion on the
+ * grantor's side can see. So the target reads from HIS OWN session under HIS
+ * OWN secret, never the grantor's; the tier is proven closed to him first; and
+ * the second case supplies the negative control, a member who holds the
+ * `_delegations` DEK and still cannot open the token. Remove either control and
+ * the row can pass while `delegate()` is silently useless again.
  */
 import { describe, it, expect } from 'vitest'
 import { createNoydb, memoryStore, MemberInboxMissingError, DelegationTargetMissingError } from '../src/index.js'
