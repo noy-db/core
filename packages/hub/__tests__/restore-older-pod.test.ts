@@ -49,16 +49,21 @@ describe('core#111 — an older pod restores onto a store that moved on', () => 
     await v.load(pod)                                          // used to throw
 
     // the pod's state is what is here, and n2 is gone from data AND from the chain
-    // ⚠️ Read through a FRESH handle, and through the store. A `Collection`
-    // captured before `load()` keeps its own cache and still answers with the
-    // pre-restore record — `clearCollectionCache()` drops the vault's map of
-    // instances, not an instance the caller already holds. Pre-existing and
-    // not core#111's; filed separately. Asserting through the stale handle
-    // here would test that papercut instead of the ledger rewind.
+    // core#122 — the handle captured BEFORE the load answers correctly too.
+    // It used to keep its own cache and serve the pre-restore record, because
+    // `clearCollectionCache()` dropped the vault's map of instances rather
+    // than invalidating them; the handle a caller already held was one of
+    // those objects. Asserted through the stale handle AND the store, so a
+    // regression shows up here rather than in a consumer's restore path.
     expect(await store.get('v1', 'notes', 'n2')).toBeNull()
-    expect(await v.collection<Note>('notes').get('n2')).toBeNull()
-    expect(await store.get('v1', '_ledger', 'n2')).toBeNull()
-    expect(await v.collection<Note>('notes').get('n1')).toEqual({ id: 'n1', body: 'one' })
+    expect(await notes.get('n2')).toBeNull()                       // the captured handle (core#122)
+    expect(await v.collection<Note>('notes').get('n2')).toBeNull() // and a fresh one
+    // ⚠️ NOT `get('_ledger', 'n2')`: ledger ids are chain INDICES
+    // (`0000000000`), never record ids, so that assertion is null whatever
+    // happens. It was in this file until core#77's test caught it by asserting
+    // the positive case first. Count the chain instead.
+    expect(await store.list('v1', '_ledger')).toHaveLength(1)
+    expect(await notes.get('n1')).toEqual({ id: 'n1', body: 'one' })
 
     // ⭐ the control: the restored vault is USABLE, not merely un-thrown. A
     // clear step that wiped the chain instead of rewinding it would also pass

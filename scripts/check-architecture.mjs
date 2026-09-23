@@ -1311,7 +1311,17 @@ const KERNEL_SURFACE_BUDGET = {
   // stored, so the prior lookup returns the record itself. `_v === 1` is knowable, so that case is
   // now exact (create, no prior) and only `_v > 1` stays degenerate. One statement; the rest is the
   // comment explaining why the obvious reading of the prior lookup is wrong here.
-  'packages/hub/src/kernel/collection.ts': 4510,
+  // Bumped 4510→4560 (2026-09-23, core#103): `listEntries()` + `listPageEntries()` — an
+  // id-carrying bulk read. The id is not derivable from a record, so a caller keyed on the
+  // hub-assigned id had to `get()` per row after `list()` (pilot-1, writing a rule on the record
+  // id). ⭐ `listPage()` now DELEGATES to the entries form rather than duplicating it: two reads
+  // of the same collection that can answer differently is the defect this pair would otherwise
+  // introduce. Net new logic is small; the count is the two doc blocks plus the eager read.
+  // Bumped 4560→4600 (2026-09-23, core#122): `_invalidateAfterRestore()` — a handle the caller
+  // holds IS the instance in the vault's collection cache, so dropping that map fixed the next
+  // `vault.collection()` and left the caller reading pre-restore data from the handle they were
+  // told to use. Mostly the comment explaining that.
+  'packages/hub/src/kernel/collection.ts': 4600,
   // Lowered 4549→4548 (#826/#798/#812 deprecation cut, 2026-07-26): removed the #799 cover delegators + option key, the dead auth/autoSync/syncInterval options, and the /bundle retirement fallout. Ratchets the #799 bumps back down as their comments promised.
   // Bumped 3640→3700 (2026-06-08): deferred-numbering wiring — `sequence()`
   // routing + `runNumberingPass` + the cache-coherent `stamp` closure. The
@@ -1659,7 +1669,12 @@ const KERNEL_SURFACE_BUDGET = {
   // Bumped 3774→3780 (2026-09-22, core#74): `_admitRemote` — the vault-side seam the sync engine's
   // admission authority binds (reserved names never gated).
   // Bumped 3780→3790 (2026-09-22, core#71): `onRestore` — the seam a restore uses to reset the vault's engines.
-  'packages/hub/src/kernel/vault.ts': 3790,
+  // Bumped 3790→3840 (2026-09-23, core#76/#77): `restoreTo()` and `load()`'s `mode`. ⭐ The
+  // restore ENGINE is `with-commit/history/restore-to.ts` and the host contract is
+  // `port/with/restore-host.ts`; what lives here is the closure bundle and its doc comment, which
+  // is the shape the ceiling exists to force. `port-layering` caught the first attempt importing
+  // the engine's types directly — `import type` does not exempt a static import from that rule.
+  'packages/hub/src/kernel/vault.ts': 3840,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
