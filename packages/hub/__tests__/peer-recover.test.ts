@@ -81,8 +81,8 @@ describe('recoverUser (#34 atomicity, #33 owner→owner)', () => {
     const bobReloaded = await loadKeyring(store, 'acme', { userId: 'bob', secret: TEMP_PHRASE })
     expect(bobReloaded.userId).toBe('bob')
     expect(bobReloaded.role).toBe('admin')
-    // core#96 — plus bob's own inbox key, which alice (the vault creator) never had minted for herself
-    expect(bobReloaded.deks.size).toBe(aliceKr.deks.size + 1)
+    // core#65 — equal again: the vault creator carries an inbox key pair too now (it never did), so both sides hold one.
+    expect(bobReloaded.deks.size).toBe(aliceKr.deks.size)
   }, 60_000)
 
   it('owner → owner peer-recovery succeeds (closes #33)', async () => {

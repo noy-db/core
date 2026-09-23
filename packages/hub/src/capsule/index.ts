@@ -87,6 +87,7 @@ export {
   importDekSet,
   importRecipientPublicKeySpki,
   importTransferKey,
+  importWrappingKey,
   isDeleteMarker,
   isRewrappedUnder,
   isTombstone,

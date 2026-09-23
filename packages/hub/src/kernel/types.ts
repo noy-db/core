@@ -1688,6 +1688,19 @@ export interface PushOptions {
    * interleaving changes. Default `1` (serial, byte-for-byte the previous
    * behaviour). A cloud store with ~45 ms per put goes from N×45 ms to
    * roughly N×45/concurrency ms.
+   *
+   * ⚠️ **There is a ceiling, and it is the STORE's partition, not this pool.**
+   * Measured on `to-aws-dynamo` (noy-db/to#10, 300 records against a latency
+   * fake): 1-wide 14.1 s, 8-wide 1.79 s, 32-wide 0.48 s — linear, because
+   * nothing in the adapter serializes. That is not permission to go there
+   * against a real table. The single-table layout puts every record of a vault
+   * under ONE partition key — the vault name IS the whole partition key, which
+   * is the same decision that makes `loadAll()` a single Query — and a
+   * DynamoDB partition tops out at ~1000 write units per second, with an
+   * envelope over 1 KB costing more than one unit. 8-wide at ~45 ms is ~178
+   * writes/sec, comfortably under; raising the knob far past that meets
+   * per-partition throttling, not a connection-pool limit, so a bigger pool is
+   * not the fix. `8` is the number pilot-1 runs and the one to start from.
    */
   concurrency?: number
 }

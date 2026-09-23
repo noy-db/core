@@ -642,6 +642,11 @@ export async function createOwnerKeyring(
   // the same `_`-prefix propagation loop the roster key uses.
   const blobAddressKey = await generateDEK()
   const wrappedBlobAddressKey = await wrapKey(blobAddressKey, kek)
+  // core#65 — the owner gets an INBOX KEY PAIR too. `grant` mints one for every
+  // grantee (core#96) and `recoverUser` re-mints it, but the vault's creator had
+  // none: nothing could be sealed TO the owner, so an owner could neither be
+  // delegated to (not even by themselves) nor handed a key by `updateUser`.
+  const inbox = await mintInboxKey(kek)
   const canary = await mintKeyringCanary(kek)
 
   const authority = {
@@ -661,7 +666,9 @@ export async function createOwnerKeyring(
       [USER_ENVELOPE_COLLECTION]: wrappedUserEnvelopeDek,
       [ROSTER_KEY_ID]: wrappedRosterKey,
       [BLOB_ADDRESS_KEY_ID]: wrappedBlobAddressKey,
+      [INBOX_KEY_ID]: inbox.wrappedInboxKey,
     },
+    inbox_key: inbox.inboxKey, // core#65 — tag-bound, like every other keyring's
   }
   // #1097 — stamped BEFORE the tag is minted, so it lands inside the
   // authenticated canonical and a store can neither edit nor strip it.
@@ -696,6 +703,7 @@ export async function createOwnerKeyring(
     deks: new Map([
       [USER_ENVELOPE_COLLECTION, userEnvelopeDek],
       [ROSTER_KEY_ID, rosterKey],
+      [INBOX_KEY_ID, inbox.inboxKeyAes], // core#65 — in the SESSION too, not only the file: it opens this owner's own inbox
     ]),
     kek,
     salt,
@@ -997,6 +1005,19 @@ export async function grant(
   }
 }
 
+/**
+ * Reserved DEK-map slots that are KEYS, not collections, and can never be
+ * rotated — `rotateKeys` refuses each by name. Every caller that derives a
+ * rotation scope from a DEK map (`revoke`, `quarantineKeyring`) strips these
+ * first. ⛔ Kept as ONE set rather than a filter per caller: `quarantineKeyring`
+ * stripped only `_roster` and broke the moment the owner keyring gained an
+ * inbox key (core#65), which is the second time this list grew and a caller
+ * was missed.
+ */
+export const NON_ROTATABLE_SLOTS: ReadonlySet<string> = new Set([
+  ROSTER_KEY_ID, BLOB_ADDRESS_KEY_ID, INBOX_KEY_ID, BROKER_MEMBER_COLLECTION,
+])
+
 // ─── Revoke ────────────────────────────────────────────────────────────
 
 /**
@@ -1182,23 +1203,15 @@ export async function revoke(
   // revocation is a complete no-op and they keep reading data written after
   // they were revoked.
   // #1096 — the set above is derived from DEK-map keys, so it picks up the
-  // reserved roster key, which is not a collection and must never be rotated
-  // (see the refusal in `rotateKeys`). Dropped here, at the one site that
-  // gathers it implicitly, so `rotateKeys` can stay loud about explicit asks.
-  affectedCollections.delete(ROSTER_KEY_ID)
-  // #1126 — same treatment, same reason: the blob addressing root is a reserved
-  // key, not a collection, and rotating it would invalidate every blob eTag.
-  affectedCollections.delete(BLOB_ADDRESS_KEY_ID)
-  // core#96 — the inbox key is a reserved key too; and a DEK still sitting in
-  // the target's undrained inbox is one they MAY hold, so it rotates with the
-  // rest (the slot names are tag-bound, so a store cannot hide them from here).
-  affectedCollections.delete(INBOX_KEY_ID)
-  // core#100 — and the target's own broker seed: one record per member under
-  // that member's DEK. The kernel deletes the revoked member's record; the
-  // survivors' records stay under their own keys. "Rotating" the collection
-  // re-keyed them all under a DEK only the caller held (measured: every
-  // survivor lost its cloud identity on a revoke).
-  affectedCollections.delete(BROKER_MEMBER_COLLECTION)
+  // reserved slots that are KEYS rather than collections and must never be
+  // rotated (see the refusals in `rotateKeys`): the roster key, the blob
+  // addressing root (#1126 — rotating it invalidates every blob eTag), the
+  // inbox key (core#65) and the target's own broker seed (core#100 — one
+  // record per member under that member's DEK; "rotating" it re-keyed every
+  // survivor's cloud identity under a DEK only the caller held). Dropped here,
+  // at the one site that gathers them implicitly, so `rotateKeys` can stay loud
+  // about explicit asks. One list: {@link NON_ROTATABLE_SLOTS}.
+  for (const slot of NON_ROTATABLE_SLOTS) affectedCollections.delete(slot)
   for (const slot of inboxSlots(targetKeyring)) affectedCollections.add(slot)
   let rewritten: RotateResult['rewritten'] = []
   if (affectedCollections.size > 0) {
@@ -1452,7 +1465,7 @@ export async function quarantineKeyring(
   await deleteUserEnvelope(store, vault, userId)
   await deleteUserVisibility(store, vault, userId)
 
-  const rotated = [...callerKeyring.deks.keys()].filter((c) => c !== ROSTER_KEY_ID)
+  const rotated = [...callerKeyring.deks.keys()].filter((c) => !NON_ROTATABLE_SLOTS.has(c))
   const result = rotated.length > 0
     ? await rotateKeys(store, vault, callerKeyring, { collections: rotated, exclude: [userId] })
     : { needsRegrant: [], unverified: [], rewritten: [] }
@@ -1713,6 +1726,7 @@ export interface RotateResult {
 export interface RevokeResult {
   readonly rewritten: RotateResult['rewritten']
 }
+
 
 /** Options for {@link rotateKeys} (#846b — was a bare `string[]`). */
 export interface RotateKeysOptions {
@@ -2840,14 +2854,14 @@ export function hasAccess(keyring: UnlockedKeyring, collectionName: string): boo
 // With the pair, an ex-admin holds nothing that opens a box sealed after the
 // revocation — the private half never left the member's file.
 
-export async function mintInboxKey(kek: EnclaveKey): Promise<{ wrappedInboxKey: string; inboxKey: NonNullable<KeyringFile['inbox_key']> }> {
+export async function mintInboxKey(kek: EnclaveKey): Promise<{ wrappedInboxKey: string; inboxKeyAes: EnclaveKey; inboxKey: NonNullable<KeyringFile['inbox_key']> }> {
   const inboxKey = await generateDEK()
   const pair = await generateRecipientKeyPair()
   const pub = await exportRecipientPublicKeySpki(pair)
   const priv = await exportRecipientPrivateKeyPkcs8(pair)
   try {
     const sealed = await encryptBytes(priv, inboxKey)
-    return { wrappedInboxKey: await wrapKey(inboxKey, kek), inboxKey: { pub: bufferToBase64(pub), priv: sealed } }
+    return { wrappedInboxKey: await wrapKey(inboxKey, kek), inboxKeyAes: inboxKey, inboxKey: { pub: bufferToBase64(pub), priv: sealed } }
   } finally {
     priv.fill(0)
   }
@@ -2873,17 +2887,30 @@ async function sealInbox(inboxKey: NonNullable<KeyringFile['inbox_key']>, deks: 
   }
 }
 
+/**
+ * core#65 — this member's INBOX KEY PAIR, rebuilt from their keyring file: the
+ * private half is sealed under `deks[INBOX_KEY_ID]`, which only their own KEK
+ * unwraps. The inbox drain below opens boxes with it; `with-party/team/
+ * delegation.ts` opens a delegation's content key with the same pair, so a
+ * grantor can hand a member a key without knowing their secret.
+ */
+export async function openInboxKeyPair(
+  inboxKey: NonNullable<KeyringFile['inbox_key']>,
+  inboxKeyAes: EnclaveKey,
+): Promise<CryptoKeyPair> {
+  const priv = await decryptBytes(inboxKey.priv.iv, inboxKey.priv.data, inboxKeyAes)
+  try {
+    return await importRecipientKeyPair(priv, base64ToBuffer(inboxKey.pub))
+  } finally {
+    priv.fill(0)
+  }
+}
+
 /** Open every box in the member's own inbox with the AES key from `deks[INBOX_KEY_ID]`; a later box wins a slot. */
 async function openInbox(file: KeyringFile, inboxKeyAes: EnclaveKey): Promise<Map<string, EnclaveKey>> {
   const out = new Map<string, EnclaveKey>()
   if (!file.inbox || file.inbox.length === 0 || !file.inbox_key) return out
-  const priv = await decryptBytes(file.inbox_key.priv.iv, file.inbox_key.priv.data, inboxKeyAes)
-  let pair: CryptoKeyPair
-  try {
-    pair = await importRecipientKeyPair(priv, base64ToBuffer(file.inbox_key.pub))
-  } finally {
-    priv.fill(0)
-  }
+  const pair = await openInboxKeyPair(file.inbox_key, inboxKeyAes)
   for (const box of file.inbox) {
     const cekBytes = await recipientUnwrap(pair, base64ToBuffer(box.cek))
     try {

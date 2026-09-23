@@ -65,6 +65,7 @@
     "importRecipientKeyPair",
     "importRecipientPublicKeySpki",
     "importTransferKey",
+    "importWrappingKey",
     "isDeleteMarker",
     "isRewrappedUnder",
     "isTombstone",

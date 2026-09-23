@@ -28,7 +28,7 @@
  * under real slots, and the merged key decrypts.
  */
 import { describe, it, expect } from 'vitest'
-import { createNoydb, ConflictError } from '../src/index.js'
+import { createNoydb, ConflictError, DelegationTargetMissingError } from '../src/index.js'
 import { withTiers } from '../src/with-audit/tiers/index.js'
 import { withTeam } from '../src/with-party/team/index.js'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '../src/index.js'
@@ -67,13 +67,13 @@ function memoryStore(): NoydbStore {
 
 async function vaultWithTiers() {
   const db = await createNoydb({
-    store: memoryStore(), secret: 'pw', user: 'owner',
+    store: memoryStore(), secret: 'pw', user: 'owner', validateSecret: false,
     tiersStrategy: withTiers(), teamStrategy: withTeam(),
   })
   const vault = await db.openVault('v1')
   await vault.collection<Doc>('docs', { tiers: [0, 1] }).putAtTier('d', { id: 'd', body: 'D' }, 1)
   await vault.collection<Doc>('ledger', { tiers: [0, 1] }).putAtTier('l', { id: 'l', body: 'L' }, 1)
-  return vault
+  return { db, vault }
 }
 
 const slots = (v: unknown): string[] =>
@@ -83,14 +83,14 @@ const until = (): string => new Date(Date.now() + 60_000).toISOString()
 
 describe('core#56 — the delegation read half', () => {
   it('refreshDelegations is side-effect-free when nothing is written (the control)', async () => {
-    const vault = await vaultWithTiers()
+    const { vault } = await vaultWithTiers()
     const before = slots(vault)
     expect(await vault.refreshDelegations()).toEqual([])
     expect(slots(vault)).toEqual(before)   // no DEK minted merely by reading
   })
 
   it('a per-collection token is read back and merged under its REAL slot', async () => {
-    const vault = await vaultWithTiers()
+    const { vault } = await vaultWithTiers()
     const token = await vault.delegate({ toUser: 'owner', tier: 1, collection: 'docs', until: until() })
     expect(token.wrappedDek).toBeTruthy()
     expect(token.wrappedDeks).toBeUndefined()
@@ -103,7 +103,7 @@ describe('core#56 — the delegation read half', () => {
   })
 
   it('a collection-wide token carries one wrapped DEK PER COLLECTION', async () => {
-    const vault = await vaultWithTiers()
+    const { vault } = await vaultWithTiers()
     const token = await vault.delegate({ toUser: 'owner', tier: 1, until: until() })
 
     expect(token.collection).toBeNull()
@@ -116,7 +116,7 @@ describe('core#56 — the delegation read half', () => {
   })
 
   it('a merged delegated DEK actually DECRYPTS — and the test is not vacuous', async () => {
-    const vault = await vaultWithTiers()
+    const { vault } = await vaultWithTiers()
     const token = await vault.delegate({ toUser: 'owner', tier: 1, until: until() })
 
     // ⭐ NON-VACUITY. The issuer already holds `docs#1`, so a read here would
@@ -139,7 +139,7 @@ describe('core#56 — the delegation read half', () => {
   })
 
   it('an EXPIRED token is not merged', async () => {
-    const vault = await vaultWithTiers()
+    const { vault } = await vaultWithTiers()
     await vault.delegate({
       toUser: 'owner', tier: 1, collection: 'docs',
       until: new Date(Date.now() + 1_000).toISOString(),
@@ -150,8 +150,18 @@ describe('core#56 — the delegation read half', () => {
   })
 
   it('a token addressed to somebody else is not merged', async () => {
-    const vault = await vaultWithTiers()
-    await vault.delegate({ toUser: 'someone-else', tier: 1, collection: 'docs', until: until() })
+    // core#65 — the target must be a real member now (the token's keys are
+    // sealed to THEIR inbox public half), so this grants one rather than naming
+    // a stranger; the property under test is unchanged.
+    const { db, vault } = await vaultWithTiers()
+    await db.grant('v1', { userId: 'bob', displayName: 'Bob', role: 'operator', secret: 'bob-pass-phrase-1', permissions: { docs: 'rw' }, allowWeakSecret: true })
+    await vault.delegate({ toUser: 'bob', tier: 1, collection: 'docs', until: until() })
     expect(await vault.refreshDelegations()).toEqual([])
+  })
+
+  it('core#65 — a token names a target that does not exist: refused at issue, not written and silently unusable', async () => {
+    const { vault } = await vaultWithTiers()
+    await expect(vault.delegate({ toUser: 'nobody', tier: 1, collection: 'docs', until: until() }))
+      .rejects.toBeInstanceOf(DelegationTargetMissingError)
   })
 })

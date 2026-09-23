@@ -257,3 +257,48 @@ describe('core#96 — peer recovery folds a pending delivery into the recovered 
     expect(await vB.collection<Inv>('invoices').get('inv-1')).toEqual({ n: 10 })
   })
 })
+
+describe('core#86 — an invited member widened without their secret (the core-side half)', () => {
+  it('the invite shape: granted with NO permissions, member rotates their phrase, owner widens — member reads', async () => {
+    // `on-magic-link`'s `issueInvite` cannot express `permissions`, so the inner
+    // `db.grant` mints a keyring with no collection keys: for `operator` the
+    // invitee opens the vault and reads nothing (#86, pilot-1). That option is
+    // `on`'s to add. What core owes — a way to give the member those keys once
+    // `acceptInvite` has ROTATED their phrase, which is the moment the owner
+    // stops knowing their secret — is `updateUser`, and this is that path end
+    // to end, with the invite's own shapes at each step.
+    const remote = memoryStore()
+    const localO = memoryStore()
+    const dbO = await open(localO, remote, 'owner', S)
+    const vO = await dbO.openVault('firm')
+    await vO.collection<Inv>('invoices').put('inv-1', { n: 10 })
+
+    // 1. issueInvite → db.grant(role, temp phrase, NO permissions)
+    await dbO.grant('firm', { userId: 'u1', displayName: 'Invited', role: 'operator', secret: U })
+    await dbO.push('firm')
+
+    // 2. the invitee opens with the temp phrase and reads nothing — the #86 state
+    const localU = memoryStore()
+    const dbTemp = await open(localU, remote, 'u1', U)
+    const vTemp = await dbTemp.openVault('firm'); await dbTemp.pull('firm')
+    await expect(vTemp.collection<Inv>('invoices').get('inv-1')).rejects.toBeInstanceOf(NoAccessError)
+
+    // 3. acceptInvite rotates to the member's own phrase; the owner never sees it
+    await rotateSecret(localU, 'firm', 'u1', { oldSecret: U, newSecret: U2, allowWeakSecret: true })
+    await dbTemp.close()
+    const dbU = await open(localU, remote, 'u1', U2)
+    const vU = await dbU.openVault('firm'); await dbU.push('firm')
+    await dbO.pull('firm')
+
+    // 4. the owner widens — no secret needed, keys ride the inbox
+    await dbO.updateUser('firm', { userId: 'u1', permissions: { invoices: 'rw' } })
+    await dbO.push('firm')
+
+    // 5. the member reads, on the device they already had and on a fresh one
+    await dbU.pull('firm')
+    expect(await vU.collection<Inv>('invoices').get('inv-1')).toEqual({ n: 10 })
+    const dbB = await open(memoryStore(), remote, 'u1', U2)
+    const vB = await dbB.openVault('firm'); await dbB.pull('firm')
+    expect(await vB.collection<Inv>('invoices').get('inv-1')).toEqual({ n: 10 })
+  })
+})

@@ -302,27 +302,23 @@ describe('v0.18 hierarchical access', () => {
      * "via a prior grant or an active delegation" — the second clause has no
      * implementation.
      *
-     * ⚠️ **UPDATED (core#56): the read half HAS landed, and this still passes —
-     * for a DIFFERENT REASON than the one above.**
+     * ⚠️ **UPDATED TWICE. The gap is CLOSED and this test now asserts the
+     * opposite of what it was written for — deliberately, per its own note.**
      *
-     * `Vault.refreshDelegations()` now merges delegated tier DEKs, so the
-     * "nothing consumes a token" gap this was written for is closed. What keeps
-     * bob out now is that `delegate()` wraps against the GRANTOR's KEK — its own
-     * comment calls that "a simpler first cut" pending a per-target KEK
-     * exchange — so a token addressed to somebody else cannot be unwrapped by
-     * them at all.
+     * core#56 landed the read half (`refreshDelegations` merges delegated tier
+     * DEKs), and this test kept passing for a different reason: `delegate()`
+     * wrapped against the GRANTOR's KEK, so a token addressed to somebody else
+     * could not be unwrapped by them at all. core#65 closed that — a token's
+     * keys are sealed to the target's INBOX public half (core#96) — so bob
+     * reads the record, and the note below's instruction is carried out rather
+     * than repeated: flipped, not deleted.
      *
-     * ⛔ So do not read this test's green as "delegation still does nothing".
-     * It measures the CROSS-USER gap. The mechanism is proven working, for a
-     * same-KEK target, in `delegation-read-half.test.ts`.
-     *
-     * ⭐ **When the per-target KEK exchange lands, THIS test should fail** —
-     * flip it to assert bob reads the record; do not delete it. (The previous
-     * version of this note said the same about the read half, and was wrong
-     * about which change would trip it. A test that predicts its own failure
-     * has to name the RIGHT cause, or its green is misread.)
+     * ⭐ What it measures now: the recipient must still ASK
+     * (`refreshDelegations()` is explicit, never automatic — a read path that
+     * mints a DEK is what that decision avoids), and the controls above it
+     * still prove the vault opens and the record is closed beforehand.
      */
-    it('a delegated recipient still cannot read the tier — the read half is absent (#56)', async () => {
+    it('a delegated recipient READS the tier after refreshing — cross-user, core#65 (was: the read half is absent, #56)', async () => {
       const store = memoryStore()
       const owner = await createNoydb({ store, secret: 'pw', user: 'owner', tiersStrategy: withTiers(), teamStrategy: withTeam() })
       const ownerVault = await owner.openVault('v1')
@@ -347,17 +343,24 @@ describe('v0.18 hierarchical access', () => {
       const before = await asBob('secret')
       expect((before as Doc | null)?.body).not.toBe('B')
 
-      await ownerVault.delegate({
+      const token = await ownerVault.delegate({
         toUser: 'bob',
         tier: 1,
         collection: 'docs',
         until: new Date(Date.now() + 60_000).toISOString(),
       })
+      // core#65 — the wrap key is the token's own, sealed to bob's inbox pair.
+      expect(token.sealedCek).toBeTruthy()
 
-      // And after it, unchanged — nothing consumes the token.
-      const after = await asBob('secret')
-      expect((after as Doc | null)?.body).not.toBe('B')
-      expect(after).toEqual(before)
+      // Without asking, still nothing: the read half is explicit by design.
+      expect(((await asBob('secret')) as Doc | null)?.body).not.toBe('B')
+
+      // And after bob refreshes, the delegated key opens the record.
+      const bob = await createNoydb({ store, secret: 'bob-pass-1', user: 'bob', tiersStrategy: withTiers(), teamStrategy: withTeam() })
+      const bobVault = await bob.openVault('v1')
+      const merged = await bobVault.refreshDelegations()
+      expect(merged.map((t) => t.id)).toEqual([token.id])
+      expect(((await bobVault.collection<Doc>('docs', { tiers: [0, 1] }).getAtTier('secret')) as Doc).body).toBe('B')
     })
   })
 

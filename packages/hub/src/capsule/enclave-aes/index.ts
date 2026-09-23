@@ -80,6 +80,7 @@ export {
   generateDEK,
   generateEphemeralKey,
   importTransferKey,
+  importWrappingKey,
   exportDekSet,
   importDekSet,
   wrapKey,
