@@ -11,7 +11,7 @@
  * @internal
  */
 import type { Vault } from './vault.js'
-import type { CollectionConflictResolver, EncryptedEnvelope } from './types.js'
+import type { CollectionConflictResolver, EncryptedEnvelope, SyncRejection } from './types.js'
 
 // Structural on purpose: the kernel spine may not import a with-* module
 // statically (port-layering), so the engine and the keyring are named by the
@@ -28,6 +28,11 @@ type WiredEngine = {
   // and not the other fails ONLY in the declarations build — `tsc --noEmit` on the app program
   // stays green. core#108 widened both; change them together.
   setAdmission(a: { admit(collection: string, id: string, envelope: EncryptedEnvelope, origin?: 'sync-apply' | 'push-recheck'): Promise<{ admitted: true } | { admitted: false; reason: string }> }): void
+  // core#107 — the twin of `RejectionCourier`, for the same reason as above.
+  setRejectionCourier(c: {
+    seal(collection: string, id: string, rejection: SyncRejection, version: number): Promise<EncryptedEnvelope | null>
+    open(collection: string, id: string, envelope: EncryptedEnvelope): Promise<SyncRejection | null>
+  }): void
   setCollectionNames(fn: () => readonly string[]): void
   registerConflictResolver(name: string, resolver: CollectionConflictResolver): void
 }
@@ -48,6 +53,10 @@ export function wireEngine(host: EngineWiringHost, name: string, comp: Vault, en
   // core#74; core#108 — `origin` MUST be forwarded: a closure that drops it compiles,
   // and every push-recheck then judges the record as an arriving one.
   engine.setAdmission({ admit: (collection, id, envelope, origin) => comp._admitRemote(collection, id, envelope, origin) })
+  engine.setRejectionCourier({ // core#107
+    seal: (collection, id, rejection, version) => comp._sealRejection(collection, id, rejection, version),
+    open: (collection, id, envelope) => comp._openRejection(collection, id, envelope),
+  })
   engine.setCollectionNames(() => [...(host.keyringCache.get(name)?.deks.keys() ?? [])].filter(n => !n.startsWith('_'))) // core#81 paged pull
   for (const [resolverName, resolver] of host.conflictResolvers.get(name) ?? []) engine.registerConflictResolver(resolverName, resolver)
 }

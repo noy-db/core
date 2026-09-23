@@ -2,6 +2,7 @@ import type { OpenCollectionOptions } from '../port/with/collection-options.js'
 import { populateCollectionRegistries } from '../port/with/collection-registries.js'
 import { NO_BLOBS } from '../port/with/blob-strategy.js'
 import { resolveExportSource } from './export-scope.js'
+import { sealRejection, openRejection } from './rejection-seal.js'
 import type { StrategyBag } from '../port/with/strategies.js'
 import type {
   NoydbFormat,
@@ -12,6 +13,7 @@ import type {
 import type {
   NoydbStore,
   EncryptedEnvelope,
+  SyncRejection,
   HistoryConfig,
   ExportStreamOptions,
   ExportChunk,
@@ -1080,6 +1082,18 @@ export class Vault {
   async _admitRemote(collection: string, id: string, envelope: EncryptedEnvelope, origin: 'sync-apply' | 'push-recheck' = 'sync-apply'): Promise<{ admitted: true } | { admitted: false; reason: string }> {
     if (collection.startsWith('_')) return { admitted: true }
     return this.collection(collection)._admitRemote(id, envelope, origin)
+  }
+
+  /** @internal core#107 — seal a refusal under the refused record's own collection DEK. `null`: no DEK here. */
+  async _sealRejection(collection: string, id: string, rejection: SyncRejection, version: number): Promise<EncryptedEnvelope | null> {
+    const dek = this.keyring.deks.get(collection)
+    return dek ? sealRejection(collection, id, rejection, dek, version) : null
+  }
+
+  /** @internal core#107 — open a replicated refusal. `null` when this device holds no DEK for it. */
+  async _openRejection(collection: string, id: string, envelope: EncryptedEnvelope): Promise<SyncRejection | null> {
+    const dek = this.keyring.deks.get(collection)
+    return dek ? openRejection(collection, id, envelope, dek) : null
   }
 
   async _invalidateSyncApplied(collection: string, id: string, action: 'put' | 'delete'): Promise<void> {

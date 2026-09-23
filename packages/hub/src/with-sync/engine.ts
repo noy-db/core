@@ -33,6 +33,8 @@ function parseParked(env: EncryptedEnvelope): ParkedRejection {
 }
 import type { MergeAuthority } from '../port/with/merge-authority.js'
 import type { AdmissionAuthority } from '../port/with/admission-authority.js'
+import type { RejectionCourier } from '../port/with/rejection-courier.js'
+import { REJECTIONS_COLLECTION, rejectionKey } from '../kernel/rejection-seal.js'
 import {
   PERIOD_SUMMARY_COLLECTIONS,
   PERIODS_COLLECTION,
@@ -62,6 +64,10 @@ export class SyncEngine {
   #rejected: SyncRejection[] = []
   /** core#108 — this device's own records, refused by its own gates on the way OUT. */
   #pushRejected: SyncRejection[] = []
+  /** core#107 — the vault's sealing capability for replicated refusals; wired at open like `admission`. */
+  private courier: RejectionCourier | undefined
+  /** core#107 — this device's refusals replicate. Configuration, not an authority proof — see `withSync`. */
+  private readonly arbiter: boolean
   private readonly local: NoydbStore
   private readonly remote: NoydbStore
   private readonly strategy: ConflictStrategy
@@ -205,6 +211,11 @@ export class SyncEngine {
   private rosterReload?: { userId: string; reload: () => Promise<void> }
 
   /** Wire the roster-reload seam (core#82). Same injection pattern as `setCacheInvalidator`. */
+  /** core#107 — wire the vault's rejection sealing capability. */
+  setRejectionCourier(c: RejectionCourier): void {
+    this.courier = c
+  }
+
   /** core#74 — wire the vault's admission gate. */
   setAdmission(a: AdmissionAuthority): void {
     this.admission = a
@@ -398,6 +409,8 @@ export class SyncEngine {
      * bound to the keys rather than the engine reaching for them.
      */
     mergeAuthority?: MergeAuthority
+    /** core#107 — this device is the vault's arbiter: its refusals replicate. */
+    arbiter?: boolean
   }) {
     this.local = opts.local
     this.remote = opts.remote
@@ -408,6 +421,7 @@ export class SyncEngine {
     this.label = opts.label
     this.policy = opts.syncPolicy
     this.mergeAuthority = opts.mergeAuthority
+    this.arbiter = opts.arbiter === true
 
     // Create a scheduler when the policy asks for ANY automatic behaviour.
     // #897: this used to test `push.mode !== 'manual'` alone, so a policy of
@@ -537,13 +551,87 @@ export class SyncEngine {
       ...(envelope._by !== undefined ? { by: envelope._by } : {}), at: new Date().toISOString(),
       ...(origin === 'push-recheck' ? { origin } : {}),
     }
+    await this.#parkBuilt(collection, id, envelope, rejection)
+    if (origin === 'sync-apply') await this.#publishRejection(collection, id, rejection)
+    return rejection
+  }
+
+  /** Store half of `#park`, also used for a refusal that arrived already made (core#107). */
+  async #parkBuilt(collection: string, id: string, envelope: EncryptedEnvelope, rejection: SyncRejection): Promise<void> {
     const parked: ParkedRejection = { rejection, envelope }
     await this.local.put(
       this.vault, REJECTED_COLLECTION, `${collection}::${id}`,
       buildRecordEnvelope({ collection: REJECTED_COLLECTION, id: `${collection}::${id}`, version: 1 }, { iv: '', data: JSON.stringify(parked) }),
     )
     this.emitter.emit('sync:rejected', rejection)
-    return rejection
+  }
+
+  /**
+   * core#107 — turn the arbiter's replicated refusals into THIS device's
+   * notification. Runs after the reserved phase has brought `_sync_rejections`.
+   *
+   * Three filters, each load-bearing:
+   *  - `courier.open` returns `null` for a member who holds no DEK for that
+   *    collection. They received the ciphertext like everyone else and skip it.
+   *  - a refusal names a VERSION. If this device's copy has moved on, the
+   *    refusal is about a record that no longer exists here and is ignored —
+   *    otherwise a stale verdict would re-fire against an edit that may well
+   *    pass now.
+   *  - an existing parking at the same version means this was already
+   *    reported; the parking record IS the dedupe, so no extra state is kept
+   *    and it survives a restart.
+   *
+   * ⛔ REPORT ONLY (ruled): the local record is never deleted, tombstoned or
+   * hidden. The refusal is information; what to do about it is the writer's.
+   */
+  async #scanReplicatedRejections(): Promise<number> {
+    if (!this.courier) return 0
+    let keys: readonly string[]
+    try { keys = await this.local.list(this.vault, REJECTIONS_COLLECTION) } catch { return 0 }
+    let seen = 0
+    for (const parkKey of keys) {
+      const sep = parkKey.indexOf('::')
+      if (sep < 0) continue
+      const collection = parkKey.slice(0, sep), id = parkKey.slice(sep + 2)
+      const env = await this.local.get(this.vault, REJECTIONS_COLLECTION, parkKey)
+      if (!env) continue
+      const rejection = await this.courier.open(collection, id, env)
+      if (!rejection) continue
+      const mine = await this.local.get(this.vault, collection, id)
+      if (!mine || mine._v !== rejection.version) continue
+      const existing = await this.local.get(this.vault, REJECTED_COLLECTION, parkKey)
+      if (existing && parseParked(existing).rejection.version === rejection.version) continue
+      const replicated: SyncRejection = { ...rejection, origin: 'arbiter' }
+      await this.#parkBuilt(collection, id, mine, replicated)
+      this.#rejected.push(replicated)
+      seen++
+    }
+    return seen
+  }
+
+  /**
+   * core#107 — the ARBITER's refusals replicate, so the writer finds out.
+   *
+   * Only `sync-apply` refusals: a `push-recheck` refusal (core#108) never left
+   * this device, so there is no other device to tell, and a `restore-epoch`
+   * parking is this device adopting a new base rather than a judgement about
+   * the record.
+   *
+   * ⛔ Best-effort by construction: a failure to publish must not fail the
+   * pull that produced it. The local parking, the `PullResult.rejected` row
+   * and the event have already happened and are this device's real answer;
+   * replication is the courtesy on top. So a courier that cannot seal (no DEK
+   * for that collection) or a store that refuses the write leaves the refusal
+   * exactly as it was before core#107.
+   */
+  async #publishRejection(collection: string, id: string, rejection: SyncRejection): Promise<void> {
+    if (!this.arbiter || !this.courier) return
+    try {
+      const key = rejectionKey(collection, id)
+      const current = await this.local.get(this.vault, REJECTIONS_COLLECTION, key)
+      const envelope = await this.courier.seal(collection, id, rejection, (current?._v ?? 0) + 1)
+      if (envelope) await this.local.put(this.vault, REJECTIONS_COLLECTION, key, envelope)
+    } catch { /* see the ⛔ above: never fail the pull for the courtesy */ }
   }
 
   /**
@@ -829,6 +917,15 @@ export class SyncEngine {
         const mirrored = await pullReserved(this.remote, this.local, this.vault, protectedIds)
         reserved = mirrored.copied + mirrored.deleted
         if (this.rosterReload && mirrored.keyringsCopied.includes(this.rosterReload.userId)) await this.rosterReload.reload()
+      } catch (err) {
+        errors.push(err instanceof Error ? err : new Error(String(err)))
+      }
+      // core#107 — `_sync_rejections` has just landed; match it against what
+      // this device holds. Here, not at the end of the pull, because a refusal
+      // is about a version the WRITER already has locally — nothing later in
+      // this run can make a stale verdict apply.
+      try {
+        await this.#scanReplicatedRejections()
       } catch (err) {
         errors.push(err instanceof Error ? err : new Error(String(err)))
       }
