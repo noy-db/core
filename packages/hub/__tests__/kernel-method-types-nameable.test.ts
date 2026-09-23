@@ -23,19 +23,46 @@
  *
  * ## How this reads the surface
  *
- * Against `src`, not `dist`, so it runs without a build and fails in the same
- * commit that introduces the gap. A type named in a public method signature of
- * the three kernel classes must appear in the root barrel's export list.
- * `ALLOWED_UNEXPORTED` is the escape hatch, and every entry needs a reason:
- * an entry with no reason is how this check would rot into a formality.
+ * ⚠️ AGAINST EVERY PUBLISHED ENTRY POINT, not just the root barrel — and that
+ * correction halved the finding. The first version of this check asked only
+ * "is it on `src/index.ts`", which over-reported by 13 of 20: a consumer who
+ * imports `@noy-db/hub/periods` can name `PeriodScope` perfectly well, and
+ * `TierMoveResult` lives on `/tiers`, `CompactionResult` on `/blobs`,
+ * `RevocationList` on `/attestation`. A type is NAMEABLE if any published
+ * subpath names it; demanding the root barrel specifically is a different and
+ * stricter rule than the one this test claims to enforce.
+ *
+ * ⭐ The predicate has to match the property, and mine did not — the same
+ * defect this file exists to catch, one level up. The entry points are read
+ * from `package.json`'s `exports` map (the consumer's own view) and mapped
+ * back to `src`, so it still runs without a build.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const SRC = join(dirname(fileURLToPath(import.meta.url)), '../src')
-const barrel = readFileSync(join(SRC, 'index.ts'), 'utf8')
+const HUB = join(dirname(fileURLToPath(import.meta.url)), '..')
+const SRC = join(HUB, 'src')
+
+/** Every published entry point's declarations, read through the exports map. */
+const entryPoints: string[] = (() => {
+  const exp = JSON.parse(readFileSync(join(HUB, 'package.json'), 'utf8')).exports as Record<string, unknown>
+  const out: string[] = []
+  for (const v of Object.values(exp)) {
+    const types = typeof v === 'object' && v !== null ? (v as { types?: string }).types : undefined
+    if (!types) continue
+    const src = join(HUB, types.replace('./dist/', 'src/').replace(/\.d\.ts$/, '.ts'))
+    if (existsSync(src)) out.push(readFileSync(src, 'utf8'))
+  }
+  return out
+})()
+
+/** Nameable if ANY published entry point names it. */
+const nameable = (n: string): boolean => {
+  const re = new RegExp(`\\b${n}\\b`)
+  return entryPoints.some(src => re.test(src))
+}
 
 /**
  * Types deliberately not on the root barrel. Each needs a REASON — not a
@@ -62,17 +89,7 @@ const ALLOWED_UNEXPORTED = new Map<string, string>([
  * may SHRINK and must never grow. A new entry means the check stopped doing
  * its job; fix the export instead. Burn-down tracked on core#126.
  */
-const PRE_EXISTING = new Set([
-  // noydb.ts
-  'QuarantineResult', 'RosterVerifyResult', 'RotateResult',
-  // vault.ts
-  'CompactRunOptions', 'CompactionResult', 'CredentialBrokerHandle', 'DelegationToken',
-  'ExportBlobsHandle', 'ExportBlobsOptions', 'ForgetResult', 'IssueDelegationOptions',
-  'PeriodReopenEvent', 'PeriodScope', 'PeriodScopeWithReason', 'ReopenPeriodOptions',
-  'RevocationList',
-  // collection.ts
-  'LazyQuery', 'RollupOutcome', 'TierMoveResult', 'WaveContext',
-])
+const PRE_EXISTING = new Set<string>([])
 
 /** Identifiers that are TypeScript built-ins or structural noise, never hub types. */
 const BUILTIN = new Set([
@@ -107,12 +124,12 @@ describe('core#54 — a public kernel method\'s types are nameable from the root
     for (const sig of publicSignatures(source)) {
       for (const name of typeNames(sig)) {
         if (ALLOWED_UNEXPORTED.has(name) || PRE_EXISTING.has(name)) continue
-        // the barrel must NAME it — as a type export or a value export
-        if (new RegExp(`\\b${name}\\b`).test(barrel)) continue
+        if (nameable(name)) continue
         missing.add(name)
       }
     }
-    expect([...missing].sort(), `${rel}: named in a public signature, absent from src/index.ts. ` +
-      `Either export it or add it to ALLOWED_UNEXPORTED with a reason.`).toEqual([])
+    expect([...missing].sort(), `${rel}: named in a public method signature and nameable from NO ` +
+      `published entry point. Export it from the subpath that owns it (or the root barrel), or ` +
+      `add it to ALLOWED_UNEXPORTED with a reason.`).toEqual([])
   })
 })

@@ -1127,6 +1127,11 @@ export { EnclaveNotSupportedError } from './kernel/errors.js'
 // hierarchical access
 export type { GhostRecord, TierMode, CrossTierAccessEvent } from './kernel/types.js'
 export { TierNotGrantedError, TierDemoteDeniedError, DelegationTargetMissingError, TierWriteRefusedError, UnsupportedTierCompositionError } from './kernel/errors.js'
+// core#126 — named in `Collection.dispatchMaterializedViews` / `dispatchDerivations`
+// / `dispatchRollupsOnDelete`, which are public methods (they are in the frozen
+// kernel-API golden) though tagged `@internal`. No subpath owns them, so the root
+// barrel is the entry point that makes those signatures writable.
+export type { WaveContext, RollupOutcome } from './kernel/via/dispatch.js'
 
 // lazy-mode index errors
 export { IndexRequiredError, IndexWriteFailureError } from './kernel/errors.js'

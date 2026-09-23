@@ -37,6 +37,15 @@ export {
   buildRecipientKeyringFile,
 } from './keyring.js'
 export type { PodRecipient, ListUsersOptions } from './keyring.js'
+// core#126 — the results of the keyring admin calls on `Noydb`. Callable from
+// the root barrel and, until now, nameable from nowhere: a console wrapping
+// `rotate()` or `quarantineKeyring()` could not type its own return.
+export type { RotateResult, QuarantineResult, RosterVerifyResult } from './keyring.js'
+// core#126 — the whole core#65 delegation API. `vault.delegate(opts)` was
+// callable with an object literal and its token could not be held in a typed
+// variable, which is the defect at its most complete: an API shipped, ruled on
+// and released the same week, with neither half of its signature nameable.
+export type { DelegationToken, IssueDelegationOptions } from './delegation.js'
 // #1096 — the roster-authentication chokepoint is exported from the ROOT
 // barrel only, not here. Its signature names `KeyringFile` and `EnclaveKey`,
 // which the root exports and `./team` does not, so exporting it from this
