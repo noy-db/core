@@ -366,6 +366,22 @@ export async function importTransferKey(raw: Uint8Array): Promise<CryptoKey> {
   return subtle.importKey('raw', raw as BufferSource, { name: 'AES-GCM', length: KEY_BITS }, false, ['encrypt', 'decrypt'])
 }
 
+/**
+ * core#65 — import raw 32 bytes as a NON-extractable AES-KW key (wrap +
+ * unwrap). The per-delegation CONTENT KEY: a delegation's tier DEKs are
+ * AES-KW-wrapped under it exactly as they are under a KEK, and the key itself
+ * travels RSA-OAEP-sealed to the target's inbox public half — so the token's
+ * slot NAMES stay readable to any vault member for audit while its keys open
+ * for the target alone. Distinct from {@link importTransferKey}, which imports
+ * an AES-GCM key for body encryption and cannot wrap.
+ */
+export async function importWrappingKey(raw: Uint8Array): Promise<CryptoKey> {
+  if (raw.byteLength !== 32) {
+    throw new ValidationError(`wrapping key must be 32 bytes, got ${raw.byteLength}.`)
+  }
+  return subtle.importKey('raw', raw as BufferSource, { name: 'AES-KW', length: KEY_BITS }, false, ['wrapKey', 'unwrapKey'])
+}
+
 // ─── Encrypt / Decrypt ─────────────────────────────────────────────────
 
 export interface EncryptResult {

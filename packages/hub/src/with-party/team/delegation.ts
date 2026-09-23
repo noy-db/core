@@ -19,10 +19,22 @@
  *   collection,     // collection name OR null for "every collection"
  *   record,         // optional specific record id
  *   until,          // ISO timestamp — token expires at this instant
- *   wrappedDek,     // base64 AES-KW-wrapped tier DEK, wrapped under target KEK
+ *   wrappedDek,     // base64 AES-KW-wrapped tier DEK, under the token's content key
+ *   sealedCek,      // that content key, RSA-OAEP-sealed to the target's inbox public half
  *   createdAt,      // ISO timestamp
  * }
  * ```
+ *
+ * ## Cross-user (core#65)
+ *
+ * The wrap key is a per-token CONTENT KEY, not anybody's KEK: the tier DEKs are
+ * AES-KW-wrapped under it exactly as they used to be under a KEK, and the key
+ * itself is RSA-OAEP-sealed to the target's INBOX PUBLIC HALF (core#96 mints
+ * that pair for every grantee, private half sealed under a DEK only that
+ * member's own KEK unwraps). So a grantor delegates to somebody whose secret it
+ * does not know — the thing this module could not do — while the slot NAMES
+ * stay readable to any member holding the `_delegations` DEK, which is what
+ * makes an audit enumeration possible without making the keys usable.
  *
  * The ciphertext is stored as a normal noy-db envelope — the
  * `_delegations` collection has its own DEK shared across all vault
@@ -39,11 +51,17 @@
  * @module
  */
 
-import type { NoydbStore } from '../../kernel/types.js'
+import type { NoydbStore, KeyringFile } from '../../kernel/types.js'
 import type { UnlockedKeyring } from './keyring.js'
-import { buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, wrapKey, unwrapKey, type EnclaveKey } from '../../capsule/index.js'
+import {
+  buildRecordAad, buildRecordEnvelope, encrypt, openEnvelopeJson, wrapKey, unwrapKey,
+  importWrappingKey, importRecipientPublicKeySpki, recipientWrap, recipientUnwrap,
+  bufferToBase64, base64ToBuffer, type EnclaveKey,
+} from '../../capsule/index.js'
 import { dekKey } from './tiers.js'
-import { DelegationTargetMissingError } from '../../kernel/errors.js'
+import { readKeyringFile, openInboxKeyPair } from './keyring.js'
+import { INBOX_KEY_ID } from '../../kernel/constants.js'
+import { DelegationTargetMissingError, MemberInboxMissingError } from '../../kernel/errors.js'
 import { generateULID } from '../../with-pod/ulid.js'
 
 export const DELEGATIONS_COLLECTION = '_delegations'
@@ -97,6 +115,18 @@ export interface DelegationToken {
    * otherwise.
    */
   readonly wrappedDeks?: Readonly<Record<string, string>>
+  /**
+   * core#65 — the token's CONTENT KEY, RSA-OAEP-sealed to the target's inbox
+   * public half. `wrappedDek` / `wrappedDeks` are AES-KW-wrapped under it, so
+   * only the target can unwrap them, and only they can: the matching private
+   * half is sealed in their keyring under a DEK their own KEK unwraps.
+   *
+   * Absent on a token written before core#65, whose wraps are under the
+   * grantor's own KEK — those still load for a target that shares that KEK
+   * (the only case that ever worked) and are skipped for anyone else, exactly
+   * as before.
+   */
+  readonly sealedCek?: string
   readonly createdAt: string
 }
 
@@ -109,21 +139,36 @@ export interface IssueDelegationOptions {
 }
 
 /**
- * Build and persist a delegation token. The caller must hold a tier-N
- * DEK and must have already located the target user's keyring file
- * (so the `wrappedDek` can be re-wrapped against their KEK).
+ * Build and persist a delegation token. The caller must hold a tier-N DEK; the
+ * target must have a keyring in this vault with an inbox key pair (core#96).
+ *
+ * core#65 — the wraps are keyed to a per-token content key sealed to that
+ * pair, so the grantor needs nothing of the target's but their PUBLIC half.
  */
 export async function issueDelegation(
   store: NoydbStore,
   vault: string,
   grantor: UnlockedKeyring,
-  targetKek: EnclaveKey | null,
   delegationsDek: EnclaveKey,
   opts: IssueDelegationOptions,
 ): Promise<DelegationToken> {
-  if (!targetKek) {
+  const targetFound = await readKeyringFile(store, vault, opts.toUser)
+  if (!targetFound) {
     throw new DelegationTargetMissingError(opts.toUser)
   }
+  const targetInbox = targetFound.file.inbox_key
+  if (!targetInbox) {
+    throw new MemberInboxMissingError(
+      opts.toUser,
+      `Delegation target "${opts.toUser}" has a keyring with no inbox key pair — it predates core#96, ` +
+      'so a delegated key cannot be sealed to them. Re-grant the user once (a fresh temporary secret ' +
+      'they rotate on first open); the new keyring carries the pair.',
+    )
+  }
+  const cekBytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
+  const targetKek = await importWrappingKey(cekBytes)
+  const sealedCek = bufferToBase64(await recipientWrap(await importRecipientPublicKeySpki(base64ToBuffer(targetInbox.pub)), cekBytes))
+  cekBytes.fill(0)
   const tier = opts.tier
   const collectionName = opts.collection ?? null
 
@@ -170,6 +215,7 @@ export async function issueDelegation(
     until,
     ...(wrappedDek !== undefined && { wrappedDek }),
     ...(wrappedDeks !== undefined && { wrappedDeks }),
+    sealedCek,
     createdAt: new Date().toISOString(),
   }
 
@@ -199,13 +245,17 @@ export async function issueDelegation(
  * cheap to honour, and its "periodic intervals (tracked by the caller)" is what
  * an explicit method is.
  *
- * ## ⚠️ Cross-user delegation does not work yet
+ * ## Cross-user delegation (core#65) — and the one thing it still needs
  *
- * `Vault.delegate()` wraps against the GRANTOR's own KEK — its own comment calls
- * that "a simpler first cut" pending a per-target KEK exchange. A token issued
- * to somebody else cannot be unwrapped by them, and this function skips it. What
- * works today is a token whose target shares the issuing KEK. That limit belongs
- * to `delegate()`; do not "fix" it here.
+ * A token's wraps are keyed to a per-token content key sealed to the target's
+ * INBOX PUBLIC HALF, so any member can be a target. Opening one therefore needs
+ * that member's inbox PRIVATE half, which is sealed in their keyring file under
+ * `deks[INBOX_KEY_ID]` — so this function reads the caller's own keyring file,
+ * once, and only when a sealed token is actually addressed to them.
+ *
+ * ⚠️ A pre-core#65 token (no `sealedCek`) is wrapped under the GRANTOR's KEK and
+ * still requires `user.kek`; it is skipped for anyone who does not share it,
+ * which is the behaviour those tokens were written under.
  */
 
 /**
@@ -224,6 +274,8 @@ export async function loadActiveDelegations(
   const ids = await store.list(vault, DELEGATIONS_COLLECTION)
   const merged: DelegationToken[] = []
   const nowIso = now.toISOString()
+  /** This member's own inbox key pair material, read at most once per call. `null` = read, absent. */
+  let ownInbox: NonNullable<KeyringFile['inbox_key']> | null | undefined
   for (const id of ids) {
     const env = await store.get(vault, DELEGATIONS_COLLECTION, id)
     if (!env) continue
@@ -237,11 +289,38 @@ export async function loadActiveDelegations(
     if (token.toUser !== user.userId) continue
     if (token.until <= nowIso) continue
 
-    // A user without a KEK in memory (tier-3 PIN resume, wrap-DEKs
-    // tier-2 unlock, session restore) cannot unwrap delegation tokens
-    // — those were wrapped under the user's KEK at issue time. Skip
-    // this token; the consumer reaches it again at tier-1 unlock.
-    if (!user.kek) continue
+    // core#65 — the wrap key. A sealed token carries its own content key,
+    // opened with this member's inbox pair; a legacy token is under the
+    // grantor's KEK and needs `user.kek`, absent on a tier-3 PIN resume, a
+    // wrap-DEKs tier-2 unlock or a session restore (reached again at the next
+    // tier-1 unlock). A sealed token has no such limit: the pair's private
+    // half is sealed under a DEK the rebuilt set already carries.
+    let wrapKeyForToken: EnclaveKey
+    if (token.sealedCek !== undefined) {
+      const inboxKeyAes = user.deks.get(INBOX_KEY_ID)
+      if (!inboxKeyAes) continue
+      if (ownInbox === undefined) {
+        const own = await readKeyringFile(store, vault, user.userId)
+        ownInbox = own?.file.inbox_key ?? null
+      }
+      if (!ownInbox) continue
+      try {
+        const pair = await openInboxKeyPair(ownInbox, inboxKeyAes)
+        const cekBytes = await recipientUnwrap(pair, base64ToBuffer(token.sealedCek))
+        try {
+          wrapKeyForToken = await importWrappingKey(cekBytes)
+        } finally {
+          cekBytes.fill(0)
+        }
+      } catch {
+        // Sealed to somebody else's pair, or this member's own pair was
+        // replaced (a re-grant mints a fresh one). Not ours to open.
+        continue
+      }
+    } else {
+      if (!user.kek) continue
+      wrapKeyForToken = user.kek
+    }
 
     // ⭐ Every merged key lands under its REAL `<collection>#<tier>` slot, which
     // is exactly what `assertTierAccess` and `getDEK` already look up. There is
@@ -255,7 +334,7 @@ export async function loadActiveDelegations(
     for (const [slot, wrapped] of Object.entries(wraps)) {
       let dek: EnclaveKey
       try {
-        dek = await unwrapKey(wrapped, user.kek)
+        dek = await unwrapKey(wrapped, wrapKeyForToken)
       } catch {
         // One unusable entry must not discard the rest of a collection-wide
         // token — a revoked or re-wrapped collection is the expected case.

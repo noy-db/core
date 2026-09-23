@@ -134,6 +134,7 @@ export const wrapCek = (): never => refuse('seal')
 export const unwrapCek = (): never => refuse('seal')
 export const importCek = (): never => refuse('seal')
 export const importTransferKey = (): never => refuse('seal')
+export const importWrappingKey = (): never => refuse('seal') // core#65
 export const generateRecipientKeyPair = (): never => refuse('seal')
 export const exportRecipientPublicKeySpki = (): never => refuse('seal')
 export const importRecipientPublicKeySpki = (): never => refuse('seal')

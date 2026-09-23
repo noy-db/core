@@ -22,6 +22,7 @@ import type { NoydbOptions, NoydbStore, KeyringAuthenticator } from '../../kerne
 import { ensureCollectionDEK, type RotateResult, type RotateKeysOptions, type RosterVerifyResult, type QuarantineResult } from './keyring.js'
 import { PERIODS_COLLECTION } from '../../with-audit/periods/window.js'
 import { ValidationError } from '../../kernel/errors.js'
+import { DELEGATIONS_COLLECTION } from './delegation.js'
 import {
   rotateSecret as keyringRotateSecret,
   recoverSecret as keyringRecoverSecret,
@@ -165,6 +166,17 @@ export class TeamFacade {
     // `_periods` itself.
     if (this.deps.options.periodsStrategy !== undefined) {
       await (await ensureCollectionDEK(this.deps.options.store, vault, keyring))(PERIODS_COLLECTION)
+    }
+    // core#65 — same shape, same reason, for `_delegations`. A delegation is
+    // READ by its target: the token is sealed to their inbox pair, but the
+    // envelope around it is under the vault-wide `_delegations` DEK, which the
+    // grantor mints lazily at its FIRST `delegate()` call. A member granted
+    // before that moment never receives it, so every delegation addressed to
+    // them is skipped — silently, because the read half returns `[]` rather
+    // than throwing when the DEK is absent. Minting here makes the grant order
+    // stop mattering; nothing is written to `_delegations` itself.
+    if (this.deps.options.tiersStrategy !== undefined) {
+      await (await ensureCollectionDEK(this.deps.options.store, vault, keyring))(DELEGATIONS_COLLECTION)
     }
     await engine(this.deps.options.store, vault, keyring, options)
   }

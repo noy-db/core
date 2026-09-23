@@ -107,6 +107,7 @@ export type {
   PullResult,
   SyncProgress,
   RealignResult,
+  KeyringInboxBox,
   SyncApplied,
   SyncRejection,
   SyncRejectedApi,

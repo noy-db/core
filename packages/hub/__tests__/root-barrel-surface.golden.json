@@ -722,6 +722,7 @@
     "KeyringAuthenticatorWrappingKEK",
     "KeyringEchoBlock",
     "KeyringFile",
+    "KeyringInboxBox",
     "Layer",
     "LazyStrategy",
     "LedgerEntry",

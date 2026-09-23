@@ -16,9 +16,8 @@
 import type { NoydbStore, KeyringAuthenticator } from '../../kernel/types.js'
 import { NoAccessError, ValidationError } from '../../kernel/errors.js'
 import type { UnlockedKeyring } from './keyring.js'
-import { persistKeyring, rotateKeys } from './keyring.js'
+import { persistKeyring, rotateKeys, NON_ROTATABLE_SLOTS } from './keyring.js'
 import { rotateSecret, type SlotRewrapCeremony } from './rotate-recover.js'
-import { ROSTER_KEY_ID, BLOB_ADDRESS_KEY_ID } from '../../kernel/constants.js'
 import type { RotateSecretInput } from './rotate-recover.js'
 
 /** Fields shared across both wrap-KEK and wrap-DEKs enroll inputs. */
@@ -363,14 +362,14 @@ export async function revokeAuthenticator(
 
   // 2. Mint fresh DEKs — the step that revokes.
   //    The set is derived from the DEK map the way `revoke` derives its own,
-  //    minus the two reserved keys that are not collections: the roster key
-  //    (rotating it makes the vault unopenable for every other member) and the
-  //    blob addressing root (rotating it invalidates every stored blob eTag).
-  //    `rotateKeys` throws on either if named explicitly, so they are dropped
-  //    here at the site that gathers them implicitly.
+  //    minus the reserved slots that are KEYS rather than collections —
+  //    {@link NON_ROTATABLE_SLOTS}, the one list. `rotateKeys` throws on each if
+  //    named explicitly, so they are dropped here at the site that gathers them
+  //    implicitly. ⛔ This was a hand-copied pair (roster key, blob root) and it
+  //    broke the day the list grew (core#65's inbox key), which is why the list
+  //    now lives in one place.
   const collections = new Set(next.deks.keys())
-  collections.delete(ROSTER_KEY_ID)
-  collections.delete(BLOB_ADDRESS_KEY_ID)
+  for (const slot of NON_ROTATABLE_SLOTS) collections.delete(slot)
   if (collections.size > 0) {
     await rotateKeys(store, vault, next, { collections: [...collections] })
   }

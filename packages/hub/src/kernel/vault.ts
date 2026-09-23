@@ -2901,27 +2901,20 @@ export class Vault {
    */
   async delegate(opts: IssueDelegationOptions): Promise<DelegationToken> {
     const { issueDelegation, DELEGATIONS_COLLECTION } = await import('../with-party/team/delegation.js')
-    // ⚠️ Wraps against the GRANTOR's KEK, so cross-user delegation does not work
-    // yet — see `issueDelegation` in `with-party/team/delegation.js`.
+    // core#65 — the token's keys are sealed to the TARGET's inbox public half
+    // (core#96), so any member can be a target. The tier-1 requirement stays:
+    // issuing an authority-bearing token is a tier-1 act, not a mechanism.
     if (!this.keyring.kek) {
       throw new ValidationError(
         'issueDelegation: keyring.kek is null — issuing a delegation requires ' +
           'a tier-1 unlock. Re-authenticate at tier 1 (secret) first.',
       )
     }
-    const targetKek = this.keyring.kek
     const delegationsDek = await this.getDEK(DELEGATIONS_COLLECTION)
-    return issueDelegation(
-      this.adapter,
-      this.name,
-      this.keyring,
-      targetKek,
-      delegationsDek,
-      opts,
-    )
+    return issueDelegation(this.adapter, this.name, this.keyring, delegationsDek, opts)
   }
 
-  /** Merge live delegations into the keyring — core#56's read half. Explicit, not automatic; cross-user delegation does not work yet. Both reasons: `with-party/team/delegation.ts`. */
+  /** Merge live delegations addressed to this user into the keyring — core#56's read half, cross-user since core#65. Explicit, never automatic: `with-party/team/delegation.ts` says why. */
   async refreshDelegations(now?: Date): Promise<DelegationToken[]> {
     return this.strategies.tiers.refreshDelegations({ vault: this.name, adapter: this.adapter, keyring: this.keyring }, now)
   }
