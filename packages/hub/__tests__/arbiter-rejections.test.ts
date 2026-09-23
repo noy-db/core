@@ -48,7 +48,7 @@ async function firm(arbiter = true) {
   const vO = await dbO.openVault('firm')
   await vO.collection<Close>('closes').put('2026-08', { closed: false })
   await dbO.grant('firm', { userId: 'C', displayName: 'C', role: 'operator', secret: U, permissions: { notes: 'rw', closes: 'rw' } })
-  await dbO.grant('firm', { userId: 'D', displayName: 'D', role: 'operator', secret: U, permissions: { closes: 'r' } })
+  await dbO.grant('firm', { userId: 'D', displayName: 'D', role: 'operator', secret: U, permissions: { closes: 'ro' } })
   await dbO.push('firm')
   closedPeriodRule(dbO)
   const member = async (user: string) => {
