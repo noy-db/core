@@ -129,8 +129,8 @@ export async function runGraphDispatchWave(vault: VaultLike, batch: GraphBatch):
         // touched target in the same batch.
         const stored = await coll._getStoredRecordForDispatch(id)
         if (!stored) continue
-        await coll.dispatchDerivations(id, stored.record, stored.version, wave)
-        await coll.dispatchMaterializedViews(id, stored.record, wave)
+        await coll._dispatchDerivations(id, stored.record, stored.version, wave)
+        await coll._dispatchMaterializedViews(id, stored.record, wave)
       } catch (err) {
         // #638 Task 5 review mandate: one touched record's recompute must not abort the
         // whole wave (starving co-batched healthy targets) or the pull/push it's nested
@@ -165,8 +165,8 @@ export async function runGraphDispatchWave(vault: VaultLike, batch: GraphBatch):
         // children of one eager MV in a batch each trigger a full refresh pass. Threading `wave`
         // through would touch collection.ts's zero-slack kernel-surface ceiling for a perf-only
         // win; correctness doesn't depend on it (idempotent per source-id) — left as a follow-up.
-        await coll.dispatchMaterializedViewsOnDelete(id)
-        await coll.dispatchArrayDerivationsOnDelete(id)
+        await coll._dispatchMaterializedViewsOnDelete(id)
+        await coll._dispatchArrayDerivationsOnDelete(id)
       } catch (err) {
         console.warn(`[via-dispatch] wave delete-recompute failed for ${collectionName}/${id}:`, err)
         vault._emit('derivation:wave-error', { collection: collectionName, id, error: err })
@@ -332,7 +332,7 @@ export async function forgetDerivedFanout(
   // stamp-scoped (#762) — before that fix this would have opened a NEW forget-time
   // data-loss path into the unscoped tombstone diff.
   if (coll) {
-    const mv = await coll.dispatchMaterializedViewsOnDelete(ref.id)
+    const mv = await coll._dispatchMaterializedViewsOnDelete(ref.id)
     stats.recordsErased += mv.deleted
     stats.derivedResidueUndecodable.push(...mv.residueUndecodable)
     stats.derivedResidueDeclined.push(...mv.residueDeclined)
@@ -369,13 +369,13 @@ export async function forgetDerivedFanout(
     // this collection is ANY trigger (source/sources[]/triggerBy), but the same-id record-shape
     // guard only erases for `spec.source === this.name`, and `derive()` may never have produced
     // an output row (optional-skip) in the first place. Both cases must contribute 0, not +1.
-    stats.recordsErased += await coll.dispatchArrayDerivationsOnDelete(ref.id, true)
+    stats.recordsErased += await coll._dispatchArrayDerivationsOnDelete(ref.id, true)
   }
 
   if (envelope && edges.some((e) => e.kind === 'rollup')) {
     const priorRecord = await coll._decodeEnvelope(envelope, ref.id)
     if (priorRecord) {
-      for (const r of await coll.dispatchRollupsOnDelete(ref.id, priorRecord)) {
+      for (const r of await coll._dispatchRollupsOnDelete(ref.id, priorRecord)) {
         if (r.outcome === 'written') stats.aggregatesRecomputed += 1
         else if (r.outcome === 'skipped-frozen') stats.residueFrozen.push(`${r.into}:${r.parentId}`)
       }

@@ -195,10 +195,10 @@ export class Noydb {
   /**
    * Opt-in sovereign-custody (FR-6) strategy — `NO_CUSTODY` (throwing) unless
    * `withCustody()` was passed. Kept as a public accessor because `Vault`
-   * routes `vault.custody.liberate` through `this.noydb.custodyStrategy`.
+   * routes `vault.custody.liberate` through `this.noydb._custodyStrategy`.
    * @internal
    */
-  get custodyStrategy(): CustodyStrategy {
+  get _custodyStrategy(): CustodyStrategy {
     return this.strategies.custody
   }
   private readonly snapshots: NoydbSnapshots
@@ -681,7 +681,7 @@ export class Noydb {
       // Thread the translator hook so Collection.put() can invoke it
       plaintextTranslator: this.options.plaintextTranslator
         ? (text, from, to, field, collection) =>
-            this.invokeTranslator(text, from, to, field, collection)
+            this._invokeTranslator(text, from, to, field, collection)
         : undefined,
       // Refresh callback used by Vault.load() to re-derive
       // the in-memory keyring from a freshly-loaded keyring file.
@@ -1385,9 +1385,13 @@ export class Noydb {
   }
 
   /**
-   * @internal True once `close()` has been called. Read by outward
-   * orchestration frameworks whose entry points can't see the private
-   * `closed` field.
+   * True once `close()` has been called.
+   *
+   * ⭐ NOT `@internal`, and core#128 removed that tag rather than `_`-prefixing
+   * this: the doc's own reason — "read by outward orchestration frameworks
+   * whose entry points can't see the private `closed` field" — IS a public
+   * contract. Prefixing it would have broken the readers it exists for. The
+   * tag was the defect, not the name.
    */
   get isClosed(): boolean {
     return this.closed
@@ -1613,7 +1617,7 @@ export class Noydb {
 
   /**
    * Currently-running multi-record transaction, or `null` outside
-   * Phase 2. `Collection.dispatchDerivations` consults this so a
+   * Phase 2. `Collection._dispatchDerivations` consults this so a
    * recursive derived-output write inside `Collection.put` can register
    * its envelope onto `ctx._executed` and roll back with the main
    * staged ops on mid-batch failure.
@@ -1928,9 +1932,15 @@ export class Noydb {
   }
 
   /**
-   * @internal Drain-barrier coordination transport for the schema fence.
-   * The default store-backed provider reproduces today's fence behavior; a
-   * `by-*` real-time transport is injected via `mesh`.
+   * Drain-barrier coordination transport for the schema fence. The default
+   * store-backed provider reproduces today's fence behavior; a `by-*`
+   * real-time transport is injected via the `mesh` option.
+   *
+   * ⭐ NOT `@internal`, and core#128 removed that tag rather than
+   * `_`-prefixing this. `db.mesh` is documented as a public handle in
+   * `port/by/index.ts` — "a `Noydb` handle (`db.mesh`) without ever naming a
+   * `by-*` pack" — and `createNoydb({ mesh })` is a public option. The tag
+   * contradicted both; prefixing would have broken the documented handle.
    */
   get mesh(): NoydbMesh {
     return this.meshPort
@@ -2043,7 +2053,7 @@ export class Noydb {
    *
    * @internal — not part of the public API surface
    */
-  async invokeTranslator(
+  async _invokeTranslator(
     text: string,
     from: string,
     to: string,
