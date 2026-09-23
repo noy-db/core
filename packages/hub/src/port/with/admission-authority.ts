@@ -21,5 +21,18 @@ export type AdmissionVerdict =
   | { readonly admitted: false; readonly reason: string }
 
 export interface AdmissionAuthority {
-  admit(collection: string, id: string, envelope: EncryptedEnvelope): Promise<AdmissionVerdict>
+  /**
+   * `origin` says which judgement this is. `'sync-apply'` (the default) is a
+   * record ARRIVING from another device. core#108 — `'push-recheck'` is this
+   * device's OWN dirty record, re-judged against current local state before
+   * it leaves: a record written offline may no longer pass the rules its
+   * writer's device now holds, and catching that here means the writer finds
+   * out before anyone else sees the record.
+   */
+  admit(
+    collection: string,
+    id: string,
+    envelope: EncryptedEnvelope,
+    origin?: 'sync-apply' | 'push-recheck',
+  ): Promise<AdmissionVerdict>
 }

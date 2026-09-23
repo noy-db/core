@@ -28,8 +28,8 @@ export interface GuardContext<T> {
   vault: ReadOnlyVaultFacade
   userId: string
   role: Role
-  /** core#74 — `'sync-apply'` when the record is arriving by sync and this check runs as its admission gate; absent on a local write. */
-  origin?: 'local-write' | 'sync-apply'
+  /** core#74 — `'sync-apply'` when the record is arriving by sync and this check runs as its admission gate; core#108 — `'push-recheck'` when it is this device's OWN dirty record being re-judged against current local state before it is pushed; absent on a local write. */
+  origin?: 'local-write' | 'sync-apply' | 'push-recheck'
 }
 
 /**

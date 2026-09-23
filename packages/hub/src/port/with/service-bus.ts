@@ -58,8 +58,16 @@ export interface GatePutEvent {
    * sync, evaluated at admission against this device's view. A handler that
    * only makes sense for the writer (a UI confirmation, say) checks this;
    * a rule about state (a closed period) does not need to.
+   *
+   * core#108 — `'push-recheck'` is this device's own record, written while
+   * offline and re-judged against CURRENT local state just before it is
+   * pushed. ⚠️ `existing` is then the record's own stored copy, because the
+   * state it was written over is gone: a rule comparing `incoming` to
+   * `existing` sees a no-op diff and must not read that as "nothing changed".
+   * Rules that read ambient state (a closed period) are what this origin is
+   * for; rules that need a true prior should skip it.
    */
-  readonly origin?: 'local-write' | 'sync-apply'
+  readonly origin?: 'local-write' | 'sync-apply' | 'push-recheck'
   readonly userId: string
   readonly role: Role
   /**
@@ -84,7 +92,7 @@ export interface GateDeleteEvent {
   readonly existingVersion: number
   readonly existingTs: string | undefined
   /** core#74 — see `GatePutEvent.origin`. Deletes arriving by sync are not gated today; present for symmetry. */
-  readonly origin?: 'local-write' | 'sync-apply'
+  readonly origin?: 'local-write' | 'sync-apply' | 'push-recheck'
   readonly userId: string
   readonly role: Role
 }
