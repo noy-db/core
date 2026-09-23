@@ -546,10 +546,15 @@ export class SyncEngine {
    * rather than accumulating.
    */
   async #park(collection: string, id: string, envelope: EncryptedEnvelope, reason: string, origin: 'sync-apply' | 'push-recheck'): Promise<SyncRejection> {
+    // core#107 (pilot-1): `origin` is set on EVERY path, including
+    // `'sync-apply'`. It used to be omitted there and inferred from absence,
+    // which made a consumer switch handle two members and `undefined` for the
+    // commonest case of the three.
     const rejection: SyncRejection = {
       vault: this.vault, collection, id, reason, version: envelope._v,
       ...(envelope._by !== undefined ? { by: envelope._by } : {}), at: new Date().toISOString(),
-      ...(origin === 'push-recheck' ? { origin } : {}),
+      ...(envelope._ts !== undefined ? { recordAt: envelope._ts } : {}),
+      origin,
     }
     await this.#parkBuilt(collection, id, envelope, rejection)
     if (origin === 'sync-apply') await this.#publishRejection(collection, id, rejection)
