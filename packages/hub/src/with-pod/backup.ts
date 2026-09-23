@@ -100,33 +100,20 @@ export type VerifyBackupResult =
  * dump and restore. Backups produced without a ledger skip the integrity check
  * with a warning — both modes round-trip cleanly.
  */
-export async function dumpVault(ctx: BackupContext): Promise<string> {
-  const snapshot = await ctx.adapter.loadAll(ctx.vault)
-
-  // Load keyrings (separate path because loadAll filters them out
-  // along with all other underscore-prefixed internal collections).
-  const keyringIds = await ctx.adapter.list(ctx.vault, '_keyring')
-  const keyrings: Record<string, unknown> = {}
-  for (const keyringId of keyringIds) {
-    const envelope = await ctx.adapter.get(ctx.vault, '_keyring', keyringId)
-    if (envelope) {
-      keyrings[keyringId] = JSON.parse(envelope._data ?? '')
-    }
-  }
-
-  // Load the ledger entries + deltas so the receiver can replay
-  // the chain after restore. Without this, `load()` would have an
-  // empty ledger and `verifyBackupIntegrity()` would have nothing
-  // to compare against.
-  //
-  // Also enumerate the blob collections so blob content ("covers")
-  // travels in the bundle (the blob DEK already travels in `_keyring`).
-  // Literals are inlined (not imported from blobs/blob-set.ts) to keep
-  // the blob runtime out of this kernel hot path — they mirror
-  // BLOB_INDEX/CHUNKS/EVICTION_AUDIT_COLLECTION and SLOTS/VERSIONS_PREFIX.
-  // The collect-loop skips empty ids, so this no-ops without blobs.
-  const internalSnapshot: VaultSnapshot = {}
-  const internalNames = [
+/**
+ * core#111 — the internal collections a pod carries, derived from its DATA
+ * collection names. ⭐ ONE definition, used by the dump AND by the load's
+ * clear step: they must agree or a restore leaves rows behind that the pod
+ * says should not exist.
+ *
+ * ⛔ The load side CANNOT just clear what the pod carries. The dump skips a
+ * collection with no rows (`if (ids.length === 0) continue`), so a pod taken
+ * while `_periods` was empty does not mention `_periods` at all — and a store
+ * that has since closed a period would keep those rows through a restore.
+ * Absence in a pod means "empty at dump time", never "leave whatever is there".
+ */
+function internalCollectionNames(dataCollections: readonly string[]): string[] {
+  return [
     LEDGER_COLLECTION, LEDGER_DELTAS_COLLECTION, SCHEMAS_COLLECTION, SEQUENCE_COLLECTION,
     MANIFEST_COLLECTION, // #941: the pod's manifest-set record(s) travel in the bundle too
     // #1025: the accounting-period close state + its companions. The bundle is
@@ -160,8 +147,37 @@ export async function dumpVault(ctx: BackupContext): Promise<string> {
     // old eTag may not exist in the destination, so it must be stripped
     // there instead. Asymmetry: backup = same-vault-resumable = carry;
     // partition = cross-vault = strip-breadcrumb-carry-marker.
-    ...Object.keys(snapshot).flatMap((c) => [`_blob_slots_${c}`, `_blob_versions_${c}`]),
+    ...dataCollections.flatMap((c) => [`_blob_slots_${c}`, `_blob_versions_${c}`]),
   ]
+}
+
+export async function dumpVault(ctx: BackupContext): Promise<string> {
+  const snapshot = await ctx.adapter.loadAll(ctx.vault)
+
+  // Load keyrings (separate path because loadAll filters them out
+  // along with all other underscore-prefixed internal collections).
+  const keyringIds = await ctx.adapter.list(ctx.vault, '_keyring')
+  const keyrings: Record<string, unknown> = {}
+  for (const keyringId of keyringIds) {
+    const envelope = await ctx.adapter.get(ctx.vault, '_keyring', keyringId)
+    if (envelope) {
+      keyrings[keyringId] = JSON.parse(envelope._data ?? '')
+    }
+  }
+
+  // Load the ledger entries + deltas so the receiver can replay
+  // the chain after restore. Without this, `load()` would have an
+  // empty ledger and `verifyBackupIntegrity()` would have nothing
+  // to compare against.
+  //
+  // Also enumerate the blob collections so blob content ("covers")
+  // travels in the bundle (the blob DEK already travels in `_keyring`).
+  // Literals are inlined (not imported from blobs/blob-set.ts) to keep
+  // the blob runtime out of this kernel hot path — they mirror
+  // BLOB_INDEX/CHUNKS/EVICTION_AUDIT_COLLECTION and SLOTS/VERSIONS_PREFIX.
+  // The collect-loop skips empty ids, so this no-ops without blobs.
+  const internalSnapshot: VaultSnapshot = {}
+  const internalNames = internalCollectionNames(Object.keys(snapshot))
   for (const internalName of internalNames) {
     const ids = await ctx.adapter.list(ctx.vault, internalName)
     if (ids.length === 0) continue
@@ -224,8 +240,38 @@ export async function loadVault(ctx: BackupContext, backupJson: string): Promise
     await ctx.adapter.put(ctx.vault, '_keyring', userId, envelope)
   }
 
-  // 3. Restore internal collections (`_ledger`, `_ledger_deltas`).
-  //    Required so verifyBackupIntegrity has the chain to walk.
+  // 3. Restore internal collections (`_ledger`, `_ledger_deltas`, history,
+  //    periods, blobs). Required so verifyBackupIntegrity has the chain to walk.
+  //
+  // ⛔⛔ CLEAR FIRST (core#111). This used to `put` the pod's rows id by id and
+  // leave everything else, so entries written AFTER the pod survived the
+  // restore. With history on that is not a cosmetic leftover: the ledger chain
+  // still named `notes/n2`, whose envelope `saveAll` had just removed, and the
+  // integrity check refused the restore outright —
+  //   BackupCorruptedError: Ledger expects data record "notes/n2" to exist …
+  // which made restoring an OLDER pod possible only onto a store whose ledger
+  // had not moved. That is never the case that matters: a restore is a step
+  // BACK (core#71/#72).
+  //
+  // ⭐ A restore rewinds the ledger too, and now says so. The internal
+  // collections are replaced wholesale, the way `saveAll` already treats the
+  // data ones — anything else asks the chain to describe a store it does not
+  // match. The names come from `internalCollectionNames`, NOT from the pod's
+  // own keys: see the ⛔ on that function for why absence in a pod cannot mean
+  // "leave it alone".
+  //
+  // ⚠️ Known residue, deliberately not chased here: `_blob_slots_<c>` /
+  // `_blob_versions_<c>` for a DATA collection the pod does not carry are not
+  // cleared, because the names are derived from the pod's collections and the
+  // store contract has no way to enumerate `_`-prefixed collections
+  // (`loadAll` skips them). Those rows are already orphaned — `saveAll` has
+  // just removed the collection they describe — so they are unreachable
+  // rather than misleading.
+  for (const internalName of internalCollectionNames(Object.keys(backup.collections))) {
+    for (const id of await ctx.adapter.list(ctx.vault, internalName)) {
+      await ctx.adapter.delete(ctx.vault, internalName, id)
+    }
+  }
   if (backup._internal) {
     for (const [internalName, records] of Object.entries(backup._internal)) {
       for (const [id, envelope] of Object.entries(records)) {
