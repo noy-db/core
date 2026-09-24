@@ -368,6 +368,7 @@ export class TeamFacade {
    *     meta: {
    *       credentialId: e.credentialId,
    *       wrapIv: e.wrapIv,
+   *       rpId: e.rpId,
    *       prfUsed: e.prfUsed,
    *       beFlag: e.beFlag,
    *       requireSingleDevice: e.requireSingleDevice,
@@ -375,6 +376,15 @@ export class TeamFacade {
    *   }
    * })
    * ```
+   *
+   * `meta` is a free-form blob — hub validates `credentialId` and nothing
+   * else, so this example IS the contract for what a slot carries. Record
+   * `rpId` (core#140): the slot rewrap / rotation ceremony falls back to
+   * `meta.rpId` when the caller passes no `options.rpId` and the enrollment
+   * record predates `WebAuthnEnrollment.rpId`. Omitting it does not break
+   * single-hostname deployments — absence correctly reads as "send no RP ID"
+   * — but on a shared registrable domain rotation then works only if every
+   * caller remembers to pass the RP ID by hand.
    *
    * Returns the WebAuthn `credentialId` (extracted from `meta.credentialId`)
    * for the caller's lookup index (a bootstrap vault, a Cover,
