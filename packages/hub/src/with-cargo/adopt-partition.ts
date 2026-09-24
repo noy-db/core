@@ -310,7 +310,8 @@ export async function createOwnerOnAdoptedPartition(
     const withEpoch = stampAuthority(merged, keyringFile.roster_epoch)
     const rosterKey = requireRosterKey(unlocked, 'adoptPartition')
     const mergedFile: KeyringFile = { ...withEpoch, roster_tag: await mintRosterTag(withEpoch, rosterKey) }
-    await store.put(vaultName, '_keyring', userId, { ...env, _data: JSON.stringify(mergedFile) })
+    // core#132 — CAS on the envelope this merge was computed from; see liberate.ts.
+    await store.put(vaultName, '_keyring', userId, { ...env, _v: env._v + 1, _data: JSON.stringify(mergedFile) }, env._v)
   }
 
   // Stage B — record the ownership transition on the carried

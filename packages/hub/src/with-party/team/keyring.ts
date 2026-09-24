@@ -33,7 +33,7 @@ import {
   recipientWrap,
   recipientUnwrap,
 } from '../../capsule/index.js'
-import { NoAccessError, PermissionDeniedError, PrivilegeEscalationError, MemberInboxMissingError, KeyringExpiredError, KeyringCorruptError, KeyringTamperedError, TamperedError, InvalidKeyError, ValidationError, DirectoryDisabledError, EchoCeremonyRequiredError } from '../../kernel/errors.js'
+import { ConflictError, NoAccessError, PermissionDeniedError, PrivilegeEscalationError, MemberInboxMissingError, KeyringExpiredError, KeyringCorruptError, KeyringTamperedError, TamperedError, InvalidKeyError, ValidationError, DirectoryDisabledError, EchoCeremonyRequiredError } from '../../kernel/errors.js'
 import type { KeyringTamperedReason } from '../../kernel/errors.js'
 import { mintRosterTag, assertRosterAuthenticated, assertRosterTagValid } from './roster-tag.js'
 import { readDirectoryConfig } from '../directory/storage.js'
@@ -705,7 +705,7 @@ export async function createOwnerKeyring(
       : {}),
   }
 
-  await writeKeyringFile(store, vault, userId, keyringFile)
+  await writeKeyringFile(store, vault, userId, keyringFile, 'create')
 
   return {
     userId,
@@ -956,7 +956,7 @@ export async function grant(
     roster_tag: await mintRosterTag(withEpoch, callerRosterKey),
   }
 
-  await writeKeyringFile(store, vault, options.userId, keyringFile)
+  await writeKeyringFile(store, vault, options.userId, keyringFile, basisOf(previousGrantFound))
 
   // #1097 — A NARROWING RE-GRANT MUST ROTATE WHAT IT TAKES AWAY.
   //
@@ -1666,7 +1666,7 @@ export async function updateKeyringIdentity(
   const withEpoch = stampAuthority(edited, target.roster_epoch)
   const next: KeyringFile = { ...withEpoch, roster_tag: await mintRosterTag(withEpoch, rosterKey) }
 
-  await writeKeyringFile(store, vault, options.userId, next)
+  await writeKeyringFile(store, vault, options.userId, next, basisOf(found))
 
   // #1097 — a narrowing must rotate what it takes away, or the file it
   // overwrote (legitimately minted, replayable by a store) keeps opening
@@ -2190,7 +2190,7 @@ export async function rotateKeys(
       roster_tag: await mintRosterTag(withEpoch, callerRosterKey),
     }
 
-    await writeKeyringFile(store, vault, userId, updatedKeyring)
+    await writeKeyringFile(store, vault, userId, updatedKeyring, basisOf(userFound))
   }
 
   return { needsRegrant, unverified, rewritten }
@@ -2285,7 +2285,7 @@ export async function changeSecret(
     roster_tag: await mintRosterTag(withEpoch, rosterKey),
   }
 
-  await writeKeyringFile(store, vault, keyring.userId, keyringFile)
+  await writeKeyringFile(store, vault, keyring.userId, keyringFile, basisOf(existingFound))
 
   return {
     userId: keyring.userId,
@@ -2939,7 +2939,46 @@ async function openInbox(file: KeyringFile, inboxKeyAes: EnclaveKey): Promise<Ma
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 /** Persist a keyring file to the store. */
+/**
+ * core#132 — persist, retrying a lost CAS.
+ *
+ * ⭐ SAFE TO RETRY, and the reason is specific rather than general: this
+ * function recomputes the ENTIRE file from the live `UnlockedKeyring` plus a
+ * fresh read of the stored one. It carries nothing from the attempt that lost,
+ * so a second attempt against the newer version produces exactly what a single
+ * attempt would have produced had it run second. That is not true of every
+ * keyring writer — `grant`/`updateUser` carry caller intent computed against a
+ * specific version — which is why the retry lives HERE and not in
+ * `writeKeyringFile`.
+ *
+ * ⛔ WHY IT IS NEEDED AT ALL, because the answer is not "concurrency in
+ * general": `getDEK` MINTS A DEK LAZILY ON A RECORD WRITE and persists the
+ * keyring (`keyring.ts:2795`). Two writes to two different collections
+ * therefore persist concurrently — an ordinary thing an app does, not a race a
+ * user provoked. `inFlight` dedupes per collection and so does not cover it.
+ *
+ * ⚠️ Under the previous blind `put` this was benign BY ACCIDENT: both writers
+ * share one in-memory `keyring.deks`, so the clobbering write still carried
+ * the other's DEK. It would NOT have been benign across processes. The retry
+ * makes the intra-process case correct on purpose rather than by luck.
+ */
 export async function persistKeyring(
+  store: NoydbStore,
+  vault: string,
+  keyring: UnlockedKeyring,
+): Promise<void> {
+  // Bounded: a live conflict that survives three re-reads is contention this
+  // function cannot resolve, and looping would hide it.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await persistKeyringOnce(store, vault, keyring)
+    } catch (err) {
+      if (attempt >= 3 || !(err instanceof ConflictError)) throw err
+    }
+  }
+}
+
+async function persistKeyringOnce(
   store: NoydbStore,
   vault: string,
   keyring: UnlockedKeyring,
@@ -3043,7 +3082,7 @@ export async function persistKeyring(
     ...(existingEcho !== undefined && { echo: existingEcho }),
   }
 
-  await writeKeyringFile(store, vault, keyring.userId, keyringFile)
+  await writeKeyringFile(store, vault, keyring.userId, keyringFile, basisOf(existingFound))
 }
 
 // ─── Export capability ──────────────────────────────────────
@@ -3219,11 +3258,38 @@ function resolvePermissions(role: Role, explicit?: Permissions): Permissions {
   return explicit ?? {}
 }
 
-async function writeKeyringFile(
+/**
+ * core#132 — what this write is based on.
+ *
+ * `{ on }` is the envelope the edit was computed from; the write then CASes
+ * against its `_v` and lands at `_v + 1`. `'create'` is a keyring that did not
+ * exist.
+ *
+ * ⭐ REQUIRED, not optional, and that is the point: keyring writes were a bare
+ * `store.put` with no `expectedVersion`, so two concurrent edits to one member
+ * were last-writer-wins, silently. Making the basis a required parameter means
+ * the COMPILER enumerates every call site — `NON_ROTATABLE_SLOTS`' own comment
+ * records two defects caused by enumerating callers with grep instead.
+ *
+ * ⛔ `'create'` CANNOT be made safe here, and the limit is in the store
+ * contract, not in this function. `put`'s `expectedVersion` only compares when
+ * a record EXISTS (`memory-store.ts:105`: `expectedVersion !== undefined &&
+ * existing && …`), so there is no way to say "write only if absent". Two
+ * concurrent creates of the same userId still clobber. Recorded on core#133;
+ * do not read a `'create'` basis as protected.
+ */
+export type KeyringWriteBasis = { readonly on: EncryptedEnvelope } | 'create'
+
+/** The basis for a write computed from a `readKeyringFile` result. */
+export const basisOf = (found: { readonly envelope: EncryptedEnvelope } | undefined): KeyringWriteBasis =>
+  found ? { on: found.envelope } : 'create'
+
+export async function writeKeyringFile(
   store: NoydbStore,
   vault: string,
   userId: string,
   keyringFile: KeyringFile,
+  basis: KeyringWriteBasis,
 ): Promise<void> {
   // #1097 — no keyring may be WRITTEN without a roster epoch.
   //
@@ -3240,9 +3306,14 @@ async function writeKeyringFile(
       'tag, so it is covered by rosterCanonical.',
     )
   }
+  // core#132 — the version LINE. Keyring envelopes were pinned at `version: 1`
+  // forever, so there was nothing for a CAS to compare. They now advance, which
+  // is safe for replication because the reserved mirror orders `_keyring` by
+  // `roster_epoch` and never by `_v` (`keyringSupersedes`, reserved-mirror.ts).
+  const base = basis === 'create' ? 0 : basis.on._v
   const envelope = buildRecordEnvelope(
-    { collection: '_keyring', id: userId, version: 1 },
+    { collection: '_keyring', id: userId, version: base + 1 },
     { iv: '', data: JSON.stringify(keyringFile) },
   )
-  await store.put(vault, '_keyring', userId, envelope)
+  await store.put(vault, '_keyring', userId, envelope, basis === 'create' ? undefined : base)
 }
