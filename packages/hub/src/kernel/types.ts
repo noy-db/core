@@ -725,17 +725,24 @@ export interface NoydbStore {
    * so against a missing id the `expectedVersion` is not a failed comparison
    * — it is no comparison at all, and the write lands.
    *
-   * That makes `expectedVersion: 0` an exact "must not exist" *as a side
-   * effect*: hub never stores a version below 1, so the first create is let
-   * through and every later one mismatches. ⛔ **Do not build on that.** A
-   * store doing native conditional CAS would read the same call as "exists
-   * AND `_v = 0`" and reject the first create instead — the opposite answer,
-   * on the only case that matters. `@noy-db/ports/to` asserts neither half
-   * (its three CAS cases all operate on a record that already exists), so
-   * across the 19 out-of-tree adapters the behaviour is currently a
-   * per-adapter accident rather than a contract. Tracked as core#134; the CAS
-   * in `with-party/team/keyring.ts` is bounded by it, which is why its create
-   * path passes no `expectedVersion` at all.
+   * That makes `expectedVersion: 0` an exact "must not exist": hub never stores
+   * a version below 1, so the first create is let through and every later one
+   * mismatches.
+   *
+   * ⭐ **Every record store in the family already agrees**, censused by reading
+   * source on 2026-09-24 — the twelve read-then-compare adapters, plus
+   * `to-aws-dynamo`, whose native condition is explicitly
+   * `#v = :expected OR attribute_not_exists(pk)`, plus `to-aws-s3`, which
+   * special-cases `expectedVersion === 0` BY NAME into a real precondition and
+   * throws `ConflictError('Concurrent create: …')`. `to-cloudflare-r2` and
+   * `to-supabase` inherit it by delegation.
+   *
+   * ⛔ **It is still not a contract, and that is the open question.**
+   * `@noy-db/ports/to` asserts none of it — its three CAS cases all operate on
+   * a record that already exists — so this convergence is held by nothing, and
+   * a third-party adapter owes it nothing. Tracked as core#134. hub's keyring
+   * create path passes no `expectedVersion` at all, and moving it is gated on
+   * that assertion landing, not on the adapters.
    */
   put(
     vault: string,

@@ -118,15 +118,27 @@ export function runStoreConformanceTests(
        *   - native conditional CAS (a `_v = :expected` condition expression):
        *     the condition fails on a missing item, so the write is rejected.
        *
-       * Both are defensible readings of the one-line contract. Adding a case
-       * here would not document that — it would DECIDE it, for 19 adapters,
-       * one of which may already ship the other behaviour to real users, and
-       * turn their green suite red on a version bump they did not ask for.
+       * Both are defensible readings of the one-line contract.
        *
-       * ⚠️ So the absence of a fourth case is load-bearing. Whoever wants the
-       * store contract to express "write only if absent" takes it to the
-       * family layer first — hub's own keyring CAS is bounded by this and
-       * passes no `expectedVersion` on create precisely because of it.
+       * ⭐ CENSUSED 2026-09-24, and the family has already CONVERGED on the
+       * first reading — every record store in `noy-db/to` lets the first
+       * create through: the twelve read-then-compare adapters; `to-aws-dynamo`,
+       * whose native condition reads `#v = :expected OR
+       * attribute_not_exists(pk)`; and `to-aws-s3`, which special-cases
+       * `expectedVersion === 0` BY NAME into a precondition and throws
+       * `ConflictError('Concurrent create: …')`. `to-cloudflare-r2` and
+       * `to-supabase` inherit it by delegation. So a fourth case asserting it
+       * would pass today rather than redden anyone.
+       *
+       * ⛔ It is still not core's to add. A case here binds every OUT-OF-TREE
+       * adapter too, and that is a store-contract change — the family layer
+       * decides it, per `../CLAUDE.md` rule 1. What core can say is that the
+       * cost estimate has changed: this is no longer "decide it for 19
+       * adapters", it is "hold a convergence 16 of them already have".
+       *
+       * ⚠️ Until it lands, the convergence is held by nothing and a
+       * third-party adapter owes it nothing — which is why hub's keyring CAS
+       * still passes no `expectedVersion` on create. core#134.
        */
     })
 

@@ -3306,12 +3306,23 @@ function resolvePermissions(role: Role, explicit?: Permissions): Permissions {
  * the COMPILER enumerates every call site — `NON_ROTATABLE_SLOTS`' own comment
  * records two defects caused by enumerating callers with grep instead.
  *
- * ⛔ `'create'` CANNOT be made safe here, and the limit is in the store
- * contract, not in this function. `put`'s `expectedVersion` only compares when
- * a record EXISTS (`memory-store.ts:105`: `expectedVersion !== undefined &&
- * existing && …`), so there is no way to say "write only if absent". Two
- * concurrent creates of the same userId still clobber. Recorded on core#133;
- * do not read a `'create'` basis as protected.
+ * ⛔ `'create'` is NOT protected, and the limit is in the store contract, not
+ * in this function: two concurrent creates of the same userId still clobber,
+ * because this path passes no `expectedVersion` at all. Do not read a
+ * `'create'` basis as protected.
+ *
+ * ⚠️ It is not that absence is inexpressible — core#134 measured that claim and
+ * it was wrong. Every version hub writes starts at 1, so on a store that
+ * compares only when the record is present, `expectedVersion: 0` lets the
+ * first create through and conflicts every later one: an exact "write only if
+ * absent", for free. Censused 2026-09-24, every record store in the family
+ * already behaves that way, `to-aws-s3` deliberately and by name.
+ *
+ * ⛔ What stops this call site adopting it is that NOTHING HOLDS that
+ * convergence: `@noy-db/ports/to` asserts none of it, so a third-party adapter
+ * owes it nothing and this would become a silent correctness dependency on
+ * behaviour no gate checks. Adopt it after the conformance case lands, not
+ * before. core#134 carries the decision.
  */
 export type KeyringWriteBasis = { readonly on: EncryptedEnvelope } | 'create'
 

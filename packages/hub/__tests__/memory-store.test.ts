@@ -45,14 +45,12 @@ describe('memoryStore', () => {
    * stores version 0. That is what makes 0 safe to overload.
    *
    * ⛔ DO NOT adopt `expectedVersion: 0` at hub's create sites on the strength
-   * of this test. It pins the READ-THEN-WRITE family (`memoryStore`,
-   * `to-file`, `to-browser-idb` all compare only when present). A store doing
-   * NATIVE conditional CAS would express the same call as "exists AND _v = 0"
-   * and reject the first create outright — the opposite answer, on the one
-   * case that matters. Nineteen `to-*` adapters live out of tree and
-   * `@noy-db/ports/to` asserts neither half, so which way it goes is
-   * currently a per-adapter accident. Pinning it is a store-contract change
-   * and belongs to the family layer, not to hub.
+   * of this test. Not because the adapters disagree — censused 2026-09-24 they
+   * do not, and `to-aws-s3` implements this exact sentinel by name — but
+   * because `@noy-db/ports/to` asserts none of it. Building on behaviour no
+   * gate checks is how a correctness property becomes a silent dependency on
+   * luck. The conformance case lands first; core#134 carries that decision to
+   * the family layer, since it binds out-of-tree adapters too.
    */
   it('CAS: expectedVersion 0 lets the FIRST create through and conflicts the SECOND (core#134)', async () => {
     const s = memoryStore()
