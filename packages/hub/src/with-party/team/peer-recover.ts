@@ -252,9 +252,13 @@ export async function recoverUser(
   // 7. Single atomic write — overwrites the existing envelope.
   //    Backend `put` is the canonical write primitive across every
   //    `to-*` store; no partial-failure window between revoke + grant.
+  // core#132 — CAS on the file this recovery was computed from (read at
+  // `found` above). A peer recovery races any concurrent admin edit to the
+  // same member, and losing that race used to be silent.
+  const base = found?.envelope._v ?? 0
   const envelope = buildRecordEnvelope(
-    { collection: '_keyring', id: options.userId, version: 1 },
+    { collection: '_keyring', id: options.userId, version: base + 1 },
     { iv: '', data: JSON.stringify(next) },
   )
-  await store.put(vault, '_keyring', options.userId, envelope)
+  await store.put(vault, '_keyring', options.userId, envelope, found ? base : undefined)
 }

@@ -305,6 +305,11 @@ export async function loadVault(
 
   // 2. Restore keyrings.
   for (const [userId, keyringFile] of Object.entries(backup.keyrings)) {
+    // ⛔ core#132 — NO CAS HERE, deliberately. A pod restore is state
+    // REPLACEMENT (core#111 made the internal collections wholesale too): the
+    // pod is authoritative and there is no "version this was based on" to
+    // compare against. CASing a restore would make it fail precisely when the
+    // store has drifted, which is the case it exists to fix.
     const envelope = buildRecordEnvelope({ collection: '_keyring', id: userId, version: 1 },
       { iv: '', data: JSON.stringify(keyringFile) })
     await ctx.adapter.put(ctx.vault, '_keyring', userId, envelope)

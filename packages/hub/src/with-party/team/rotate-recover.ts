@@ -19,7 +19,6 @@
 import type { NoydbStore, KeyringFile, KeyringEchoBlock } from '../../kernel/types.js'
 import { NOYDB_KEYRING_VERSION } from '../../kernel/types.js'
 import {
-  buildRecordEnvelope,
   deriveKey,
   deriveEchoKey,
   generateSalt,
@@ -48,7 +47,7 @@ import {
   type EchoSecretPolicy,
 } from '../../kernel/validation.js'
 import type { UnlockedKeyring } from './keyring.js'
-import { mintKeyringCanary, deriveKekForKeyring, readKeyringFile } from './keyring.js'
+import { mintKeyringCanary, deriveKekForKeyring, readKeyringFile, writeKeyringFile, basisOf } from './keyring.js'
 import { assertRosterAuthenticated, mintRosterTag } from './roster-tag.js'
 import { stampAuthority } from './roster-tag.js'
 import { ROSTER_KEY_ID } from '../../kernel/constants.js'
@@ -411,7 +410,7 @@ export async function rotateSecret(
     roster_tag: await mintRosterTag(withEpoch, requireRecoveredRosterKey(deks)),
   }
 
-  await writeKeyringFile(store, vault, userId, next)
+  await writeKeyringFile(store, vault, userId, next, basisOf(found))
 
   return {
     userId: file.user_id,
@@ -745,7 +744,7 @@ async function recoverViaPaperCode(
   //
   // Burning first picks (1) over (2).
   await burnPaperRecoveryEntry(store, vault, recovered.entry.codeId)
-  await writeKeyringFile(store, vault, userId, next)
+  await writeKeyringFile(store, vault, userId, next, basisOf(found))
 
   return {
     userId: file.user_id,
@@ -914,7 +913,7 @@ async function recoverViaShamir(
 
   // No burn: Shamir entries persist across recoveries. Explicit
   // rotateRecovery is the refresh ceremony.
-  await writeKeyringFile(store, vault, userId, next)
+  await writeKeyringFile(store, vault, userId, next, basisOf(found))
 
   return {
     userId: file.user_id,
@@ -930,33 +929,9 @@ async function recoverViaShamir(
   }
 }
 
-async function writeKeyringFile(
-  store: NoydbStore,
-  vault: string,
-  userId: string,
-  file: KeyringFile,
-): Promise<void> {
-  // #1097 — no keyring may be WRITTEN without a roster epoch.
-  //
-  // Asserted on the OUTPUT rather than at each mint site. The epoch has to be
-  // set BEFORE `mintRosterTag` so it lands inside the authenticated canonical,
-  // and thirteen places build an authority object. Enumerating them by grep is
-  // how one gets missed — and a missed site writes a file the replay check
-  // cannot anchor: a field that ships empty and stays empty, inert AND
-  // indistinguishable from "nothing to report".
-  if (file.roster_epoch === undefined) {
-    throw new Error(
-      `writeKeyringFile: refusing to write a keyring for "${userId}" with no roster_epoch (#1097). ` +
-      'Stamp it with nextRosterEpoch(previous) onto the authority object BEFORE minting the roster ' +
-      'tag, so it is covered by rosterCanonical.',
-    )
-  }
-  const envelope = buildRecordEnvelope(
-    { collection: '_keyring', id: userId, version: 1 },
-    { iv: '', data: JSON.stringify(file) },
-  )
-  await store.put(vault, '_keyring', userId, envelope)
-}
+// core#132 — the local copy of `writeKeyringFile` was DELETED here. It was
+// byte-identical to `keyring.ts`'s, comment included, so hardening one left the
+// other unprotected under a name a reader would assume was shared. Imported now.
 
 /**
  * The roster key out of a RECOVERED DEK map. Recovery rebuilds the keyring file

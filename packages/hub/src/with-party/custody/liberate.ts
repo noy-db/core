@@ -145,7 +145,10 @@ export async function liberateVault(
   // authenticated canonical and a store can neither edit nor strip it.
   const withEpoch = stampAuthority(merged, keyringFile.roster_epoch)
   const mergedFile: KeyringFile = { ...withEpoch, roster_tag: await mintRosterTag(withEpoch, rosterKey) }
-  await adapter.put(vaultName, '_keyring', opts.newOwnerId, { ...env, _data: JSON.stringify(mergedFile) })
+  // core#132 — CAS on the envelope this merge was computed from. Spreading
+  // `...env` kept `_v` STATIC, so repeated merges never advanced a version and
+  // two concurrent liberations would clobber silently.
+  await adapter.put(vaultName, '_keyring', opts.newOwnerId, { ...env, _v: env._v + 1, _data: JSON.stringify(mergedFile) }, env._v)
 
   // 5. Lifecycle ledger audit (no-op if the history strategy is absent).
   await vault._getLedgerOrNull()?.append({
