@@ -717,7 +717,26 @@ export interface NoydbStore {
   /** Get a single record. Returns null if not found. */
   get(vault: string, collection: string, id: string): Promise<EncryptedEnvelope | null>
 
-  /** Put a record. Throws ConflictError if expectedVersion doesn't match. */
+  /**
+   * Put a record. Throws ConflictError if `expectedVersion` doesn't match.
+   *
+   * ⚠️ **In this tree the comparison happens only when the record EXISTS**
+   * (`memory-store.ts`, `to-file`, `to-browser-idb` all read-then-compare),
+   * so against a missing id the `expectedVersion` is not a failed comparison
+   * — it is no comparison at all, and the write lands.
+   *
+   * That makes `expectedVersion: 0` an exact "must not exist" *as a side
+   * effect*: hub never stores a version below 1, so the first create is let
+   * through and every later one mismatches. ⛔ **Do not build on that.** A
+   * store doing native conditional CAS would read the same call as "exists
+   * AND `_v = 0`" and reject the first create instead — the opposite answer,
+   * on the only case that matters. `@noy-db/ports/to` asserts neither half
+   * (its three CAS cases all operate on a record that already exists), so
+   * across the 19 out-of-tree adapters the behaviour is currently a
+   * per-adapter accident rather than a contract. Tracked as core#134; the CAS
+   * in `with-party/team/keyring.ts` is bounded by it, which is why its create
+   * path passes no `expectedVersion` at all.
+   */
   put(
     vault: string,
     collection: string,

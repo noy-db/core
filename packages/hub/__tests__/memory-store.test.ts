@@ -31,6 +31,43 @@ describe('memoryStore', () => {
     expect((await s.get('v', 'c', '1'))?._v).toBe(6)
   })
 
+  /**
+   * core#134 — what `expectedVersion` means against an id that does not exist
+   * yet. The reference store compares only when the record is present, so the
+   * FIRST create is unguarded; but every version hub writes starts at 1, so
+   * the SECOND create mismatches and throws. `expectedVersion: 0` is therefore
+   * already an exact "must not exist" on this store — the contract needs no
+   * new sentinel and no seventh method, only an assertion.
+   *
+   * ⭐ Measured, not reasoned: `memoryStore.put` was instrumented to report any
+   * stored envelope with `_v < 1` and the whole hub suite run (7,054 tests).
+   * The only hits were this file's own `env(0)` fixtures — no hub code path
+   * stores version 0. That is what makes 0 safe to overload.
+   *
+   * ⛔ DO NOT adopt `expectedVersion: 0` at hub's create sites on the strength
+   * of this test. It pins the READ-THEN-WRITE family (`memoryStore`,
+   * `to-file`, `to-browser-idb` all compare only when present). A store doing
+   * NATIVE conditional CAS would express the same call as "exists AND _v = 0"
+   * and reject the first create outright — the opposite answer, on the one
+   * case that matters. Nineteen `to-*` adapters live out of tree and
+   * `@noy-db/ports/to` asserts neither half, so which way it goes is
+   * currently a per-adapter accident. Pinning it is a store-contract change
+   * and belongs to the family layer, not to hub.
+   */
+  it('CAS: expectedVersion 0 lets the FIRST create through and conflicts the SECOND (core#134)', async () => {
+    const s = memoryStore()
+
+    // Absent id: the comparison does not happen at all, so the write lands.
+    await s.put('v', 'c', 'fresh', env(1), 0)
+    expect((await s.get('v', 'c', 'fresh'))?._v).toBe(1)
+
+    // A second creator of the same id now mismatches, because the record it
+    // believed was absent is present at _v 1. This is the create race being
+    // caught — the thing core#134 was filed believing impossible.
+    await expect(s.put('v', 'c', 'fresh', env(1), 0)).rejects.toBeInstanceOf(ConflictError)
+    expect((await s.get('v', 'c', 'fresh'))?._data).toBe('d1')
+  })
+
   it('loadAll returns a snapshot excluding _system collections; saveAll replaces user collections', async () => {
     const s = memoryStore()
     await s.put('v', 'items', '1', env(0))
