@@ -103,6 +103,31 @@ export function runStoreConformanceTests(
           adapter.put('comp1', 'coll1', 'id1', makeEnvelope(6)),
         ).resolves.not.toThrow()
       })
+
+      /**
+       * ⛔ THE CASE THIS KIT DELIBERATELY DOES NOT ASSERT, AND WHY IT IS NOT AN
+       * OVERSIGHT — core#134.
+       *
+       * All three cases above operate on a record that ALREADY EXISTS. What
+       * `put(..., expectedVersion)` does against an id that has never been
+       * written is asserted nowhere, and the two natural implementations give
+       * OPPOSITE answers:
+       *
+       *   - read-then-compare (memory, to-file, to-browser-idb): no record to
+       *     compare, so the write lands.
+       *   - native conditional CAS (a `_v = :expected` condition expression):
+       *     the condition fails on a missing item, so the write is rejected.
+       *
+       * Both are defensible readings of the one-line contract. Adding a case
+       * here would not document that — it would DECIDE it, for 19 adapters,
+       * one of which may already ship the other behaviour to real users, and
+       * turn their green suite red on a version bump they did not ask for.
+       *
+       * ⚠️ So the absence of a fourth case is load-bearing. Whoever wants the
+       * store contract to express "write only if absent" takes it to the
+       * family layer first — hub's own keyring CAS is bounded by this and
+       * passes no `expectedVersion` on create precisely because of it.
+       */
     })
 
     // ─── Bulk Operations ───────────────────────────────────────────
