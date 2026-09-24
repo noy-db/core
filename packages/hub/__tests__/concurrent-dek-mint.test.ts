@@ -7,6 +7,17 @@
  * `TamperedError` on both, because each session encrypted under the key it
  * minted and only one of those keys survived in the keyring.
  *
+ * ⭐⭐ THE SYMPTOM IS THE TAMPER ALARM FIRING ON THE USER'S OWN DATA, and that
+ * is the severity, not the lost row. This project's central claim is that a
+ * store cannot alter what it serves without being caught; `daemon#1` already
+ * records a false positive on that alarm as "the failure that teaches users to
+ * ignore the alarm". A reader who meets `TamperedError` from their own
+ * uncorrupted records learns to discount it — and the next one is real.
+ *
+ * ⚠️ Reproduced independently against the PUBLISHED `@noy-db/hub@0.8.0`
+ * tarball from public npm, so this was live on `@latest`, not a defect of an
+ * unreleased tree.
+ *
  * ⭐ It cannot be fixed without the CAS. Read-after-write was tried first and
  * fails: a loser can adopt the winner's key and then a LATER persist clobbers
  * it again, with the adopter none the wiser. One DEK per collection means
