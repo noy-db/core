@@ -33,7 +33,7 @@ import {
   recipientWrap,
   recipientUnwrap,
 } from '../../capsule/index.js'
-import { ConflictError, NoAccessError, PermissionDeniedError, PrivilegeEscalationError, MemberInboxMissingError, KeyringExpiredError, KeyringCorruptError, KeyringTamperedError, TamperedError, InvalidKeyError, ValidationError, DirectoryDisabledError, EchoCeremonyRequiredError } from '../../kernel/errors.js'
+import { isConflictError, NoAccessError, PermissionDeniedError, PrivilegeEscalationError, MemberInboxMissingError, KeyringExpiredError, KeyringCorruptError, KeyringTamperedError, TamperedError, InvalidKeyError, ValidationError, DirectoryDisabledError, EchoCeremonyRequiredError } from '../../kernel/errors.js'
 import type { KeyringTamperedReason } from '../../kernel/errors.js'
 import { mintRosterTag, assertRosterAuthenticated, assertRosterTagValid } from './roster-tag.js'
 import { readDirectoryConfig } from '../directory/storage.js'
@@ -2792,8 +2792,61 @@ export async function ensureCollectionDEK(
       }
       const dek = await generateDEK()
       keyring.deks.set(collectionName, dek)
-      await persistKeyring(store, vault, keyring)
-      return dek
+      // ⛔⛔ core#132 — THIS RESOLVES A DATA-LOSS RACE. Do not simplify it back
+      // to a bare persist.
+      //
+      // Two SESSIONS of the same user writing to a collection that does not
+      // exist yet both reach here and each mints a DIFFERENT DEK.
+      // `persistKeyring` writes each session's own `deks` map wholesale, so
+      // without a CAS the second write drops the first's key — and each
+      // session then encrypts its record under the DEK it minted, so the
+      // loser's records are unreadable to every later session. Measured on
+      // `main` before this change: two concurrent `put`s to a new collection,
+      // both rows in the store, ONE wrapped DEK persisted, each live session
+      // reading its own row, and a COLD session reading NEITHER
+      // (`TamperedError` on both). `inFlight` above dedupes within one session
+      // and cannot see another.
+      //
+      // ⭐ The CAS is what makes this fixable: a losing writer now LEARNS it
+      // lost, and adopts the winner's key. That is only safe here because
+      // NOTHING HAS BEEN ENCRYPTED YET — the caller encrypts with what this
+      // returns, so the loser writes a readable record under the shared key.
+      // Ordering, not locking: mint → persist → (on conflict) adopt → encrypt.
+      //
+      // ⛔ And it is why `persistKeyring` must NOT retry. Retrying re-persists
+      // the loser's map over the winner's, which is the clobber this exists to
+      // prevent, with a green suite on top.
+      // ⚠️ A LOOP, not a single catch: a CAS can be lost to a write about a
+      // DIFFERENT field (another collection's mint, an authenticator edit),
+      // and then there is no winner to adopt — our key is still the only
+      // candidate for THIS collection and has to be re-offered against the
+      // version that displaced us. `persistKeyring` re-reads on every call, so
+      // each pass is computed fresh.
+      //
+      // ⛔ This is NOT the retry that was removed from `persistKeyring`. That
+      // one re-persisted a loser's whole map unconditionally, including over a
+      // winner's key. This one adopts the winner whenever there is one, and
+      // only re-offers when the collection is still unclaimed.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await persistKeyring(store, vault, keyring)
+          return keyring.deks.get(collectionName) ?? dek
+        } catch (err) {
+          // ⚠️ `isConflictError`, NOT `instanceof`. The predicate exists
+          // because `instanceof` does not hold here: a store is a CONSUMER
+          // package resolving its own copy of hub, so the ConflictError a
+          // `to-*` adapter throws is a different class object with the same
+          // name. An `instanceof` check compiles, type-narrows, and silently
+          // rethrows every real conflict — which is exactly what it did in the
+          // first cut of this loop, making the fix look inert.
+          if (!isConflictError(err)) throw err
+          const winner = await reloadPersistedDEK(store, vault, keyring, collectionName)
+          if (winner) return winner
+          // Bounded: contention that survives this many fresh reads is not
+          // something another pass resolves, and looping would hide it.
+          if (attempt >= 5) throw err
+        }
+      }
     })()
     inFlight.set(collectionName, promise)
     try {
@@ -2940,45 +2993,22 @@ async function openInbox(file: KeyringFile, inboxKeyAes: EnclaveKey): Promise<Ma
 
 /** Persist a keyring file to the store. */
 /**
- * core#132 — persist, retrying a lost CAS.
+ * ⛔⛔ core#132 — DO NOT ADD A RETRY HERE. An earlier cut of this change did,
+ * and it was wrong in a way that looked like a fix.
  *
- * ⭐ SAFE TO RETRY, and the reason is specific rather than general: this
- * function recomputes the ENTIRE file from the live `UnlockedKeyring` plus a
- * fresh read of the stored one. It carries nothing from the attempt that lost,
- * so a second attempt against the newer version produces exactly what a single
- * attempt would have produced had it run second. That is not true of every
- * keyring writer — `grant`/`updateUser` carry caller intent computed against a
- * specific version — which is why the retry lives HERE and not in
- * `writeKeyringFile`.
+ * This function writes the caller's in-memory `keyring.deks` WHOLESALE. If a
+ * CAS fails, the write that lost was based on a stale version — retrying it
+ * re-persists that same map over the winner's, which is exactly the clobber
+ * the CAS just caught, laundered into a success. The suite went green and the
+ * data loss stayed.
  *
- * ⛔ WHY IT IS NEEDED AT ALL, because the answer is not "concurrency in
- * general": `getDEK` MINTS A DEK LAZILY ON A RECORD WRITE and persists the
- * keyring (`keyring.ts:2795`). Two writes to two different collections
- * therefore persist concurrently — an ordinary thing an app does, not a race a
- * user provoked. `inFlight` dedupes per collection and so does not cover it.
- *
- * ⚠️ Under the previous blind `put` this was benign BY ACCIDENT: both writers
- * share one in-memory `keyring.deks`, so the clobbering write still carried
- * the other's DEK. It would NOT have been benign across processes. The retry
- * makes the intra-process case correct on purpose rather than by luck.
+ * ⭐ The resolution belongs where the intent is, not where the write is. The
+ * only caller that races in practice is the lazy DEK mint in
+ * `ensureCollectionDEK`, and it can resolve correctly because it has not
+ * encrypted anything yet: on conflict it adopts the winner's key and returns
+ * that. See the comment there.
  */
 export async function persistKeyring(
-  store: NoydbStore,
-  vault: string,
-  keyring: UnlockedKeyring,
-): Promise<void> {
-  // Bounded: a live conflict that survives three re-reads is contention this
-  // function cannot resolve, and looping would hide it.
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await persistKeyringOnce(store, vault, keyring)
-    } catch (err) {
-      if (attempt >= 3 || !(err instanceof ConflictError)) throw err
-    }
-  }
-}
-
-async function persistKeyringOnce(
   store: NoydbStore,
   vault: string,
   keyring: UnlockedKeyring,
