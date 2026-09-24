@@ -3315,12 +3315,14 @@ function resolvePermissions(role: Role, explicit?: Permissions): Permissions {
  * it was wrong. Every version hub writes starts at 1, so on a store that
  * compares only when the record is present, `expectedVersion: 0` lets the
  * first create through and conflicts every later one: an exact "write only if
- * absent", for free. What stops this call site adopting it is that a store
- * doing NATIVE conditional CAS reads the same argument as "exists AND _v = 0"
- * and rejects the first create instead, and `@noy-db/ports/to` asserts
- * neither answer — so across the out-of-tree adapters it is currently a
- * per-adapter accident. Pinning it is a store-contract change; core#134
- * carries it.
+ * absent", for free. Censused 2026-09-24, every record store in the family
+ * already behaves that way, `to-aws-s3` deliberately and by name.
+ *
+ * ⛔ What stops this call site adopting it is that NOTHING HOLDS that
+ * convergence: `@noy-db/ports/to` asserts none of it, so a third-party adapter
+ * owes it nothing and this would become a silent correctness dependency on
+ * behaviour no gate checks. Adopt it after the conformance case lands, not
+ * before. core#134 carries the decision.
  */
 export type KeyringWriteBasis = { readonly on: EncryptedEnvelope } | 'create'
 
