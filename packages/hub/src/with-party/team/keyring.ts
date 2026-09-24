@@ -492,6 +492,18 @@ export async function loadKeyring(
   // replaces a key the member has). Deliberately AFTER roster verification:
   // `inbox.slots` and `inbox_key.pub` are tag-bound, so a box arriving here
   // was sealed by a roster-key holder to the pair the grantor minted.
+  // ⛔⛔ core#130 — THIS DRAIN NEEDS NO KEK, AND THAT IS WHY ITS CALLER MUST.
+  // It opens boxes with `_inbox_key`, an ordinary DEK-map entry. The only
+  // reason a stale tier-2 wrap-DEKs blob cannot reach it is that the single
+  // door — `loadKeyring` — refuses without a `kek` or a `secret` (see the
+  // throw above). `_inbox_key` is in NON_ROTATABLE_SLOTS, so a captured copy
+  // never expires; a rotation delivers its freshly minted DEKs THROUGH here
+  // (core#100). A drain primitive taking only a DEK map would therefore let a
+  // credential that was HIDDEN rather than revoked (#1445) follow a rotation
+  // and recover the new keys — rotation would re-supply the stale credential
+  // instead of cutting it off. family#42 proposed exactly that and was
+  // withdrawn. ⭐ The absence of such a primitive IS the safety property, and
+  // `__tests__/inbox-drain-is-kek-gated.test.ts` is what keeps it.
   let drained = false
   const inboxKeyAes = deks.get(INBOX_KEY_ID)
   if (keyringFile.inbox !== undefined && keyringFile.inbox.length > 0 && inboxKeyAes !== undefined) {
