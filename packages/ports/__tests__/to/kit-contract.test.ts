@@ -14,10 +14,18 @@
  * `.suite.ts`, invisible to a run that collects only `.test.ts`, and are
  * executed with their own config.
  *
- * ⭐ EACH CONTROL ASSERTS **ONE** FAILING CASE, not just a red run. A fixture
- * broken in one way that reddens two cases would mean some other assertion is
+ * ⭐ EACH CONTROL ASSERTS AN EXACT FAILING-CASE COUNT, not just a red run. A
+ * fixture reddening more cases than expected means some other assertion is
  * also reacting, and then a green run of the reference says less than it
  * appears to. The count is the attribution.
+ *
+ * ⚠️ The count is per fixture and is NOT always one — it was, until core#134
+ * added a second `expectedVersion` case. A store that ignores `expectedVersion`
+ * is broken in exactly one way and now legitimately reddens both, which is the
+ * kit working. ⛔ So do not "fix" a count of 2 by loosening the match to
+ * `/failed/`: an exact number is the whole mechanism. Raise the number in the
+ * same commit as the case that raised it, or find out why an unrelated
+ * assertion is reacting.
  */
 import { describe, it, expect } from 'vitest'
 import { execFile } from 'node:child_process'
@@ -74,19 +82,22 @@ function plain(s: string): string {
   return s.replace(/\u001B\[[0-9;]*m/g, '')
 }
 
-/** Assert the kit refused this fixture, and refused it in exactly one case. */
-async function expectRefused(suite: string, because: RegExp): Promise<void> {
+/** Assert the kit refused this fixture, in exactly `cases` cases. */
+async function expectRefused(suite: string, because: RegExp, cases = 1): Promise<void> {
   const { code, out } = await runSuite(suite)
   expect(code, `the kit PASSED a store it must refuse:\n${out}`).not.toBe(0)
   expect(out).toMatch(because)
-  expect(out, `more than one case reacted — the control no longer attributes:\n${out}`).toMatch(
-    /Tests {2}1 failed \|/,
+  expect(out, `expected exactly ${cases} failing case(s) — the control no longer attributes:\n${out}`).toMatch(
+    new RegExp(`Tests {2}${cases} failed \\|`),
   )
 }
 
 describe('the adapter conformance kit, run against stores broken in one way each', () => {
+  // TWO cases, both of them `expectedVersion` assertions: the wrong-version
+  // case above and the absent-id create race added by core#134. One defect,
+  // two detectors — the attribution still holds, it is just no longer 1:1.
   it('⛔ FAILS a store that accepts any expectedVersion', async () => {
-    await expectRefused('broken-ignores-expected-version', /put with wrong expectedVersion throws ConflictError/)
+    await expectRefused('broken-ignores-expected-version', /put with wrong expectedVersion throws ConflictError/, 2)
   }, 120_000)
 
   it('⛔ FAILS a store that strips the _del delete marker (#589)', async () => {

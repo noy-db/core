@@ -105,41 +105,55 @@ export function runStoreConformanceTests(
       })
 
       /**
-       * ⛔ THE CASE THIS KIT DELIBERATELY DOES NOT ASSERT, AND WHY IT IS NOT AN
-       * OVERSIGHT — core#134.
+       * The absent case — core#134, and the reason it is worth a case of its
+       * own rather than a line in the doc.
        *
-       * All three cases above operate on a record that ALREADY EXISTS. What
-       * `put(..., expectedVersion)` does against an id that has never been
-       * written is asserted nowhere, and the two natural implementations give
-       * OPPOSITE answers:
+       * The three cases above all operate on a record that ALREADY EXISTS, so
+       * until now the kit said nothing about `put(..., expectedVersion)`
+       * against an id that was never written. The one-line contract ("throws
+       * if expectedVersion doesn't match") reads unconditional, and two
+       * natural implementations take it OPPOSITE ways:
        *
-       *   - read-then-compare (memory, to-file, to-browser-idb): no record to
-       *     compare, so the write lands.
-       *   - native conditional CAS (a `_v = :expected` condition expression):
-       *     the condition fails on a missing item, so the write is rejected.
+       *   - read-then-compare — nothing to compare against, so the write lands;
+       *   - native conditional CAS — a `_v = :expected` condition fails on a
+       *     missing item, so the write is rejected.
        *
-       * Both are defensible readings of the one-line contract.
+       * ⭐ CENSUSED 2026-09-24: the family has converged on the first, and this
+       * case passed on every adapter at the time it was added. The twelve
+       * read-then-compare stores let the first create through; `to-aws-dynamo`,
+       * the one NATIVE conditional-CAS store, writes `#v = :expected OR
+       * attribute_not_exists(pk)` and ORs absence in deliberately; `to-aws-s3`
+       * goes further and special-cases `expectedVersion === 0` BY NAME into a
+       * precondition, throwing `ConflictError('Concurrent create: …')`.
+       * `to-cloudflare-r2` and `to-supabase` inherit by delegation.
        *
-       * ⭐ CENSUSED 2026-09-24, and the family has already CONVERGED on the
-       * first reading — every record store in `noy-db/to` lets the first
-       * create through: the twelve read-then-compare adapters; `to-aws-dynamo`,
-       * whose native condition reads `#v = :expected OR
-       * attribute_not_exists(pk)`; and `to-aws-s3`, which special-cases
-       * `expectedVersion === 0` BY NAME into a precondition and throws
-       * `ConflictError('Concurrent create: …')`. `to-cloudflare-r2` and
-       * `to-supabase` inherit it by delegation. So a fourth case asserting it
-       * would pass today rather than redden anyone.
+       * ⚠️ So this case is not a new requirement — it HOLDS an agreement that
+       * was real and unasserted, which is the only state in which an agreement
+       * can be lost without anyone noticing. A third-party adapter owed it
+       * nothing before; now it does.
        *
-       * ⛔ It is still not core's to add. A case here binds every OUT-OF-TREE
-       * adapter too, and that is a store-contract change — the family layer
-       * decides it, per `../CLAUDE.md` rule 1. What core can say is that the
-       * cost estimate has changed: this is no longer "decide it for 19
-       * adapters", it is "hold a convergence 16 of them already have".
+       * ⭐ The consequence worth knowing: because nothing hub writes starts
+       * below `_v: 1`, this makes `expectedVersion: 0` an exact "write only if
+       * absent" WITHOUT a sentinel in the signature or a seventh method on the
+       * six-method contract. #134 costed both; neither is needed.
        *
-       * ⚠️ Until it lands, the convergence is held by nothing and a
-       * third-party adapter owes it nothing — which is why hub's keyring CAS
-       * still passes no `expectedVersion` on create. core#134.
+       * ⛔ Adapter authors: do not implement this by throwing on absence. The
+       * assertion is that the first create SUCCEEDS. If your backend's
+       * conditional write rejects a missing item, OR in an existence check the
+       * way `to-aws-dynamo` does.
        */
+      it('put with expectedVersion against an ABSENT id upserts, and the next create conflicts', async () => {
+        // No record, so no comparison — the create lands.
+        await adapter.put('comp1', 'coll1', 'absent-1', makeEnvelope(1), 0)
+        expect((await adapter.get('comp1', 'coll1', 'absent-1'))?._v).toBe(1)
+
+        // A second creator of the same id now mismatches, because what it
+        // believed absent is present at _v 1. This is the create race being
+        // caught, and it is what makes 0 usable as "must not exist".
+        await expect(
+          adapter.put('comp1', 'coll1', 'absent-1', makeEnvelope(1), 0),
+        ).rejects.toThrow(ConflictError)
+      })
     })
 
     // ─── Bulk Operations ───────────────────────────────────────────
