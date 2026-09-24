@@ -217,6 +217,32 @@ describe('presence (v0.9)', () => {
       expect(clearIntervalSpy).toHaveBeenCalled()
       clearIntervalSpy.mockRestore()
     })
+
+    // core#139 — `primary` (the record-sync engine) searches the array for the
+    // first `sync-peer`; presence used to take `targets[0]` unconditionally, so
+    // an array whose first entry is a push-only backup published presence to the
+    // one target least likely to serve it back. Both selectors are role-aware now.
+    it('publishes presence to the sync-peer, not to a backup that happens to be first', async () => {
+      const backup = inlineMemory()
+      const peer = inlineMemory()
+      const db = await createNoydb({
+        store: inlineMemory(),
+        sync: [
+          { store: backup, role: 'backup' },
+          { store: peer, role: 'sync-peer' },
+        ],
+        user: 'u', syncStrategy: withSync(), encrypt: false,
+      })
+      const comp = await db.openVault(COMP)
+      const handle = comp.collection('invoices').presence<CursorPayload>()
+
+      await handle.update({ path: 'invoices/inv-1', action: 'viewing' })
+
+      expect(await peer.list(COMP, '_presence_invoices')).toContain('u')
+      expect(await backup.list(COMP, '_presence_invoices')).not.toContain('u')
+
+      handle.stop()
+    })
   })
 
   describe('encryption', () => {
@@ -243,6 +269,7 @@ describe('presence (v0.9)', () => {
 
       handle.stop()
     })
+
   })
 
   describe('encrypted storage-poll fallback — identity confidentiality (#963)', () => {

@@ -593,9 +593,12 @@ export class Noydb {
     // Set up sync engine(s) — handles bare NoydbStore, SyncTarget, or SyncTarget[]
     let syncEngine: SyncEngine | undefined
     const targets = normalizeSyncTargets(this.options.sync)
+    // Primary target is the first sync-peer (or first target if none). Read
+    // outside the block too — presence binds to the same choice (core#139).
+    const primaryTarget = targets.find(t => t.role === 'sync-peer') ?? targets[0]
+    const primaryStore = primaryTarget?.store
     if (targets.length > 0) {
-      // Primary sync engine is the first sync-peer (or first target if none)
-      const primary = targets.find(t => t.role === 'sync-peer') ?? targets[0]!
+      const primary = primaryTarget!
       // #897 — a policy is always RESOLVED (falling back to the store preset), but
       // automation only starts when one was DECLARED. `push: 'on-change'` fires an
       // unawaited push on every write; switching that on for anyone who merely
@@ -662,7 +665,12 @@ export class Noydb {
         m.set(resolverName, resolver)
         this._forEachSyncEngine(name, e => e.registerConflictResolver(resolverName, resolver))
       },
-      syncAdapter: targets.length > 0 ? targets[0]!.store : undefined,
+      // core#139 — the SAME selector the record-sync engine uses, not `targets[0]`.
+      // Presence is published to this store and polled back from it, so on
+      // `[{backup}, {sync-peer}]` the positional read sent presence to a
+      // push-only archive target — quietly, since a presence write that nobody
+      // reads back degrades instead of throwing.
+      syncAdapter: primaryStore,
       getPurgeableTargets: () =>
         targets
           .filter((t) => t.role === 'backup' || t.role === 'archive')
