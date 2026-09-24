@@ -11,7 +11,7 @@
  * 1. **A create cannot be protected.** `put`'s `expectedVersion` only compares
  *    when the record EXISTS (`memory-store.ts:105`), so there is no way to say
  *    "write only if absent". Two concurrent grants of the same NEW userId still
- *    clobber. That is a store-contract limit, filed as core#133.
+ *    clobber. That is a store-contract limit, filed as core#134.
  * 2. **Mixed fleets get no protection.** An older hub writes at `_v: 1` with no
  *    `expectedVersion`, so it clobbers a newer hub's CAS and resets the line.
  *    The guarantee is real only once every writer is a new hub — which is why
@@ -73,7 +73,7 @@ describe('core#132 — keyring writes CAS on the version they were computed from
     // two 'create' writes to a userId that does not exist: both succeed
     await writeKeyringFile(store, 'v1', 'newbie', src, 'create')
     await expect(writeKeyringFile(store, 'v1', 'newbie', src, 'create')).resolves.toBeUndefined()
-    // pinned so core#133 landing is visible here rather than as a surprise
+    // pinned so core#134 landing is visible here rather than as a surprise
     expect((await readKeyringFile(store, 'v1', 'newbie'))!.envelope._v).toBe(1)
   })
 
