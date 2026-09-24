@@ -8,10 +8,15 @@
  *
  * ⛔ TWO LIMITS THAT SHIP WITH IT, both real and neither fixed here:
  *
- * 1. **A create cannot be protected.** `put`'s `expectedVersion` only compares
- *    when the record EXISTS (`memory-store.ts:105`), so there is no way to say
- *    "write only if absent". Two concurrent grants of the same NEW userId still
- *    clobber. That is a store-contract limit, filed as core#134.
+ * 1. **A create is not protected.** This path passes no `expectedVersion` at
+ *    all, so two concurrent grants of the same NEW userId still clobber.
+ *    ⚠️ The original wording here said absence was INEXPRESSIBLE; core#134
+ *    measured that and it was wrong — `expectedVersion: 0` already works as
+ *    "write only if absent" on every store in this tree, because nothing hub
+ *    writes starts below version 1. What blocks adopting it is that a native
+ *    conditional-CAS store would reject the FIRST create instead, and
+ *    `@noy-db/ports/to` asserts neither answer. See `memory-store.test.ts`,
+ *    which pins both halves.
  * 2. **Mixed fleets get no protection.** An older hub writes at `_v: 1` with no
  *    `expectedVersion`, so it clobbers a newer hub's CAS and resets the line.
  *    The guarantee is real only once every writer is a new hub — which is why
