@@ -2807,6 +2807,11 @@ export async function ensureCollectionDEK(
       // (`TamperedError` on both). `inFlight` above dedupes within one session
       // and cannot see another.
       //
+      // ⭐⭐ And the symptom is the TAMPER ALARM FIRING ON THE USER'S OWN
+      // DATA, which is the real severity: a false positive on the one alarm
+      // this project asks people to trust teaches them to ignore it, and the
+      // next one is real.
+      //
       // ⭐ The CAS is what makes this fixable: a losing writer now LEARNS it
       // lost, and adopts the winner's key. That is only safe here because
       // NOTHING HAS BEEN ENCRYPTED YET — the caller encrypts with what this
