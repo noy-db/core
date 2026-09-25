@@ -6,21 +6,20 @@
  * to compare even if a caller had wanted to. Two concurrent edits to one
  * member's keyring were last-writer-wins, silently.
  *
- * ⛔ TWO LIMITS THAT SHIP WITH IT, both real and neither fixed here:
+ * ⭐ CREATES ARE PROTECTED TOO, since core#134 — `expectedVersion: 0`. The
+ * original wording here said absence was INEXPRESSIBLE; that was wrong, and
+ * measuring it is what closed the issue. Nothing hub writes starts below
+ * version 1, so 0 is an exact "must not exist" on any store that compares only
+ * when the record is present. It waited on `@noy-db/ports/to`'s absent case
+ * rather than on a mechanism, because the one reading that could have broken it
+ * — a native conditional-CAS store rejecting the FIRST create — is exactly what
+ * a kit case forbids and a census cannot.
  *
- * 1. **A create is not protected.** This path passes no `expectedVersion` at
- *    all, so two concurrent grants of the same NEW userId still clobber.
- *    ⚠️ The original wording here said absence was INEXPRESSIBLE; core#134
- *    measured that and it was wrong — `expectedVersion: 0` already works as
- *    "write only if absent" on every store in this tree, because nothing hub
- *    writes starts below version 1. What blocks adopting it is that a native
- *    conditional-CAS store would reject the FIRST create instead, and
- *    `@noy-db/ports/to` asserts neither answer. See `memory-store.test.ts`,
- *    which pins both halves.
- * 2. **Mixed fleets get no protection.** An older hub writes at `_v: 1` with no
- *    `expectedVersion`, so it clobbers a newer hub's CAS and resets the line.
- *    The guarantee is real only once every writer is a new hub — which is why
- *    this is cut-gated rather than a fix that rides any release.
+ * ⛔ THE ONE LIMIT THAT STILL SHIPS: **mixed fleets get no protection.** An
+ * older hub writes at `_v: 1` with no `expectedVersion`, so it clobbers a newer
+ * hub's CAS — create or update — and resets the line. The guarantee is real
+ * only once every writer is a new hub, which is why this is cut-gated rather
+ * than a fix that rides any release.
  */
 import { describe, it, expect } from 'vitest'
 import { createNoydb, memoryStore, ConflictError } from '../src/index.js'
@@ -72,13 +71,25 @@ describe('core#132 — keyring writes CAS on the version they were computed from
     await expect(writeKeyringFile(store, 'v1', 'bob', fresh.file, basisOf(fresh))).resolves.toBeUndefined()
   })
 
-  it('⛔ a CREATE is NOT protected — the store contract cannot assert absence', async () => {
+  it('a CREATE is protected too — the second create of one userId conflicts (core#134)', async () => {
     const { store } = await firm()
     const src = (await readKeyringFile(store, 'v1', 'bob'))!.file
-    // two 'create' writes to a userId that does not exist: both succeed
+
+    // The first create of an absent userId lands. ⭐ This half is the control,
+    // and it is the half an adapter is most likely to get wrong: a backend
+    // whose conditional write rejects a missing item would fail HERE, not
+    // below. `@noy-db/ports/to` asserts both halves for exactly that reason.
     await writeKeyringFile(store, 'v1', 'newbie', src, 'create')
-    await expect(writeKeyringFile(store, 'v1', 'newbie', src, 'create')).resolves.toBeUndefined()
-    // pinned so core#134 landing is visible here rather than as a surprise
+    expect((await readKeyringFile(store, 'v1', 'newbie'))!.envelope._v).toBe(1)
+
+    // A second concurrent grant of the same NEW userId used to clobber the
+    // first silently. It now conflicts, because what it believed absent is
+    // present at _v 1.
+    await expect(
+      writeKeyringFile(store, 'v1', 'newbie', src, 'create'),
+    ).rejects.toBeInstanceOf(ConflictError)
+
+    // …and the first grant SURVIVED, which is the point rather than the throw.
     expect((await readKeyringFile(store, 'v1', 'newbie'))!.envelope._v).toBe(1)
   })
 

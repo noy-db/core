@@ -44,13 +44,13 @@ describe('memoryStore', () => {
    * The only hits were this file's own `env(0)` fixtures — no hub code path
    * stores version 0. That is what makes 0 safe to overload.
    *
-   * ⛔ DO NOT adopt `expectedVersion: 0` at hub's create sites on the strength
-   * of this test. Not because the adapters disagree — censused 2026-09-24 they
-   * do not, and `to-aws-s3` implements this exact sentinel by name — but
-   * because `@noy-db/ports/to` asserts none of it. Building on behaviour no
-   * gate checks is how a correctness property becomes a silent dependency on
-   * luck. The conformance case lands first; core#134 carries that decision to
-   * the family layer, since it binds out-of-tree adapters too.
+   * ⚠️ This test is NOT what licensed hub to adopt it, and the distinction is
+   * the whole lesson of core#134: one store agreeing proves nothing about the
+   * out-of-tree adapter a consumer actually plugs in. `@noy-db/ports/to`'s
+   * absent case (core#138) is what binds every adapter; `writeKeyringFile`
+   * adopted `expectedVersion: 0` only once that case existed and `noy-db/to`
+   * had run it green across 19 adapters. Keep this row as the reference
+   * store's own witness — do not promote it to the licence.
    */
   it('CAS: expectedVersion 0 lets the FIRST create through and conflicts the SECOND (core#134)', async () => {
     const s = memoryStore()
