@@ -1,0 +1,116 @@
+# Deprecate a superseded prerelease across this repo's published line, and point
+# `latest` at the version that supersedes it.
+#
+# WHY THIS EXISTS AS A WORKFLOW rather than a local script: npm now demands a
+# one-time password for every write from an interactive login — measured
+# 2026-09-25, `401 EOTP` on all 22 `npm deprecate` calls after a successful
+# `npm login`. A ~30s single-use code times 23 writes is not a workable loop. The
+# org NPM_TOKEN is the family's established write path, and it lives here.
+#
+# ⛔ It reads the package list from THE TAG, not from the working tree. The tree
+# changes — the six conformance shims were deleted after 0.9.0-pre.1 shipped — and
+# a shim's superseded prerelease still needs deprecating. Asking the tag asks what
+# was actually published.
+#
+# ⚠️ Deliberately NOT a range spec. `npm deprecate pkg@"<floor"` would also catch
+# 0.8.0 and earlier, which already carry their own correct message, and would
+# overwrite it. Exact versions only.
+name: deprecate-pre
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag whose published package list to use, e.g. v0.9.0-pre.1'
+        required: true
+      bad:
+        description: 'The version to deprecate, e.g. 0.9.0-pre.0'
+        required: true
+      floor:
+        description: 'The version that supersedes it, e.g. 0.9.0-pre.1'
+        required: true
+      reason:
+        description: 'Why it is superseded — appended to the deprecation message'
+        required: true
+      promote_latest:
+        description: 'Also move `latest` to the floor for any package whose latest is the bad version'
+        type: boolean
+        default: true
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    # Same gate as publishing: this rewrites what every consumer sees on install.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, registry-url: 'https://registry.npmjs.org' }
+
+      - name: Collect the names published at the tag
+        id: names
+        run: |
+          set -euo pipefail
+          : > /tmp/names.txt
+          for d in $(git ls-tree --name-only "${{ inputs.tag }}:packages"); do
+            git show "${{ inputs.tag }}:packages/$d/package.json" 2>/dev/null \
+              | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const p=JSON.parse(s);if(!p.private&&p.name)console.log(p.name)}catch{}})' \
+              >> /tmp/names.txt
+          done
+          sort -u -o /tmp/names.txt /tmp/names.txt
+          echo "count=$(grep -c . /tmp/names.txt)" >> "$GITHUB_OUTPUT"
+          echo "── ${{ inputs.tag }} published $(grep -c . /tmp/names.txt) names"
+          cat /tmp/names.txt
+
+      - name: Deprecate ${{ inputs.bad }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -uo pipefail
+          MSG="Superseded by ${{ inputs.floor }}. ${{ inputs.reason }} Upgrade to ${{ inputs.floor }} or later."
+          fail=0
+          while read -r P; do
+            [ -z "$P" ] && continue
+            if npm deprecate "${P}@${{ inputs.bad }}" "$MSG"; then echo "  ok   $P"
+            else echo "  FAIL $P"; fail=$((fail+1)); fi
+          done < /tmp/names.txt
+          echo "write failures: $fail"
+
+      - name: Point latest at ${{ inputs.floor }} where it was on ${{ inputs.bad }}
+        if: inputs.promote_latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -uo pipefail
+          # npm sets `latest` on a package's FIRST publish regardless of --tag, so a
+          # package whose first ever publish was a prerelease serves it to a bare
+          # install. That is the only case this touches — a package on a stable
+          # `latest` is left alone.
+          while read -r P; do
+            [ -z "$P" ] && continue
+            cur=$(npm view "$P" dist-tags.latest 2>/dev/null || echo '')
+            if [ "$cur" = "${{ inputs.bad }}" ]; then
+              npm dist-tag add "${P}@${{ inputs.floor }}" latest && echo "  moved $P: $cur -> ${{ inputs.floor }}"
+            fi
+          done < /tmp/names.txt
+
+      - name: Verify AT THE REGISTRY, not from the exit codes
+        run: |
+          set -uo pipefail
+          # ⭐ A green write is not a written package — the family has been bitten by
+          # that twice on publishes. Read the packument back per name. One retry for
+          # propagation before reporting a shortfall.
+          check() {
+            ok=0; miss=""
+            while read -r P; do
+              [ -z "$P" ] && continue
+              enc=${P/\//%2f}
+              d=$(curl -sS "https://registry.npmjs.org/${enc}/${{ inputs.bad }}" \
+                  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).deprecated?"yes":"no")}catch{console.log("absent")}})')
+              if [ "$d" = yes ]; then ok=$((ok+1)); else miss="$miss $P($d)"; fi
+            done < /tmp/names.txt
+            echo "  deprecated at the registry: $ok / ${{ steps.names.outputs.count }}"
+            [ -n "$miss" ] && echo "  not confirmed:$miss"
+            [ "$ok" = "${{ steps.names.outputs.count }}" ]
+          }
+          check || { echo "  re-checking after propagation…"; sleep 45; check; }
