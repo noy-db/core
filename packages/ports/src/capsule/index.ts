@@ -1,5 +1,5 @@
 /**
- * @noy-db/test-capsule-conformance — the contract suite every capsule passes.
+ * @noy-db/ports/capsule — the contract suite every capsule passes.
  *
  * ONE kit, two case sets:
  *
@@ -21,7 +21,7 @@
  * ⛔ THE DEPENDENCY EDGE RUNS KIT → HUB, AND ONLY THAT WAY. Hub must NOT
  * depend on this package: hub ↔ kit is a turbo build cycle, measured — `pnpm
  * build` refuses it outright. This is the same shape as
- * `@noy-db/test-adapter-conformance`, which depends on hub while hub does not
+ * `@noy-db/ports/to`, which depends on hub while hub does not
  * depend on it, and it is why the reference capsule's own conformance run
  * lives HERE rather than in hub's test suite.
  *

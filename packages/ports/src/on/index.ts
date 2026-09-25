@@ -1,5 +1,5 @@
 /**
- * **@noy-db/test-ceremony-conformance** — the `SlotRewrapCeremony` contract,
+ * **@noy-db/ports/on** — the `SlotRewrapCeremony` contract,
  * published as an executable suite.
  *
  * A `rotateSecret` that preserves a tier-2 slot hands each ceremony a

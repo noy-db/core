@@ -11,7 +11,7 @@
  * ## Why hub's store, and why that is not a cycle
  *
  * The kit peer-depends on hub, so hub consuming the kit would be a build cycle
- * (turbo catches it) — the reason `@noy-db/test-sealer-conformance` runs
+ * (turbo catches it) — the reason `@noy-db/ports/at` runs
  * `MemorySealer` from its own side. Nothing stops the arrow pointing the other
  * way: `memoryStore` is on hub's published surface, the kit already has hub as
  * a peer, and running the suite here keeps the dependency one-directional.

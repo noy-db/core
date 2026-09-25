@@ -10,7 +10,7 @@
  * ## ⭐ Hub's own default IS reachable, and `@noy-db/hub/by` says otherwise
  *
  * That subpath's module comment records, as a cost, that `StoreMesh` is not on
- * the published surface and therefore "`@noy-db/test-mesh-conformance` cannot
+ * the published surface and therefore "`@noy-db/ports/by` cannot
  * import it" — generalised to: *a port's in-hub default is coverable by its
  * published kit only if it is on the published surface.*
  *

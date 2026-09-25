@@ -51,7 +51,7 @@
  * alongside `/as`, `/at`, `/in` and `/ui`. It was a second place to find types
  * already on the root barrel.
  *
- * What changed is what stands behind it. `@noy-db/test-ceremony-conformance`
+ * What changed is what stands behind it. `@noy-db/ports/on`
  * publishes the ceremony contract as an executable suite, and the symbols it
  * needs are scattered: three live on `/team`, and `KeyringAuthenticator`,
  * `EnclaveKey` and `NoydbShamir` are reachable only from the whole root

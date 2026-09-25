@@ -13,7 +13,7 @@ import type { NoydbSealer } from '@noy-db/hub/at'
  * mode landed. What was missing is that a REAL provider — `at-env`,
  * `at-aws-kms`, or a third party's — had no way to run the same suite, so
  * every implementation was checked against its own idea of the contract. This
- * package is that extraction, mirroring `@noy-db/test-adapter-conformance`
+ * package is that extraction, mirroring `@noy-db/ports/to`
  * for stores.
  *
  * ⚠️ `at-*` is the one NON-zero-knowledge family: a host you control can

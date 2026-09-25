@@ -3,7 +3,7 @@
  *
  * It lives HERE rather than in hub, and the reason is structural: the kit
  * peer-depends on hub, so hub consuming the kit is a build cycle (turbo
- * catches it). `@noy-db/test-adapter-conformance` never hits this because
+ * catches it). `@noy-db/ports/to` never hits this because
  * the STORES consume it and hub does not — the kit is for implementors, and
  * hub is not one of its own implementors.
  *

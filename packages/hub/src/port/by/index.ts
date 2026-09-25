@@ -9,7 +9,7 @@
  * `StoreMesh` — the store-polling default — lives in
  * `with-shape/schema-update`, its only consumer, and is intentionally NOT
  * exported here. It is hub's own implementation of this port and the one most
- * consumers actually run, and `@noy-db/test-mesh-conformance` cannot import
+ * consumers actually run, and `@noy-db/ports/by` cannot import
  * it.
  *
  * ⚠️ That was recorded here as a coverage cost, generalised to *"a port's

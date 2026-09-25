@@ -15,7 +15,7 @@
  * `/at` was a second place to find a type already on the root barrel.
  *
  * What changed is not the subpath, it is what stands behind it:
- * `@noy-db/test-sealer-conformance` publishes the contract as an executable
+ * `@noy-db/ports/at` publishes the contract as an executable
  * suite, so "implements NoydbSealer" now means one checkable thing. The seam
  * follows the port rather than preceding it — which is the ordering 0.4
  * demonstrated the hard way.

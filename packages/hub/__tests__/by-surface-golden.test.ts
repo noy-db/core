@@ -2,7 +2,7 @@
  * Golden export-surface freeze for the `@noy-db/hub/by` seam.
  *
  * `/by` is what the `by-*` session-share transports bind — `by-peer`,
- * `by-tabs` — plus `@noy-db/test-mesh-conformance`.
+ * `by-tabs` — plus `@noy-db/ports/by`.
  *
  * ⚠️ That was NOT true when the seam shipped in #1171. All three imported
  * `NoydbMesh` from `@noy-db/hub/cargo` instead, so `/by` was published with
