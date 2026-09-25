@@ -718,31 +718,27 @@ export interface NoydbStore {
   get(vault: string, collection: string, id: string): Promise<EncryptedEnvelope | null>
 
   /**
-   * Put a record. Throws ConflictError if `expectedVersion` doesn't match.
+   * Put a record. Throws ConflictError if `expectedVersion` doesn't match an
+   * EXISTING record's `_v`.
    *
-   * ⚠️ **In this tree the comparison happens only when the record EXISTS**
-   * (`memory-store.ts`, `to-file`, `to-browser-idb` all read-then-compare),
-   * so against a missing id the `expectedVersion` is not a failed comparison
-   * — it is no comparison at all, and the write lands.
+   * ⚠️ **Against an ABSENT id the comparison does not happen and the write
+   * lands.** That is not an implementation detail of the reference store — it is
+   * the contract, asserted by `@noy-db/ports/to` (core#134, core#138) and run
+   * green across all 19 `to-*` adapters.
    *
-   * That makes `expectedVersion: 0` an exact "must not exist": hub never stores
-   * a version below 1, so the first create is let through and every later one
-   * mismatches.
+   * ⭐ **So `expectedVersion: 0` is an exact "write only if absent."** hub never
+   * stores a version below 1, so the first create is let through and every
+   * later one mismatches. No sentinel was added to this signature and no
+   * seventh method to this contract; both were costed and neither was needed.
+   * `writeKeyringFile` uses it to make a keyring create race-safe.
    *
-   * ⭐ **Every record store in the family already agrees**, censused by reading
-   * source on 2026-09-24 — the twelve read-then-compare adapters, plus
-   * `to-aws-dynamo`, whose native condition is explicitly
-   * `#v = :expected OR attribute_not_exists(pk)`, plus `to-aws-s3`, which
-   * special-cases `expectedVersion === 0` BY NAME into a real precondition and
-   * throws `ConflictError('Concurrent create: …')`. `to-cloudflare-r2` and
-   * `to-supabase` inherit it by delegation.
-   *
-   * ⛔ **It is still not a contract, and that is the open question.**
-   * `@noy-db/ports/to` asserts none of it — its three CAS cases all operate on
-   * a record that already exists — so this convergence is held by nothing, and
-   * a third-party adapter owes it nothing. Tracked as core#134. hub's keyring
-   * create path passes no `expectedVersion` at all, and moving it is gated on
-   * that assertion landing, not on the adapters.
+   * ⛔ **Adapter authors: do not implement absence by throwing.** The assertion
+   * is that the FIRST create succeeds. If your backend's conditional write
+   * rejects a missing item, OR in an existence check the way `to-aws-dynamo`
+   * does (`#v = :expected OR attribute_not_exists(pk)`); `to-aws-s3`
+   * special-cases `expectedVersion === 0` by name into a real precondition.
+   * The kit case asserts both halves, so this failure mode is caught rather
+   * than assumed away.
    */
   put(
     vault: string,

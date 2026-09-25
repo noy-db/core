@@ -3306,23 +3306,24 @@ function resolvePermissions(role: Role, explicit?: Permissions): Permissions {
  * the COMPILER enumerates every call site — `NON_ROTATABLE_SLOTS`' own comment
  * records two defects caused by enumerating callers with grep instead.
  *
- * ⛔ `'create'` is NOT protected, and the limit is in the store contract, not
- * in this function: two concurrent creates of the same userId still clobber,
- * because this path passes no `expectedVersion` at all. Do not read a
- * `'create'` basis as protected.
+ * ⭐ `'create'` IS protected, since core#134: it writes with
+ * `expectedVersion: 0`. Every version hub writes starts at 1, so on a store
+ * that compares only when the record is present, 0 lets the first create
+ * through and conflicts every later one — an exact "write only if absent",
+ * with no sentinel in the signature and no seventh method on the six-method
+ * store contract. #134 costed both; neither was needed.
  *
- * ⚠️ It is not that absence is inexpressible — core#134 measured that claim and
- * it was wrong. Every version hub writes starts at 1, so on a store that
- * compares only when the record is present, `expectedVersion: 0` lets the
- * first create through and conflicts every later one: an exact "write only if
- * absent", for free. Censused 2026-09-24, every record store in the family
- * already behaves that way, `to-aws-s3` deliberately and by name.
+ * ⚠️ What made it adoptable was an ASSERTION, not a mechanism. The behaviour
+ * was already universal when censused (2026-09-24 — `to-aws-s3` implements this
+ * sentinel by name), but `@noy-db/ports/to` asserted none of it, so a
+ * third-party adapter owed it nothing and this would have been a silent
+ * correctness dependency on behaviour no gate checked. The kit's absent case
+ * (core#138) holds it, and `noy-db/to` ran it green across 19 adapters before
+ * this line changed.
  *
- * ⛔ What stops this call site adopting it is that NOTHING HOLDS that
- * convergence: `@noy-db/ports/to` asserts none of it, so a third-party adapter
- * owes it nothing and this would become a silent correctness dependency on
- * behaviour no gate checks. Adopt it after the conformance case lands, not
- * before. core#134 carries the decision.
+ * ⛔ Still NOT protected, and do not read this as closing it: a MIXED FLEET. An
+ * older hub writes keyrings at `_v: 1` with no `expectedVersion` at all, so it
+ * clobbers a new hub's create as readily as its update.
  */
 export type KeyringWriteBasis = { readonly on: EncryptedEnvelope } | 'create'
 
@@ -3361,5 +3362,12 @@ export async function writeKeyringFile(
     { collection: '_keyring', id: userId, version: base + 1 },
     { iv: '', data: JSON.stringify(keyringFile) },
   )
-  await store.put(vault, '_keyring', userId, envelope, basis === 'create' ? undefined : base)
+  // core#134 — `base` is 0 for a create, and passing it is what makes a create
+  // CAS too: no record means no comparison, so the FIRST create lands; the
+  // second sees _v 1 against an expectation of 0 and throws. An exact "write
+  // only if absent", with no sentinel in the signature and no seventh method on
+  // the store contract. Held by `@noy-db/ports/to`'s absent case, which asserts
+  // BOTH halves — an adapter whose conditional write rejects a missing item
+  // fails the first, not the second.
+  await store.put(vault, '_keyring', userId, envelope, base)
 }
