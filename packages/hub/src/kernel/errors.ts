@@ -437,6 +437,22 @@ export type KeyringTamperedReason =
  * What is left is the wording. We cannot tell the two apart, so the message must
  * not pretend to — it names both readings and puts the likely one first, rather
  * than accusing the user's storage of an attack it cannot demonstrate.
+ *
+ * ⚠️ AND THE SECOND HAZARD, which this reasoning missed until core#143. The
+ * wording was careful not to ACCUSE, then handed the reader a DESTRUCTIVE
+ * remedy — "remove the vault from this device" — whose safety depends on a
+ * property of the store the message never consults. On a local store a hostile
+ * store means the device is already owned, so there is nothing to preserve. On a
+ * REMOTE, separately administered store the identical error can mean the store
+ * altered the keyring, and deleting the local copy destroys the only evidence;
+ * on a thin client there is nothing local to delete at all. Reported by pilot-1
+ * via a consumer that had written exactly that advice.
+ *
+ * ⭐ So `RE_SEED` now leads with PRESERVE, which is correct under either
+ * premise — deliberately NOT conditioned on the store, because the branch that
+ * most needs it is the one we cannot classify. ⛔ Note this applies to
+ * `format-superseded` too, the one reason we are CONFIDENT is benign: there is
+ * no ambiguity there to protect, and it still carried the delete instruction.
  */
 /**
  * The re-seed recovery, shared by every branch that asks for one. An existing
@@ -445,9 +461,14 @@ export type KeyringTamperedReason =
  * bundle' fails and the reader is stuck following the instruction literally.
  */
 const RE_SEED =
-  ' To re-seed: REMOVE THE VAULT FROM THIS DEVICE FIRST, then import the new bundle. Importing' +
-  ' over a vault that is still present does not heal it — the stale keyring is loaded during' +
-  ' setup, before the import can replace it, so the same error is raised again.'
+  ' To re-seed: PRESERVE A COPY OF THE RAW STORE CONTENTS FIRST, then remove the vault from this' +
+  ' device and import the new bundle. Importing over a vault that is still present does not heal' +
+  ' it — the stale keyring is loaded during setup, before the import can replace it, so the same' +
+  ' error is raised again. ⚠️ If the store is REMOTE and separately administered (a peer store, a' +
+  ' relay, a hosted mount), the copy is not optional: this same error can mean the store altered' +
+  ' the keyring, and removing your local vault would destroy the only evidence. On a thin client' +
+  ' that holds nothing locally there is nothing to remove, and the re-seed belongs wherever the' +
+  ' vault actually lives.'
 
 function keyringTamperedMessage(
   userId: string,
