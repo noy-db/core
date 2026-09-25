@@ -1,5 +1,9 @@
 # @noy-db/shamir
 
+## 0.9.0-pre.1
+
+Lockstep bump to 0.9.0-pre.1; no package-level change in this release. See `@noy-db/hub` 0.9.0-pre.1 for the line's notes.
+
 ## 0.9.0-pre.0
 
 Documented that a share does not identify the secret it splits: `combineSecret` validates length, count and distinct x-coordinates, never that the shares came from the same split, so K shares of a superseded split return the OLD secret. `share-format.ts` no longer describes a `shareId`/ULID prefix that never existed; the real prefix is `SHAMIR_S<x>_K<k>N<n>__`. Known-answer vectors (`__tests__/known-answer-vectors.test.ts`) can detect the consistent-error class a round-trip suite structurally cannot. No runtime change.

@@ -1,5 +1,26 @@
 # Changelog — hub
 
+## 0.9.0-pre.1
+
+**A correctness release on the 0.9 line. The headline is a keyring race that surfaced as a tamper alarm on the user's own data** (core#132) — everything else is additive.
+
+⛔ **`_keyring` writes are now compare-and-swap.** Two sessions putting to a new collection each minted a DEK, one write silently lost, and a cold session then failed to authenticate **both** rows — reported as tampering, on data the user had just written themselves. A keyring write is now CAS'd against the version it was computed from, and a session that loses a mint **adopts the winner's DEK** instead of keeping its own. If you held data written by two concurrent first-writers on `0.9.0-pre.0`, this is the release that stops it recurring; it does not retroactively repair a pair of rows already minted under different DEKs.
+
+**Sync — three fixes pilot-1 witnessed against real DynamoDB** (core#107, core#108).
+- An arbiter now **replicates its admission refusals**, so the writer finds out at all. A refusal made on another device arrives as `origin: 'arbiter'` and is **report-only** — the local record is untouched, and `readmit()` is meaningless for it.
+- A dirty record **re-runs this device's own gates before pushing**, so a record refused on the way out (`origin: 'push-recheck'`) stays local and dirty and pushes itself once it passes again.
+- `RecordRejection` carries `recordAt` alongside `at`: an arbiter judges at **pull** time, so a record legitimately written while a period was open can be refused later. With both timestamps a UI can say *written then, refused now* rather than *your push was wrong*.
+
+**Backup and restore** (core#76, core#77, core#101, core#103, core#111, core#122). Reads can carry ids, the restore path is exported rather than inferred, and ⭐ **a restore now rewinds the ledger too** — previously the pod came back but the ledger did not, so the next pull reverted it. ⚠️ Delete markers persist across a restore; `vault.compact()` will not remove them, being blob compaction and cache-budget eviction that happens to share the word.
+
+**Presence binds the primary sync target, not `targets[0]`** (core#139). With `sync: [{cloud, role:'backup'}, {daemon, role:'sync-peer'}]` records synced with the daemon while presence published to a **push-only archive** target. The two selectors now agree.
+
+**`expectedVersion: 0` means "must not exist", and `@noy-db/ports/to` now asserts it** (core#134). The conformance kit holds the agreement instead of relying on it, and the adapter census found the divergence core#136 warned about is not present in this family.
+
+**Surface and docs.** The restore/pod types are exported with an invariant so it is the last time (core#101, core#54). `@internal` is not the surface — the golden is (core#128). The KEK gate that keeps the keyring inbox drain unreachable is pinned in a test (core#130), recorded as an accepted risk rather than a fix. `enrollWebAuthn`'s documented slot `meta` now records `rpId`, which the rotation ceremony falls back to (core#140).
+
+⚠️ **`@noy-db/ports` still carries `latest` on a prerelease**, because npm sets `latest` on a package's first publish regardless of `--tag`. Corrected at the `0.9.0` stable cut; there is no stable version to point it at yet.
+
 ## 0.9.0-pre.0
 
 **The line moves to 0.9.0 on this pre-release: a new package, a milestone, three seam widenings, and fourteen fewer names.** Everything below is additive unless marked ⛔.
