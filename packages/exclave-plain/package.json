@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/exclave-plain",
-  "version": "0.9.0-pre.0",
+  "version": "0.9.0-pre.1",
   "description": "Plaintext capsule for noy-db — stores rows unencrypted with MAC-bound integrity, for stores where access control lives outside the database",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
