@@ -1,5 +1,5 @@
 /**
- * @noy-db/test-capsule-conformance — the contract suite every capsule passes.
+ * @noy-db/ports/capsule — the contract suite every capsule passes.
  *
  * A capsule is noy-db's crypto interior behind one seam. `enclave-aes` ships
  * inside hub; `exclave-plain` and `enclave-pqc` are separate packages bound at

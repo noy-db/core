@@ -3,7 +3,7 @@
  *
  * `/at` is what the five `at-*` sealing-key providers bind — `at-env`,
  * `at-aws-kms`, `at-gcp-kms`, `at-macos-keychain`, `at-azure-keyvault` — plus
- * `@noy-db/test-sealer-conformance`, which publishes the `NoydbSealer`
+ * `@noy-db/ports/at`, which publishes the `NoydbSealer`
  * contract as an executable suite. Seven in-repo binders, and third-party
  * providers are the point of the seam existing at all.
  *

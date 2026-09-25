@@ -1,5 +1,5 @@
 /**
- * **@noy-db/test-format-conformance** — the `as-*` export/import gate,
+ * **@noy-db/ports/as** — the `as-*` export/import gate,
  * published as an executable suite.
  *
  * The `as-*` family is the one place plaintext leaves the vault. Every export

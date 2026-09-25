@@ -151,7 +151,7 @@ export class MemorySealer implements NoydbSealer {
    * says `unseal` MUST throw on tamper, and a double that silently returns
    * corrupted bytes is not modelling the contract it stands in for. Without
    * it, every managed-mode test ran against a provider that could not fail
-   * the way a real one must (found by @noy-db/test-sealer-conformance).
+   * the way a real one must (found by @noy-db/ports/at).
    */
   private tag(cipher: Uint8Array): Uint8Array {
     let a = 0x9e3779b9
