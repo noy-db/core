@@ -1,11 +1,5 @@
 ---
 '@noy-db/ports': minor
-'@noy-db/test-adapter-conformance': patch
-'@noy-db/test-capsule-conformance': patch
-'@noy-db/test-format-conformance': patch
-'@noy-db/test-ceremony-conformance': patch
-'@noy-db/test-sealer-conformance': patch
-'@noy-db/test-mesh-conformance': patch
 ---
 
 **The six conformance kits are one package: `@noy-db/ports`, one subpath per hub port** (family root decision, 2026-09-21).

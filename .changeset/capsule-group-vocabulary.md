@@ -1,6 +1,6 @@
 ---
 '@noy-db/hub': minor
-'@noy-db/test-capsule-conformance': minor
+'@noy-db/ports': minor
 ---
 
 **One capsule-group vocabulary. Three disagreed, and the disagreement was invisible because nothing compiled the copies against each other** (core#42).
@@ -11,7 +11,7 @@
 
 **2. `capabilities()` now reports one more group.** `CapsuleGroup` gains `per-record-keys`, and the reference capsule advertises it. `wrapCek` / `unwrapCek` are real primitives a capsule may refuse independently, with a live refusal test in the conformance kit since it shipped — but no group covered them, so the refusal could not be *named*. The reference capsule was under-reporting itself; *"supports every group"* had been untrue in its own docstring. **If you inspect `capabilities()`, expect ten members, not nine.**
 
-**`@noy-db/test-capsule-conformance`:** `writeEnvelopeBody`'s identity parameter gains the required `version`, and its optional fields gain `| undefined` to match hub's `RecordIdentity` exactly. Both were narrower than reality, so a capsule author implementing the declared shape wrote a handler that did not know `version` arrives and that **rejects an identity hub can actually pass** (`{ tier: undefined }` is legal under `exactOptionalPropertyTypes`, and the kit's `tier?: number` refused it).
+**`@noy-db/ports/capsule`** (then `@noy-db/test-capsule-conformance`)**:** `writeEnvelopeBody`'s identity parameter gains the required `version`, and its optional fields gain `| undefined` to match hub's `RecordIdentity` exactly. Both were narrower than reality, so a capsule author implementing the declared shape wrote a handler that did not know `version` arrives and that **rejects an identity hub can actually pass** (`{ tier: undefined }` is legal under `exactOptionalPropertyTypes`, and the kit's `tier?: number` refused it).
 
 ### Why all of this shipped undetected
 

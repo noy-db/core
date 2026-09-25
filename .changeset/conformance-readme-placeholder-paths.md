@@ -1,7 +1,5 @@
 ---
-'@noy-db/test-adapter-conformance': patch
-'@noy-db/test-capsule-conformance': patch
-'@noy-db/test-format-conformance': patch
+'@noy-db/ports': patch
 ---
 
 **Each kit's README showed the reader importing their own implementation from `'../src/index.js'` — a path that names the KIT's own source.**
