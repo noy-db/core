@@ -6,7 +6,8 @@
   "gates": [
     "versions-uniform",
     "check-license",
-    "prose-examples"
+    "prose-examples",
+    "changeset-names"
   ],
   "localChecks": [
     "pnpm check:architecture",
