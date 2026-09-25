@@ -188,8 +188,15 @@ describe('#1115 — an UPGRADED vault is not accused of tampering', () => {
     // stuck. Asserted on both branches that ask for a re-seed.
     for (const reason of ['format-superseded', 'roster-key-missing'] as const) {
       const err = new KeyringTamperedError({ userId: 'ann', reason })
-      expect(err.message).toMatch(/REMOVE THE VAULT FROM THIS DEVICE FIRST/)
+      // core#143 — PRESERVE comes first. The old assertion pinned
+      // "REMOVE THE VAULT FROM THIS DEVICE FIRST", which is the instruction that
+      // made this remedy unsafe on a remote store; the order is the property now.
+      expect(err.message).toMatch(/PRESERVE A COPY OF THE RAW STORE CONTENTS FIRST/)
       expect(err.message).toMatch(/does not heal it/)
+      expect(err.message.indexOf('PRESERVE A COPY')).toBeLessThan(
+        err.message.indexOf('remove the vault from this device'),
+      )
+      expect(err.message).toMatch(/REMOTE and separately administered/)
     }
   })
 
