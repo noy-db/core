@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/ports",
-  "version": "0.9.0-pre.1",
+  "version": "0.9.0-pre.2",
   "description": "The conformance suites for every noy-db port, one subpath per port: bind @noy-db/hub/<port>, prove it with @noy-db/ports/<port>",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",

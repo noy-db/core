@@ -1,5 +1,23 @@
 # Changelog — hub
 
+## 0.9.0-pre.2
+
+**A small, deliberate release: two keyring correctness items and the removal of six shim packages.** No format change, no new surface.
+
+⛔ **A keyring CREATE is now race-safe** (core#134, completing core#132). `writeKeyringFile` writes with `expectedVersion: 0`. core#132 made keyring writes CAS against the version they were computed from, which caught concurrent **updates** to one member; the **create** race stayed open, so two concurrent grants of the same new `userId` both succeeded and the second silently replaced the first — a member who appeared granted, holding a keyring nobody else's view agreed with.
+
+⭐ That limit had been attributed to the store contract being unable to express *"write only if absent"*. Measured, the claim was **wrong**: hub never stores a version below 1, so `expectedVersion: 0` lets the first create through and conflicts every later one — an exact must-not-exist, with **no sentinel added to `put`'s signature and no seventh method on the six-method store contract**. Both were costed; neither was needed. What was missing was an **assertion**, not a mechanism: `@noy-db/ports/to` now holds the absent case (core#138), and `noy-db/to` ran it green across **19 adapters** before this line changed.
+
+⚠️ **Adapter authors:** the contracted answer is that the FIRST create SUCCEEDS. Do not implement absence by throwing — if your backend's conditional write rejects a missing item, OR in an existence check the way `to-aws-dynamo` does. The kit case asserts both halves, so that failure mode reddens rather than passing as "safe".
+
+⛔ **Not closable here: a mixed fleet.** An older hub writes keyrings at `_v: 1` with no `expectedVersion` at all, so it clobbers a new hub's CAS — create or update alike. The guarantee is real only once every writer is a new hub.
+
+**`KeyringTamperedError`'s re-seed guidance leads with PRESERVE** (core#143). It used to say *remove the vault from this device first*. That is safe on a local store — a hostile local store means the device is already owned — but on a **remote, separately administered** store the identical error can mean the store altered the keyring, and deleting the local copy destroys the only evidence; on a thin client there is nothing local to remove at all. The remedy now leads with preserving a copy of the raw store contents and names the remote case explicitly. Deliberately **not** conditioned on the store type: the branch that most needs the warning is the one hub cannot classify. No behaviour change; the test's property is now the ORDER of the two instructions.
+
+⛔ **The six `@noy-db/test-*-conformance` re-export shims are removed** (family#39 step 5). They were 8-line `export * from '@noy-db/ports/<port>'` packages kept published while the family's satellites moved off them; `to`, `as`, `on`, `at` and `daemon` all bind `@noy-db/ports/<port>` directly as of 2026-09-25.
+
+⚠️ **Already-published versions are unaffected.** `@noy-db/test-adapter-conformance@0.9.0-pre.1` and every earlier version stay installable; what stops is the publication of *new* ones. A consumer still pinning a shim keeps resolving it, and should migrate to the matching `@noy-db/ports` subpath — `/to`, `/as`, `/at`, `/on`, `/by`, `/capsule`.
+
 ## 0.9.0-pre.1
 
 **A correctness release on the 0.9 line. The headline is a keyring race that surfaced as a tamper alarm on the user's own data** (core#132) — everything else is additive.
