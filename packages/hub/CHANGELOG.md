@@ -1,5 +1,46 @@
 # Changelog — hub
 
+## 0.9.0
+
+**The stable release of the 0.9 line.** It is `0.9.0-pre.2` promoted unchanged; everything below was
+shipped and exercised across `pre.0`, `pre.1` and `pre.2`, whose sections carry the detail. The theme
+of the line is **replication you can trust with a keyring** — a `sync-peer` target became a full
+replica, and the races that made that unsafe were closed.
+
+**What the line delivers.** A `sync-peer` target is now a full replica: the roster travels in both
+directions, `openVault` on an empty local store consults the target before deciding new-vs-existing,
+and `db.realign(vault)` repairs a corrupted local envelope from the target's healthy copy. Every role
+can mint its own cloud-store credentials (`@noy-db/hub/broker`). `_keyring` writes are
+compare-and-swap for both update and **create**, so two concurrent grants of the same new member no
+longer silently discard one. `@noy-db/ports` replaces the six conformance kits with one package and
+one subpath per port. Sync gained `sync:progress`, and three refusals that used to fail silently now
+throw.
+
+**⛔ Four things to check before upgrading.** None is a format break — stored data reads unchanged —
+but each is visible to a compiler or to an operator:
+
+- **`EnclaveNotSupportedError.group` widened to `CapsuleGroup`**, and `capabilities()` now reports
+  **ten** groups rather than nine (`per-record-keys` was implemented and under-reported). An
+  exhaustive `switch` on either has more cases.
+- **The six `@noy-db/test-*-conformance` shims are no longer published.** Already-published versions
+  stay installable; migrate to the matching `@noy-db/ports` subpath — `/to`, `/as`, `/at`, `/on`,
+  `/by`, `/capsule`.
+- **The fourteen `in-*` framework bindings are not on this version line.** They live in `noy-db/in`
+  and cut on their own clock; nothing about `@noy-db/hub` changed for them.
+- **Existing members need a re-grant** (or magic-link recovery) to be enrolled for member-scoped
+  broker credentials. The admin path is byte-identical and needs nothing.
+
+**⚠️ Two guarantees with a stated boundary, because a silent partial guarantee is worse than a named
+one.** The keyring CAS guarantee holds only once **every writer is a new hub** — an older hub writes
+keyrings with no `expectedVersion` and clobbers a new hub's compare-and-swap. And `hasSealedBody`
+tests `_iv`, not `_data`: a sealed body has no `_iv`, which is why the two kinds of `Envelope` body
+are now documented explicitly.
+
+**Adapter authors:** the contracted answer for a must-not-exist write is that the **first create
+succeeds**. Do not implement absence by throwing — if your backend's conditional write rejects a
+missing item, OR in an existence check the way `to-aws-dynamo` does. `@noy-db/ports/to` asserts both
+halves, and `noy-db/to` ran it green across 19 adapters before this line changed.
+
 ## 0.9.0-pre.2
 
 **A small, deliberate release: two keyring correctness items and the removal of six shim packages.** No format change, no new surface.
