@@ -47,6 +47,7 @@ An encrypted, offline-first, **serverless** document store. The library lives in
 - **👥 Multi-user, no auth server.** 5 roles (owner / admin / operator / viewer / client), per-collection permissions, key rotation on revoke. The keyring travels with the data.
 - **🧩 One core, many bridges.** `@noy-db/hub` is the encrypted document-store core. ~60 optional `to-*` / `in-*` / `on-*` / `as-*` / `by-*` / `at-*` packages let existing apps keep their preferred storage, framework, unlock method, export format, session-share transport, and server-side sealing host — without changing anything else.
 - **🔐 Advanced crypto features.** Hierarchical per-record tiers, deterministic encryption for searchable indexes, WebRTC peer-to-peer sync, AES-256-GCM blob store with deduplication, HKDF-keyed ETags, hash-chained audit ledger.
+- **♻️ Hot resilience — any full replica heals the others.** Lose or corrupt every store but one: when the survivor is online, lost stores re-fill from it and corrupted records re-align to it, **with no backup involved**. Backups (pods) are the other product — everything gone, or a state from the past. ⚠️ The guarantee holds once **every writer is `0.9.0` or later** (an older hub writes keyrings without the compare-and-swap guard and clobbers it), and it is witnessed against a cloud store; browser-store recovery is not yet independently witnessed.
 - **🧪 Thousand-plus tests, CI in under a minute.** Every store / integration / auth / export package is mock-tested — CI runs without AWS, Google Drive, SFTP servers, or any real service.
 
 > **`@noy-db/hub` is the trust boundary.** Encryption happens in the core before data reaches any store. The `to-*`, `in-*`, `on-*`, `as-*`, and `by-*` bridges **never see plaintext** — zero-knowledge by construction.
@@ -221,7 +222,22 @@ loadAll(vault)
 saveAll(vault, data)
 ```
 
-> If your existing storage can implement these six methods, it can store noy-db ciphertext. That is the full contract — the kernel ships a **built-in in-memory store** (so `store` is optional for the in-memory case); 3 essential `to-*` stores (`to-file`, `to-browser-idb`, `to-meter`) ship here for persistence; `to-memory`, the fuller in-memory backend, and 18 more extended stores (SQL, cloud, remote-FS, personal drives) live in [noy-db-to](https://github.com/noy-db/to). A custom store is `createStore(opts => ({ name, ...methods }))`.
+> If your existing storage can implement these six methods, it can store noy-db ciphertext. **These six are all that is REQUIRED** — the kernel ships a **built-in in-memory store** (so `store` is optional for the in-memory case); 3 essential `to-*` stores (`to-file`, `to-browser-idb`, `to-meter`) ship here for persistence; `to-memory`, the fuller in-memory backend, and 18 more extended stores (SQL, cloud, remote-FS, personal drives) live in [noy-db-to](https://github.com/noy-db/to). A custom store is `createStore(opts => ({ name, ...methods }))`.
+
+⭐ **Six more members are OPTIONAL, and each has a defined fallback** — so a store implements only what
+its backend can do natively, and the hub degrades rather than refusing:
+
+| optional | when absent |
+|---|---|
+| `listPage?` | paged pull falls back to `list` + `get` in batches of the same size |
+| `listSince?` | the sync walks without a server-side cursor |
+| `getStoreTime?` | the hub uses local time |
+| `ping?` | reachability is inferred from the next real call |
+| `presencePublish?` / `presenceSubscribe?` | no presence channel; nothing else changes |
+
+Plus a `capabilities?` object (`txAtomic`, `maxBlobBytes`, …), where a declared capability the store does
+not implement is the one failure the conformance kit exists to catch. ⚠️ So *"the 6-method contract"* is
+shorthand for the required surface, not a count of the interface.
 
 ---
 
