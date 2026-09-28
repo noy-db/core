@@ -4,9 +4,10 @@
  * A higher-tier user can issue a delegation that grants another user
  * temporary access to records at a specified tier. The delegation is
  * persisted as an encrypted envelope in the reserved `_delegations`
- * collection. The target user's runtime scans this collection on every
- * open and, while `until` is still in the future, merges the
- * unwrapped tier DEKs into their in-memory DEK map.
+ * collection. While `until` is still in the future, the target merges the
+ * unwrapped tier DEKs into their in-memory DEK map by calling
+ * `Vault.refreshDelegations()` — EXPLICIT, never automatic; the core#56
+ * section below says why a read path must not scan on open.
  *
  * ## Token shape
  *
@@ -39,14 +40,14 @@
  * The ciphertext is stored as a normal noy-db envelope — the
  * `_delegations` collection has its own DEK shared across all vault
  * users, so an operator can enumerate active delegations for audit
- * without being able to *use* them (the `wrappedDek` inside is still
- * keyed to the target user's KEK).
+ * without being able to *use* them (the `wrappedDek` inside is keyed to
+ * the token's own content key — see the core#65 section above).
  *
  * ## Revocation
  *
- * Delete the `_delegations/<id>` envelope. The target user's runtime
- * reloads the delegation list at each open and at periodic intervals
- * (tracked by the caller — this module is pure logic).
+ * Delete the `_delegations/<id>` envelope. The target picks the change up
+ * at its next `Vault.refreshDelegations()` call — this module is pure
+ * logic and schedules nothing.
  *
  * @module
  */
@@ -68,8 +69,9 @@ export const DELEGATIONS_COLLECTION = '_delegations'
 
 /**
  * Durable payload of a delegation token. Encrypted under the vault's
- * `_delegations` DEK; the `wrappedDek` inside is additionally wrapped
- * under the target user's KEK.
+ * `_delegations` DEK; the `wrappedDek` inside is additionally wrapped under
+ * the token's per-token CONTENT KEY — see {@link DelegationToken.sealedCek},
+ * which carries the pre-core#65 exception.
  */
 export interface DelegationToken {
   readonly id: string
@@ -87,8 +89,10 @@ export interface DelegationToken {
   readonly until: string
   /**
    * The delegated tier DEK for {@link DelegationToken.collection}, wrapped
-   * under the target's KEK. Present on a per-collection token; absent on a
-   * collection-wide one, which carries {@link DelegationToken.wrappedDeks}.
+   * under the token's content key — see {@link DelegationToken.sealedCek},
+   * which carries the pre-core#65 exception. Present on a per-collection
+   * token; absent on a collection-wide one, which carries
+   * {@link DelegationToken.wrappedDeks}.
    */
   readonly wrappedDek?: string
   /**
@@ -166,7 +170,7 @@ export async function issueDelegation(
     )
   }
   const cekBytes = globalThis.crypto.getRandomValues(new Uint8Array(32))
-  const targetKek = await importWrappingKey(cekBytes)
+  const cek = await importWrappingKey(cekBytes)
   const sealedCek = bufferToBase64(await recipientWrap(await importRecipientPublicKeySpki(base64ToBuffer(targetInbox.pub)), cekBytes))
   cekBytes.fill(0)
   const tier = opts.tier
@@ -181,7 +185,7 @@ export async function issueDelegation(
     const suffix = `#${tier}`
     const entries: Record<string, string> = {}
     for (const [slot, dek] of grantor.deks) {
-      if (slot.endsWith(suffix)) entries[slot] = await wrapKey(dek, targetKek)
+      if (slot.endsWith(suffix)) entries[slot] = await wrapKey(dek, cek)
     }
     if (Object.keys(entries).length === 0) {
       throw new DelegationTargetMissingError(
@@ -201,7 +205,7 @@ export async function issueDelegation(
         `is nothing to delegate. Obtain the tier grant first.`,
       )
     }
-    wrappedDek = await wrapKey(sourceDek, targetKek)
+    wrappedDek = await wrapKey(sourceDek, cek)
   }
 
   const until = typeof opts.until === 'string' ? opts.until : opts.until.toISOString()

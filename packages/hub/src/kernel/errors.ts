@@ -1405,8 +1405,9 @@ export class TierDemoteDeniedError extends NoydbError {
 
 /**
  * Thrown when `db.delegate()` is called against a user that has no
- * keyring in the target vault — the delegation token cannot be
- * constructed without the target user's KEK wrap.
+ * keyring in the target vault — the token's content key is sealed to the
+ * target's inbox PUBLIC half (core#65/#96), which lives in that keyring, so
+ * without it there is nothing to seal to. Nothing secret of theirs is needed.
  */
 export class DelegationTargetMissingError extends NoydbError {
   readonly toUser: string

@@ -2912,8 +2912,8 @@ export class Vault {
   /**
    * issue a time-boxed cross-tier delegation. Writes an
    * encrypted envelope to the reserved `_delegations` collection that
-   * the target user's runtime will pick up next time they open the
-   * vault.
+   * the target picks up at their next `refreshDelegations()` call —
+   * explicit, never automatic (core#56).
    *
    * Caller must hold the tier DEK for the requested tier and
    * collection.
