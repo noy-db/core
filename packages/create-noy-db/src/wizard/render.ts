@@ -66,7 +66,11 @@ export interface RenderTokens {
  * `noy-db/in` cuts. `__tests__/pins-resolve.test.ts`'s registry test
  * (`NOYDB_SCAFFOLD_INSTALL=1`) is what proves the value resolves on npm.
  */
-export const NOYDB_IN_VERSION = '0.8.0'
+// ⚠️ Was '0.8.0' through create-noy-db 0.9.0, whose scaffolds paired hub 0.9.0
+// with in-* 0.8.0 (peer hub ^0.8.0) — an ERESOLVE under npm's strict peers.
+// Set to the in line cut in the SAME family cut as this hub (0.10.0-pre.0,
+// ruled 2026-09-29); resolvable once `in` has published, minutes after core.
+export const NOYDB_IN_VERSION = '0.10.0-pre.0'
 
 /**
  * Walks `src` recursively and copies every file into `dest`, substituting

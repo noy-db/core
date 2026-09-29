@@ -1,5 +1,22 @@
 # Changelog — hub
 
+## 0.10.0-pre.0
+
+**The first pre-release of the 0.10 line: core gets smaller.** No hub source changed since `0.9.0`;
+this line exists because five packages left core's lockstep line, and a hub minor is how the family
+signals a changed line. Package names are unchanged, so no import changes.
+
+- `@noy-db/in-rest`, `@noy-db/in-relay`, `@noy-db/in-devtools`, `@noy-db/in-devtools-tui` now version
+  on **`noy-db/in`**'s line, beside the framework bindings.
+- `@noy-db/exclave-plain`, the plaintext capsule, now versions on **`noy-db/capsule`**'s line. Hub's
+  `#capsule` import map still names it by npm name, so the `noy-db:exclave-plain` build condition
+  works unchanged.
+- ⚠️ **A 0.x caret excludes the next minor.** A satellite whose hub peer reads `^0.9.0` does not
+  admit `0.10.0-pre.0`; every satellite is cut at `0.10.0-pre.0` in the same family cut with its
+  peer range appended.
+- `create-noy-db` scaffolds the `in-*` at `^0.10.0-pre.0`. Through `0.9.0` it paired hub `0.9.0` with
+  `in-*` `0.8.0`, whose hub peer is `^0.8.0`: an install error under npm's strict peers.
+
 ## 0.9.0
 
 **The stable release of the 0.9 line.** It is `0.9.0-pre.2` promoted unchanged; everything below was
