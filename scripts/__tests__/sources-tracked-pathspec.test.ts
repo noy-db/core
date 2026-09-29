@@ -33,7 +33,7 @@ const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const SCRIPT = REPO_ROOT + 'scripts/check-architecture.mjs'
 
 /** Shaped exactly like vitest's lcov html output: a `src/` nested under `coverage/`. */
-const COVERAGE_DIR = REPO_ROOT + 'packages/in-rest/coverage'
+const COVERAGE_DIR = REPO_ROOT + 'packages/to-file/coverage'
 const COVERAGE_FILE = COVERAGE_DIR + '/src/index.html'
 
 /**

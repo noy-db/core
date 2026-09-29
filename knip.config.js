@@ -101,13 +101,6 @@ export default {
       // module. Deleting it makes every SFC import a TS2307.
       ignore: ['__tests__/vue-shims.d.ts'],
     },
-    'packages/in-rest': {
-      // `h3` is an OPTIONAL PEER this package adapts to without importing —
-      // the Nitro adapter returns a Fetch `Response` and never touches h3's
-      // API. It is named in tsup's `external` list and in `peerDependencies`;
-      // the devDep is what makes the adapter's tests typecheck.
-      ignoreDependencies: ['h3'],
-    },
     'test-harnesses/benchmarks': {
       // ⚠️ Both harnesses reach hub by RELATIVE PATH into `packages/hub/src`,
       // never by specifier, so knip sees no import. The manifest row is not
