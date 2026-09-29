@@ -388,7 +388,7 @@ noy-db is an international open-source project. The first production consumer wa
 
 Almost every package has zero runtime dependencies, and none pulls in a heavyweight SDK. Things like `@aws-sdk/client-dynamodb`, `ssh2`, `pg`, `mysql2`, `zustand`, `react`, `vue`, `@tanstack/query-core` are **peer** dependencies — you already have them in your app.
 
-The exceptions, stated rather than rounded off: `as-xml` and `as-xlsx` depend on `fast-xml-parser`; `in-devtools-tui` on `ink` and `react`; `create-noy-db` on its scaffolder toolchain. `hub` and `in-nuxt` depend only on a sibling `@noy-db/*` package on the same version line.
+The exceptions, stated rather than rounded off: `as-xml` and `as-xlsx` depend on `fast-xml-parser`; `in-devtools-tui` ([noy-db/in](https://github.com/noy-db/in)) on `ink` and `react`; `create-noy-db` on its scaffolder toolchain. `hub` and `in-nuxt` depend only on a sibling `@noy-db/*` package on the same version line.
 
 The hub package itself uses only `crypto.subtle`, which is built into every target runtime (Node ≥ 18, Bun, Deno, modern browsers, Cloudflare Workers).
 
