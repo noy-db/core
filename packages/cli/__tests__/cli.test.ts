@@ -18,7 +18,7 @@ import { inspect } from '../src/commands/inspect.js'
 import { verify } from '../src/commands/verify.js'
 import { validateOptions, scaffold, loadOptionsFromFile } from '../src/commands/config.js'
 import { formatSnapshot } from '../src/commands/monitor.js'
-import type { MeterSnapshot } from '@noy-db/to-meter'
+import type { MeterSnapshotView } from '../src/commands/monitor.js'
 
 function memoryStore(name = 'memory'): NoydbStore {
   const data = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()
@@ -215,7 +215,7 @@ describe('scaffold — topology profiles', () => {
 
 describe('formatSnapshot — monitor output shape', () => {
   it('includes status + per-method summary for methods with traffic', () => {
-    const snap: MeterSnapshot = {
+    const snap: MeterSnapshotView = {
       byMethod: {
         get:     { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
         put:     { count: 5, errors: 1, p50: 10, p90: 40, p99: 50, max: 60, avg: 20 },
@@ -223,10 +223,12 @@ describe('formatSnapshot — monitor output shape', () => {
         list:    { count: 2, errors: 0, p50: 3, p90: 5, p99: 5, max: 5, avg: 4 },
         loadAll: { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
         saveAll: { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
-        // The optional half of the store contract. `snapshot()` walks METHODS
-        // and populates EVERY key, so a real MeterSnapshot always carries
-        // these — a fixture that omits them is not a smaller snapshot, it is
-        // one that cannot occur.
+        // The optional half of the store contract, kept because a real
+        // snapshot carries it. ⚠️ family#100 — the type is now cli's own
+        // structural view, which has an index signature, so it no longer
+        // ENFORCES these: that `snapshot()` walks METHODS and populates every
+        // key is to-meter's invariant and is witnessed in to-meter's own
+        // suite. This fixture documents the real shape; it cannot police it.
         listPage:     { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
         getStoreTime: { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
         tx:           { count: 0, errors: 0, p50: 0, p90: 0, p99: 0, max: 0, avg: 0 },
