@@ -45,7 +45,7 @@
     "knip": "^6.16.1",
     "tsup": "^8.4.0",
     "turbo": "^2.4.0",
-    "typedoc": "^0.27.0",
+    "typedoc": "^0.28.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.21.0",
     "vitest": "^3.0.0"
