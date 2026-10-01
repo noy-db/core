@@ -17,7 +17,7 @@ import { ConflictError, createNoydb, writePod } from '@noy-db/hub'
 import { inspect } from '../src/commands/inspect.js'
 import { verify } from '../src/commands/verify.js'
 import { validateOptions, scaffold, loadOptionsFromFile } from '../src/commands/config.js'
-import { formatSnapshot } from '../src/commands/monitor.js'
+import { formatSnapshot, runMonitor } from '../src/commands/monitor.js'
 import type { MeterSnapshotView } from '../src/commands/monitor.js'
 
 function memoryStore(name = 'memory'): NoydbStore {
@@ -249,5 +249,62 @@ describe('formatSnapshot — monitor output shape', () => {
     expect(out).toContain('list')
     // methods with zero traffic are omitted
     expect(out).not.toMatch(/^\s+get\s/m)
+  })
+})
+
+describe('runMonitor — the store must ALREADY be metered (family#100)', () => {
+  let dir: string
+  beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'noydb-cli-')) })
+  afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
+
+  /**
+   * Both cases return BEFORE the dynamic `@noy-db/hub` import and before any
+   * interval is installed, which is what makes them safe to run — a config
+   * that passes the guard would start a dashboard that never exits.
+   */
+  async function run(source: string): Promise<{ code: number; err: string }> {
+    const file = join(dir, 'noydb.config.mjs')
+    await writeFile(file, source)
+    const chunks: string[] = []
+    const original = process.stderr.write.bind(process.stderr)
+    process.stderr.write = ((c: string | Uint8Array) => { chunks.push(String(c)); return true }) as typeof process.stderr.write
+    try {
+      return { code: await runMonitor([file]), err: chunks.join('') }
+    } finally {
+      process.stderr.write = original
+    }
+  }
+
+  it('refuses a plain store and names the fix, instead of wrapping it itself', async () => {
+    const { code, err } = await run(
+      'export default { store: { name: "plain", async get() { return null },' +
+      ' async put() {}, async delete() {}, async list() { return [] } } }\n',
+    )
+    expect(code).toBe(1)
+    expect(err).toContain('carries no meter handle')
+    expect(err).toContain('toMeter')
+  })
+
+  it('a store carrying a meter handle gets PAST the guard — the control', async () => {
+    // ⭐ Asserts PROGRESS, not absence. An empty stderr would also be produced
+    // by throwing before the guard ever ran, so the real evidence is that
+    // execution reached the dynamic hub import: this deliberately-minimal
+    // config then fails inside `createNoydb`, which is hub's message, not ours.
+    // Without this, the refusal test above could pass while the guard rejected
+    // everything.
+    let thrown = ''
+    const { err } = await run(
+      'const meter = { snapshot() { return {} }, close() {} }\n' +
+      'export default { store: { name: "metered", meter, async get() { return null },' +
+      ' async put() {}, async delete() {}, async list() { return [] } } }\n',
+    ).catch((e: Error) => { thrown = e.message; return { code: -1, err: '' } })
+    expect(err).not.toContain('carries no meter handle')
+    expect(thrown).toMatch(/secret|getKeyring/)
+  })
+
+  it('reports a missing store distinctly from an unmetered one', async () => {
+    const { code, err } = await run('export default { store: null }\n')
+    expect(code).toBe(1)
+    expect(err).toContain('no `store`')
   })
 })
