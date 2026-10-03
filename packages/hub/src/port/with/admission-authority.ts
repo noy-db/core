@@ -16,7 +16,7 @@
  */
 import type { EncryptedEnvelope } from '../../kernel/types.js'
 
-export type AdmissionVerdict =
+type AdmissionVerdict =
   | { readonly admitted: true }
   | { readonly admitted: false; readonly reason: string }
 

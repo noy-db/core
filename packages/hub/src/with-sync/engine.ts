@@ -24,7 +24,7 @@ import { isConflictError, ValidationError } from '../kernel/errors.js'
 import { pushReserved, pullReserved, pullKeyringFile } from './reserved-mirror.js'
 
 /** core#74 — where a device parks the records its admission gate refused. Local-only: never mirrored, never full-pushed. */
-export const REJECTED_COLLECTION = '_sync_rejected'
+const REJECTED_COLLECTION = '_sync_rejected'
 /** core#74 — the parking record: the refusal and the untouched envelope, plaintext JSON (the envelope inside is still ciphertext). */
 interface ParkedRejection { readonly rejection: SyncRejection; readonly envelope: EncryptedEnvelope }
 /** The parking record is a plaintext-body envelope; the capsule's canonical body reader returns exactly its JSON. */
