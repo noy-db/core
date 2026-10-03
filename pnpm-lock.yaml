@@ -73,9 +73,6 @@ importers:
       '@noy-db/hub':
         specifier: workspace:*
         version: link:../hub
-      '@noy-db/to-meter':
-        specifier: workspace:*
-        version: link:../to-meter
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.17
