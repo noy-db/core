@@ -1015,7 +1015,7 @@ export type VaultPolicyOnDisk = Record<string, unknown>
  * - `paper` — `on-recovery` codes (the standard end-to-end profile).
  * - `shamir` / `multi-channel` / `admin-mediated` — API surface ships;
  *   per-profile dispatch lands in follow-up issues. Calling
- *   `db.recoverSecret` against these throws
+ *   `db.team.recoverSecret` against these throws
  *   {@link RecoveryProfileNotImplementedError}.
  */
 type RecoveryEnrollment =
@@ -3646,7 +3646,7 @@ export interface NoydbOptions {
   /**
    * Vault-level policy gate document. When present, the hub
    * persists the merged policy at `_meta/policy` on first-time vault
-   * creation and gates sensitive operations (`db.rotateSecret`,
+   * creation and gates sensitive operations (`db.team.rotateSecret`,
    * `db.export*`, …) against it. Omitted ⇒ the engine uses
    * {@link PERSONAL_POLICY}. Use {@link STRICT_POLICY} for regulated
    * deployments.
@@ -4257,7 +4257,7 @@ export type BuiltInGateName =
   /** Authorize reading other principals' user envelopes. */
   | 'view-team-profiles'
   /**
-   * Authorize an atomic peer-recovery — `db.recoverUser`.
+   * Authorize an atomic peer-recovery — `db.team.recoverUser`.
    * Distinct from `revoke-user` because peer-recovery is intentional
    * re-issuance of someone's keyring under a temp secret, NOT
    * removal. Allows owner→owner natively (matches the threat model:
@@ -4343,8 +4343,8 @@ export interface FactorProof {
  * Noydb method. Used as the optional last parameter of every method
  * that runs through `checkGate`: `db.grant`, `db.revoke`, `db.updateUser`,
  * `db.enrollAuthenticator`, `db.removeAuthenticator`, `db.updateAuthenticator`,
- * `db.enrollWebAuthn`, `db.rotateSecret`, `db.recoverSecret`,
- * `db.recoverUser`, `db.enrollUnlock`, `db.describeUserAuth`,
+ * `db.team.enrollWebAuthn`, `db.team.rotateSecret`, `db.team.recoverSecret`,
+ * `db.team.recoverUser`, `db.team.enrollUnlock`, `db.team.describeUserAuth`,
  * `db.describeAllUsersAuth`.
  *
  * Previously this type was inlined at every call site as

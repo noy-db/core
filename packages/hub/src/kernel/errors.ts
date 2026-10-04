@@ -3862,8 +3862,9 @@ export class PolicyDeniedError extends NoydbError {
 export class RecoveryNotEnrolledError extends NoydbError {
   constructor(
     message =
-      'Recovery profile not enrolled. Pass `recovery: [{ profile: "paper", codes: 10 }]` ' +
-      'to `createNoydb()`, or set `policy.gates["recover-secret"].enabled = false` to ' +
+      'Recovery profile not enrolled. Enroll with ' +
+      '`db.team.enrollRecovery(vault, { profile: "paper", entries })`, ' +
+      'or set `policy.gates["recover-secret"].enabled = false` to ' +
       'opt out of recovery (secret loss = data loss). See https://github.com/noy-db/docs/blob/main/content/docs/services/session-tiers.md.',
   ) {
     super('RECOVERY_NOT_ENROLLED', message)
@@ -3909,7 +3910,7 @@ export class ManagedRecoveryNotEnrolledError extends NoydbError {
 }
 
 /**
- * Raised by `db.recoverSecret` / `db.enrollRecovery` /
+ * Raised by `db.team.recoverSecret` / `db.team.enrollRecovery` /
  * `db.rotateRecovery` when the developer requests a recovery profile
  * not yet wired in this hub release.
  *

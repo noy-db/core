@@ -17,6 +17,10 @@ import {
   saveVaultPolicy,
   PERSONAL_POLICY,
 } from '../src/with-party/policy/index.js'
+import {
+  savePaperRecoveryEntries,
+  saveShamirRecoveryEntries,
+} from '../src/with-party/team/recovery.js'
 
 function inlineMemory(): NoydbStore {
   const store = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()
@@ -166,5 +170,55 @@ describe('describeUserAuth — sanitization', () => {
     const summary = await describeUserAuth(store, 'acme', 'bob')
     expect(summary).toContain('bob')
     expect(summary).toContain('(none enrolled)')
+  })
+})
+
+/**
+ * family#94 — introspection must agree with the gate it mirrors.
+ *
+ * `listRecoveryProfilesEnrolled` read paper entries only, so a Shamir-only
+ * vault reported "none" while `hasRecoveryEnrolled` — which loads both —
+ * said it had recovery. Introspection denying a protection the vault holds
+ * is the dangerous direction: it invites a caller to enroll again, or to
+ * conclude the vault is unrecoverable when it is not.
+ */
+describe('describeAuthConfig — recovery profiles enrolled (family#94)', () => {
+  /** Minimal valid Shamir entry. The blob fields are opaque to introspection. */
+  const shamirEntry = (k: number, n: number, entryId = 'e1') => ({
+    entryId, k, n,
+    enrolledAt: new Date().toISOString(),
+    salt: 'c2FsdA==',
+    iv: 'aXY=',
+    wrappedDeks: 'd3JhcA==',
+  })
+
+  it('lists a Shamir-only vault instead of reporting none', async () => {
+    const store = inlineMemory()
+    await saveVaultPolicy(store, 'acme', PERSONAL_POLICY)
+    await saveShamirRecoveryEntries(store, 'acme', [shamirEntry(2, 3)])
+    const summary = await describeAuthConfig(store, 'acme')
+    expect(summary).toContain('shamir (2-of-3)')
+    expect(summary).not.toContain('Recovery profiles enrolled: none')
+  })
+
+  it('lists both profiles when both are enrolled', async () => {
+    const store = inlineMemory()
+    await saveVaultPolicy(store, 'acme', PERSONAL_POLICY)
+    await savePaperRecoveryEntries(store, 'acme', [
+      { entryId: 'p1', salt: 'c2FsdA==', iv: 'aXY=', wrappedDeks: 'd3JhcA==' },
+    ] as never)
+    await saveShamirRecoveryEntries(store, 'acme', [shamirEntry(3, 5)])
+    const summary = await describeAuthConfig(store, 'acme')
+    expect(summary).toContain('paper (1 codes)')
+    expect(summary).toContain('shamir (3-of-5)')
+  })
+
+  it('still reports none when neither is enrolled — the control', async () => {
+    // Without this, the two assertions above would pass against an
+    // implementation that reported every profile unconditionally.
+    const store = inlineMemory()
+    await saveVaultPolicy(store, 'acme', PERSONAL_POLICY)
+    const summary = await describeAuthConfig(store, 'acme')
+    expect(summary).toContain('Recovery profiles enrolled: none')
   })
 })

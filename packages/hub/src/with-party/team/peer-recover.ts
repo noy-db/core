@@ -27,7 +27,7 @@
  *      their own phrase.
  *
  * Caller must be at least as privileged as the target. The hub
- * `db.recoverUser` method gates this with the `peer-recover-user`
+ * `db.team.recoverUser` method gates this with the `peer-recover-user`
  * policy gate (the `peer-recover-user` factor-proof requirement); the function below
  * enforces only the role + anti-privilege-escalation invariants.
  *
@@ -77,7 +77,7 @@ export interface RecoverUserOptions {
   readonly userId: string
   /**
    * Temporary secret under which the new keyring is wrapped.
-   * The recipient should call `db.rotateSecret` immediately on
+   * The recipient should call `db.team.rotateSecret` immediately on
    * acceptance to choose their own phrase — this temp acts as a
    * single-use bridge in invite / peer-recovery flows.
    */

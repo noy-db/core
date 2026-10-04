@@ -523,7 +523,7 @@ export interface RecoverSecretInput {
 }
 
 /**
- * Return shape of `db.recoverSecret`. `newCodes` is populated when
+ * Return shape of `db.team.recoverSecret`. `newCodes` is populated when
  * `rotateRemainingCodes` was enabled and at least one entry was
  * rotated; an empty array means no rotation happened (rotation
  * disabled, or no remaining codes after burn). Show the codes to the
@@ -577,7 +577,7 @@ export interface RotateRecoveryResult {
 }
 
 /**
- * Result of {@link Noydb.enrollRecovery}. Shape varies by profile:
+ * Result of `db.team.enrollRecovery`. Shape varies by profile:
  *
  * - `paper` → `{ entryId: 'paper-batch' }` (caller minted the
  *   entries; this is a sentinel since paper enrollments are batch-shaped).
@@ -590,7 +590,7 @@ export interface EnrollRecoveryResult {
 }
 
 /**
- * Input shape for {@link Noydb.enrollRecovery} and
+ * Input shape for `db.team.enrollRecovery` and
  * {@link Noydb.openVaultAndEnrollRecovery}. Discriminated
  * union over recovery profiles.
  *
