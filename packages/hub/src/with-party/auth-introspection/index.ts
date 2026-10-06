@@ -19,7 +19,7 @@
  */
 import type { NoydbStore, KeyringFile, KeyringAuthenticator, VaultPolicy, GatePolicy } from '../../kernel/types.js'
 import { loadVaultPolicy } from '../policy/storage.js'
-import { loadPaperRecoveryEntries } from '../team/recovery.js'
+import { loadPaperRecoveryEntries, loadShamirRecoveryEntries } from '../team/recovery.js'
 
 /** Vault-wide English summary of the configured authentication graph. */
 export async function describeAuthConfig(
@@ -188,6 +188,12 @@ async function listRecoveryProfilesEnrolled(
   const enrolled: string[] = []
   const paper = await loadPaperRecoveryEntries(store, vault)
   if (paper.length > 0) enrolled.push(`paper (${paper.length} codes)`)
+  // ⛔ Both profiles, because this must agree with `hasRecoveryEnrolled`
+  // (team/recovery.ts), which loads paper AND Shamir. Reading paper alone
+  // made a Shamir-only vault report "none" — introspection claiming a vault
+  // has no recovery when the gate it mirrors says it does.
+  const shamir = await loadShamirRecoveryEntries(store, vault)
+  for (const entry of shamir) enrolled.push(`shamir (${entry.k}-of-${entry.n})`)
   return enrolled
 }
 

@@ -582,7 +582,7 @@ export class TeamFacade {
     // Auto-rotate: replace the remaining entries with a fresh set
     // minted under the new keyring's DEKs. Wraps the same DEK set the
     // recovered keyring just got, so the new codes round-trip through
-    // a future `db.recoverSecret` cleanly.
+    // a future `db.team.recoverSecret` cleanly.
     //
     // If this step fails (store error mid-mint), we leave the existing
     // post-burn entries in place — the user falls back to the
@@ -886,7 +886,7 @@ export class TeamFacade {
     if (this.deps.options.secretMode !== 'managed') {
       throw new ValidationError(
         'recoverManagedSecret: this method only applies to vaults opened '
-        + 'in managed-secret mode. For standard mode, use db.recoverSecret.',
+        + 'in managed-secret mode. For standard mode, use db.team.recoverSecret.',
       )
     }
     const provider = this.deps.options.sealingKey
@@ -965,7 +965,7 @@ export class TeamFacade {
    * recovery / TOTP / email-OTP factor proof at the moment of
    * recovery, so the issuer affirmatively re-asserts identity.
    *
-   * The recipient should call `db.rotateSecret` on first session
+   * The recipient should call `db.team.rotateSecret` on first session
    * to choose their own phrase — the temp acts as a single-use
    * bridge.
    *
@@ -975,7 +975,7 @@ export class TeamFacade {
    *   secret: 'temporary-correct-horse-battery-staple-printer',
    * }, { factors: [{ kind: 'recovery' }] })
    * // Bob opens createNoydb({ user: 'bob', secret: tempPhrase })
-   * // and immediately calls db.rotateSecret to set his own.
+   * // and immediately calls db.team.rotateSecret to set his own.
    * ```
    *
    * @throws `NoAccessError` when no keyring exists for the target.

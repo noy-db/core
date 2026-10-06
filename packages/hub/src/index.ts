@@ -780,8 +780,8 @@ export {
   aesGcmOpen,
 } from './with-party/team/managed-secret.js'
 
-// Peer-recovery — atomic db.recoverUser primitive.
-// The team/peer-recover module also runs through Noydb.recoverUser for
+// Peer-recovery — atomic db.team.recoverUser primitive.
+// The team/peer-recover module also runs through db.team.recoverUser for
 // the policy-gated path; consumers can use the lower-level function
 // directly when they don't want hub-level gating (e.g. in tests).
 export { recoverUser } from './with-party/team/peer-recover.js'
