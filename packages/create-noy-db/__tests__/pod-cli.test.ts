@@ -14,11 +14,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '@noy-db/hub'
 import { ConflictError, createNoydb, writePod } from '@noy-db/hub'
-import { inspect } from '../src/commands/inspect.js'
-import { verify } from '../src/commands/verify.js'
-import { validateOptions, scaffold, loadOptionsFromFile } from '../src/commands/config.js'
-import { formatSnapshot, runMonitor } from '../src/commands/monitor.js'
-import type { MeterSnapshotView } from '../src/commands/monitor.js'
+import { inspect } from '../src/commands/pod/inspect.js'
+import { verify } from '../src/commands/pod/verify.js'
+import { validateOptions, scaffold, loadOptionsFromFile } from '../src/commands/pod/config.js'
+import { formatSnapshot, runMonitor } from '../src/commands/pod/monitor.js'
+import type { MeterSnapshotView } from '../src/commands/pod/monitor.js'
 
 function memoryStore(name = 'memory'): NoydbStore {
   const data = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()

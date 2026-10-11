@@ -64,7 +64,7 @@ pnpm add @noy-db/hub
 - **Authentication paths** — [`@noy-db/on-*`](https://www.npmjs.com/search?q=%40noy-db%2Fon-): webauthn, oidc, totp, email-otp, magic-link, recovery, shamir, pin, threat.
 - **Export formats** — [`@noy-db/as-*`](https://www.npmjs.com/search?q=%40noy-db%2Fas-): csv, json, ndjson, xml, sql, xlsx, blob, zip, noydb (encrypted pod).
 - **Session-share transports** — [`@noy-db/by-*`](https://www.npmjs.com/search?q=%40noy-db%2Fby-): tabs (BroadcastChannel multi-tab), peer (WebRTC).
-- **CLI tooling** — [`@noy-db/cli`](https://www.npmjs.com/package/@noy-db/cli) (`noydb` binary; inspect/verify `.noydb` files), [`create-noy-db`](https://www.npmjs.com/package/create-noy-db) (`npm create noy-db` scaffolder).
+- **CLI tooling** — [`create-noy-db`](https://www.npmjs.com/package/create-noy-db): `npm create noy-db` scaffolds; the `noy-db` bin inspects/verifies `.noydb` pods, audits schemas, validates configs and more. (`@noy-db/cli` is a deprecated redirect to it.)
 
 ## Quick start
 

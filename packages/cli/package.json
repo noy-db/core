@@ -1,7 +1,7 @@
 {
   "name": "@noy-db/cli",
   "version": "0.10.0-pre.0",
-  "description": "Command-line tool for noy-db — inspect .noydb bundles without decrypting, verify integrity, validate config objects, scaffold topology profiles, and monitor a live vault's store metrics.",
+  "description": "DEPRECATED shim — every `noydb` command now lives in `create-noy-db`'s `noy-db` bin. This package only redirects. Install create-noy-db instead.",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/cli#readme",
@@ -43,15 +43,11 @@
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json"
   },
   "peerDependencies": {
-    "@noy-db/hub": "workspace:^",
-    "yaml": "^2.9.0"
+    "create-noy-db": "workspace:^"
   },
   "devDependencies": {
-    "@noy-db/hub": "workspace:*",
     "@types/node": "^22.0.0",
-    "yaml": "^2.9.0",
-    "zod": "^4.0.0",
-    "zod-to-json-schema": "^3.25.2"
+    "create-noy-db": "workspace:*"
   },
   "keywords": [
     "noy-db",

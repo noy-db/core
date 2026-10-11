@@ -1,5 +1,5 @@
 /**
- * `noydb verify <file.noydb>` — integrity check.
+ * `noy-db pod verify <file.noydb>` — integrity check.
  *
  * Validates the three integrity properties of a bundle that can be
  * verified **without the secret**:
@@ -58,7 +58,7 @@ export async function verify(filePath: string): Promise<VerifyReport> {
 export async function runVerify(argv: readonly string[]): Promise<number> {
   const file = argv[0]
   if (!file) {
-    process.stderr.write('usage: noydb verify <file.noydb>\n')
+    process.stderr.write('usage: noy-db pod verify <file.noydb>\n')
     return 2
   }
   const report = await verify(file)

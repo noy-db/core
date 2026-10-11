@@ -1,5 +1,5 @@
 /**
- * `noydb inspect <file.noydb>` — print the unencrypted header.
+ * `noy-db pod inspect <file.noydb>` — print the unencrypted header.
  *
  * This command is the security-sensitive one in the CLI: it must
  * never prompt for a secret and never decrypt anything. It reads
@@ -42,7 +42,7 @@ export async function inspect(filePath: string): Promise<InspectResult> {
 export async function runInspect(argv: readonly string[]): Promise<number> {
   const file = argv[0]
   if (!file) {
-    process.stderr.write('usage: noydb inspect <file.noydb>\n')
+    process.stderr.write('usage: noy-db pod inspect <file.noydb>\n')
     return 2
   }
   try {

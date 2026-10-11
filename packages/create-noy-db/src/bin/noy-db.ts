@@ -1,86 +1,110 @@
 #!/usr/bin/env node
 /**
- * The `noy-db` bin. Invoked from inside an existing project by
- * `pnpm exec noy-db <command>`, `npx noy-db <command>`, etc.
+ * The `noy-db` bin — THE ONE DOOR after `npm create noy-db` (family#114).
  *
- * Subcommands:
+ * Until 2026-10-11 a newcomer met three bins from three packages: this one
+ * (`add`, `verify`, `rotate`, `backup`), `@noy-db/cli`'s `noydb` (`inspect`,
+ * `verify`, `describe`, `config`, `monitor`) and `@noy-db/in-devtools-tui`'s
+ * `noydb-inspect`. Two of them had a `verify` that meant different things. The
+ * docs carried a "which binary is which" table instead of there being one
+ * binary. This file is that one binary; `@noy-db/cli` is now a shim that
+ * redirects here.
  *
- *   add <collection>                       Scaffold store + page files
- *   add user <id> <role> [--collections…]  Grant a new user access
- *   verify                                 In-memory integrity check
- *   rotate --vault … --user …        Rotate DEKs for a vault
- *   backup <target> --vault … …      Dump a vault to a file
- *   help                                   Show usage
+ *   noy-db add <collection>                   scaffold a store + page
+ *   noy-db user add <id> <role> [options]     grant a user (was `add user`)
+ *   noy-db user rotate [options]              rotate DEKs (was `rotate`)
+ *   noy-db backup <target> [options]          dump a vault to a file
+ *   noy-db doctor crypto                      in-memory crypto round-trip (was `verify`)
+ *   noy-db pod inspect <file.noydb>           bundle header, no secret
+ *   noy-db pod verify  <file.noydb>           bundle integrity, no secret
+ *   noy-db describe <file.noydb> [options]    YAML/JSON schema audit
+ *   noy-db config validate <file>             sanity-check a NoydbOptions file
+ *   noy-db config scaffold [--profile=<id>]   topology skeleton to stdout, .env to stderr
+ *   noy-db config profiles                    list the ten profiles
+ *   noy-db monitor <file> [--interval=ms]     live store metrics (store must be metered)
+ *   noy-db inspect <file> --vault=<v> […]     the TUI inspector (reached lazily, see below)
  *
- * Future subcommands (deferred to a follow-up):
- *   seed                Re-run the project's seeder script (needs
- *                       a design decision on how seed scripts auth)
- *   backup s3://...     S3 targets (would bundle @aws-sdk; lives in
- *                       an optional companion package instead)
- *   restore <file>      Load a dumped backup into a vault
+ * ## Why `inspect` SHELLS OUT instead of importing the TUI
+ *
+ * The TUI (`@noy-db/in-devtools-tui`) depends on `@noy-db/in-devtools`, a
+ * satellite in `noy-db/in`. A core package importing a satellite is the
+ * back-edge the one-way law forbids. So this door REACHES the TUI when it is
+ * installed and names `noy-db add in-devtools-tui` when it is not — the same
+ * shape `monitor` uses for `to-meter`. One door, no back-edge.
  *
  * ## Dispatcher design
  *
- * The dispatcher is intentionally dead simple: read argv[2], pick
- * a handler, pass the remaining args. No flag DSL, no auto-help
- * generation. Each subcommand's argv parser lives next to the
- * subcommand itself so the wiring is obvious and the pure
- * subcommand functions stay testable in isolation.
+ * Deliberately flat: read argv, pick a handler, pass the rest. Each
+ * subcommand's argv parser lives next to the subcommand so the pure functions
+ * stay testable in isolation. The old spellings (`add user`, `rotate`,
+ * `verify`) keep working for one line, printing the new one.
  *
  * ## Secret handling invariants
  *
- * Every subcommand that unlocks a vault goes through the
- * shared `defaultReadSecret` helper (see `commands/shared.ts`).
- * That helper:
- *
- *   - Uses @clack/prompts `password()` so nothing echoes to stdout
- *   - Never logs the returned value
- *   - Validates "not empty" up front; the real strength check
- *     happens inside the core's KEK derivation
- *   - Aborts the process on Ctrl-C before any I/O happens
- *
- * The secret never leaves the closure in which it was read —
- * every subcommand closes the Noydb instance in a `finally` block
- * so the KEK is cleared from memory on the way out.
+ * Every subcommand that unlocks a vault goes through `defaultReadSecret`
+ * (`commands/shared.ts`): @clack `password()` so nothing echoes, the value is
+ * never logged, and the Noydb instance closes in a `finally` so the KEK is
+ * cleared on the way out.
  */
 
+import { spawnSync } from 'node:child_process'
 import pc from 'picocolors'
+import { resolveBin } from '../commands/resolve-bin.js'
 import { addCollection } from '../commands/add.js'
 import { verifyIntegrity } from '../commands/verify.js'
 import { rotate, type RotateOptions } from '../commands/rotate.js'
 import { addUser, type AddUserOptions } from '../commands/add-user.js'
 import { backup } from '../commands/backup.js'
 import { assertRole, parseCollectionList } from '../commands/shared.js'
+import { runInspect as runPodInspect } from '../commands/pod/inspect.js'
+import { runVerify as runPodVerify } from '../commands/pod/verify.js'
+import { runDescribe } from '../commands/pod/describe.js'
+import { runConfigValidate, runConfigScaffold, runConfigProfiles } from '../commands/pod/config.js'
+import { runMonitor } from '../commands/pod/monitor.js'
 
 const HELP = `Usage: noy-db <command> [args]
 
-Commands:
+Project
   add <collection>                             Scaffold a new collection store + page
-  add user <userId> <role> [options]           Grant a new user access to a vault
-  verify                                       In-memory crypto integrity check
-  rotate [options]                             Rotate DEKs for a vault
+  user add <userId> <role> [options]           Grant a new user access to a vault
+  user rotate [options]                        Rotate DEKs for a vault
   backup <target> [options]                    Dump a vault to a file
-  help                                         Show this message
+  doctor crypto                                In-memory crypto round-trip check
 
-Common options for rotate / add user / backup:
+Pods (.noydb files)
+  pod inspect <file.noydb>                     Print the bundle header (no secret)
+  pod verify  <file.noydb>                     Verify bundle integrity (no secret)
+  describe <file.noydb> [options]              YAML/JSON schema audit (needs the secret)
+
+Configuration
+  config validate <file.js|mjs>                Sanity-check a NoydbOptions file
+  config scaffold [--profile=<id>]             Topology skeleton → stdout, .env template → stderr
+  config profiles                              List the ten topology profiles
+
+Running
+  monitor <file.js|mjs> [--interval=ms]        Live store metrics (the store must be metered)
+  inspect <file.js|mjs> --vault=<name> [...]   Terminal inspector (installs on demand)
+
+Common options for user add / user rotate / backup:
   --dir <path>               Data directory (file adapter). Default: ./data
-  --vault <name>       Vault (tenant) name. Required.
+  --vault <name>             Vault (tenant) name. Required.
   --user <id>                Your user id in the vault. Required.
-  --collections <list>       Comma-separated collection list. Format:
-                               rotate:  invoices,clients
-                               add user: invoices:rw,clients:ro (operator/client only)
+  --collections <list>       rotate: invoices,clients · user add: invoices:rw,clients:ro
 
 Examples:
   noy-db add invoices
-  noy-db add user accountant-ann operator --dir ./data --vault demo-co --user owner-alice --collections invoices:rw,clients:ro
-  noy-db verify
-  noy-db rotate --dir ./data --vault demo-co --user owner-alice
-  noy-db backup ./backups/demo-co-2026-04-07.json --dir ./data --vault demo-co --user owner-alice
+  noy-db user add ann operator --dir ./data --vault demo-co --user owner-alice --collections invoices:rw
+  noy-db config profiles
+  noy-db config scaffold --profile=B > noydb.config.mjs
+  noy-db doctor crypto
 
-Run from the root of a project that already has a noy-db file
-adapter directory in place. For new projects, use
-\`npm create noy-db\` instead.
+New project? \`npm create noy-db@latest\`.
 `
+
+/** One line, once, when an old spelling is used. The old spelling still works. */
+function renamed(from: string, to: string): void {
+  process.stderr.write(`${pc.dim(`(\`noy-db ${from}\` is now \`noy-db ${to}\`)`)}\n`)
+}
 
 async function main(): Promise<void> {
   const [, , command, ...rest] = process.argv
@@ -94,19 +118,66 @@ async function main(): Promise<void> {
       return
 
     case 'add':
+      if (rest[0] === 'user') { renamed('add user', 'user add'); await runAddUser(rest.slice(1)); return }
       await runAdd(rest)
       return
 
-    case 'verify':
-      await runVerify()
+    case 'user': {
+      const [sub, ...subRest] = rest
+      if (sub === 'add') { await runAddUser(subRest); return }
+      if (sub === 'rotate') { await runRotate(subRest); return }
+      fail(`\`noy-db user\` takes \`add\` or \`rotate\``)
       return
+    }
 
     case 'rotate':
+      renamed('rotate', 'user rotate')
       await runRotate(rest)
       return
 
     case 'backup':
       await runBackup(rest)
+      return
+
+    case 'verify':
+      renamed('verify', 'doctor crypto')
+      await runCryptoCheck()
+      return
+
+    case 'doctor': {
+      const [sub] = rest
+      if (sub === 'crypto') { await runCryptoCheck(); return }
+      fail(`\`noy-db doctor\` takes \`crypto\` today; the readiness checks land in family#116`)
+      return
+    }
+
+    case 'pod': {
+      const [sub, ...subRest] = rest
+      if (sub === 'inspect') process.exit(await runPodInspect(subRest))
+      if (sub === 'verify') process.exit(await runPodVerify(subRest))
+      fail(`\`noy-db pod\` takes \`inspect\` or \`verify\``)
+      return
+    }
+
+    case 'describe':
+      process.exit(await runDescribe(rest))
+      return
+
+    case 'config': {
+      const [sub, ...subRest] = rest
+      if (sub === 'validate') process.exit(await runConfigValidate(subRest))
+      if (sub === 'scaffold') process.exit(await runConfigScaffold(subRest))
+      if (sub === 'profiles') process.exit(runConfigProfiles())
+      fail(`\`noy-db config\` takes \`validate\`, \`scaffold\` or \`profiles\``)
+      return
+    }
+
+    case 'monitor':
+      process.exit(await runMonitor(rest))
+      return
+
+    case 'inspect':
+      process.exit(runTuiInspect(rest))
       return
 
     default:
@@ -115,19 +186,42 @@ async function main(): Promise<void> {
   }
 }
 
-// ─── `add` dispatcher — branches between `add <collection>` and `add user …` ─
+function fail(message: string): never {
+  process.stderr.write(`${pc.red('error:')} ${message}\n`)
+  process.exit(2)
+}
+
+// ─── `inspect` — reach the TUI without importing it ────────────────────
+
+/**
+ * Resolve `noydb-inspect` from the caller's project and exec it. We resolve
+ * rather than `npx` so an installed TUI is used as-is and an absent one is
+ * named precisely, instead of npx silently downloading something at a version
+ * nobody chose.
+ */
+export function runTuiInspect(args: readonly string[]): number {
+  const bin = resolveBin('@noy-db/in-devtools-tui', 'noydb-inspect')
+  if (!bin) {
+    process.stderr.write(
+      `${pc.red('error:')} the terminal inspector is not installed in this project.\n\n` +
+        `  ${pc.bold('pnpm add -D @noy-db/in-devtools-tui')}   ${pc.dim('(or npm/yarn/bun)')}\n\n` +
+        `then re-run \`noy-db inspect\`. It needs a config file, --vault=<name>, and a secret (--secret or NOYDB_SECRET).\n`,
+    )
+    return 2
+  }
+  const r = spawnSync(process.execPath, [bin, ...args], { stdio: 'inherit' })
+  return r.status ?? 1
+}
+
+
+// ─── `add` ──────────────────────────────────────────────────────────────
 
 async function runAdd(args: string[]): Promise<void> {
   const first = args[0]
-  if (first === 'user') {
-    await runAddUser(args.slice(1))
-    return
-  }
-  // Legacy path: `noy-db add <collection>` scaffolds store + page files.
   if (!first) {
     process.stderr.write(
-      `${pc.red('error:')} \`noy-db add\` requires either a collection name or the \`user\` subcommand\n\n` +
-        `Examples:\n  noy-db add invoices\n  noy-db add user alice operator ...\n`,
+      `${pc.red('error:')} \`noy-db add\` requires a collection name\n\n` +
+        `Examples:\n  noy-db add invoices\n  noy-db user add alice operator ...\n`,
     )
     process.exit(2)
   }
@@ -146,10 +240,10 @@ async function runAdd(args: string[]): Promise<void> {
   }
 }
 
-// ─── `verify` ──────────────────────────────────────────────────────────
+// ─── `doctor crypto` ───────────────────────────────────────────────────
 
-async function runVerify(): Promise<void> {
-  process.stdout.write(`${pc.dim('▸ Running noy-db integrity check…')}\n`)
+async function runCryptoCheck(): Promise<void> {
+  process.stdout.write(`${pc.dim('▸ Running noy-db crypto round-trip…')}\n`)
   const result = await verifyIntegrity()
   if (result.ok) {
     process.stdout.write(`${pc.green('✔')} ${result.message} ${pc.dim(`(${result.durationMs}ms)`)}\n`)
@@ -159,16 +253,15 @@ async function runVerify(): Promise<void> {
   process.exit(1)
 }
 
-// ─── `add user` ────────────────────────────────────────────────────────
+// ─── `user add` ────────────────────────────────────────────────────────
 
 async function runAddUser(args: string[]): Promise<void> {
-  // Positional: userId, role. Then flag bag.
   const userId = args[0]
   const roleInput = args[1]
   if (!userId || !roleInput) {
     process.stderr.write(
-      `${pc.red('error:')} \`noy-db add user\` requires <userId> <role>\n\n` +
-        `Example: noy-db add user ann operator --dir ./data --vault demo-co --user owner-alice --collections invoices:rw\n`,
+      `${pc.red('error:')} \`noy-db user add\` requires <userId> <role>\n\n` +
+        `Example: noy-db user add ann operator --dir ./data --vault demo-co --user owner-alice --collections invoices:rw\n`,
     )
     process.exit(2)
   }
@@ -210,7 +303,7 @@ async function runAddUser(args: string[]): Promise<void> {
   }
 }
 
-// ─── `rotate` ──────────────────────────────────────────────────────────
+// ─── `user rotate` ─────────────────────────────────────────────────────
 
 async function runRotate(args: string[]): Promise<void> {
   const flags = parseFlags(args)
@@ -267,10 +360,9 @@ async function runBackup(args: string[]): Promise<void> {
 // ─── Shared argv helpers ───────────────────────────────────────────────
 
 /**
- * Parse a sequence of `--key value` flag pairs into a record.
- * Boolean flags (`--flag` with no value) become `"true"`. Unknown
- * shapes (positional args after the known set) are ignored — the
- * caller has already peeled positionals before passing in.
+ * Parse a sequence of `--key value` flag pairs into a record. Boolean flags
+ * (`--flag` with no value) become `"true"`. Positionals are peeled by the
+ * caller before this sees the args.
  */
 function parseFlags(args: string[]): Record<string, string> {
   const out: Record<string, string> = {}
@@ -292,30 +384,20 @@ function parseFlags(args: string[]): Record<string, string> {
 function requireFlag(flags: Record<string, string>, name: string): string {
   const value = flags[name]
   if (!value) {
-    process.stderr.write(
-      `${pc.red('error:')} missing required flag --${name}\n`,
-    )
+    process.stderr.write(`${pc.red('error:')} missing required flag --${name}\n`)
     process.exit(2)
   }
   return value
 }
 
-/**
- * Parse `--collections invoices:rw,clients:ro` into a
- * `{ invoices: 'rw', clients: 'ro' }` record. Returns `null` when
- * the input is empty or undefined.
- */
-function parsePermissions(
-  input: string | undefined,
-): Record<string, 'rw' | 'ro'> | null {
+/** `--collections invoices:rw,clients:ro` → `{ invoices: 'rw', clients: 'ro' }`, or null when empty. */
+function parsePermissions(input: string | undefined): Record<string, 'rw' | 'ro'> | null {
   if (!input) return null
   const out: Record<string, 'rw' | 'ro'> = {}
   for (const pair of input.split(',').map((s) => s.trim()).filter(Boolean)) {
     const [name, mode] = pair.split(':')
     if (!name || !mode || (mode !== 'rw' && mode !== 'ro')) {
-      throw new Error(
-        `Invalid --collections entry "${pair}" — expected "name:rw" or "name:ro"`,
-      )
+      throw new Error(`Invalid --collections entry "${pair}" — expected "name:rw" or "name:ro"`)
     }
     out[name] = mode
   }

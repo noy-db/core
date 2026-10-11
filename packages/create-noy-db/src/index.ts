@@ -45,5 +45,20 @@ export type { AddUserOptions, AddUserResult } from './commands/add-user.js'
 export { backup, resolveBackupTarget } from './commands/backup.js'
 export type { BackupOptions, BackupResult } from './commands/backup.js'
 
+// The pod / config / monitor surface, moved here from @noy-db/cli (family#114).
+export { inspect, runInspect } from './commands/pod/inspect.js'
+export type { InspectResult } from './commands/pod/inspect.js'
+export { verify, runVerify } from './commands/pod/verify.js'
+export type { VerifyReport } from './commands/pod/verify.js'
+export {
+  validateOptions, loadOptionsFromFile, scaffold, listProfiles, PROFILE_IDS,
+  runConfigValidate, runConfigScaffold, runConfigProfiles,
+} from './commands/pod/config.js'
+export type { ValidationIssue, ValidationReport, ScaffoldResult, Profile } from './commands/pod/config.js'
+export { runMonitor, formatSnapshot } from './commands/pod/monitor.js'
+export type { MonitorOptions, MeterSnapshotView } from './commands/pod/monitor.js'
+export { describeBundle, runDescribe } from './commands/pod/describe.js'
+export type { DescribeOptions, DescribeFormat, SchemasMode } from './commands/pod/describe.js'
+
 export type { ReadSecret } from './commands/shared.js'
 export { assertRole, parseCollectionList } from './commands/shared.js'

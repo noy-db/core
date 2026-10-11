@@ -1,5 +1,5 @@
 /**
- * `noydb monitor <config.ts>` — live text dashboard of store metrics.
+ * `noy-db monitor <config.ts>` — live text dashboard of store metrics.
  *
  * Loads a `NoydbOptions` from a config file whose `store` is ALREADY metered,
  * creates a `Noydb` instance so traffic flows through it, and prints a
@@ -92,7 +92,7 @@ export interface MonitorOptions {
 export async function runMonitor(argv: readonly string[]): Promise<number> {
   const file = argv[0]
   if (!file) {
-    process.stderr.write('usage: noydb monitor <config.ts> [--interval=ms]\n')
+    process.stderr.write('usage: noy-db monitor <config.ts> [--interval=ms]\n')
     return 2
   }
 

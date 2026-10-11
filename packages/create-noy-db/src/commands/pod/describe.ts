@@ -1,5 +1,5 @@
 /**
- * `noydb describe <file.noydb>` — emit a human-readable YAML/JSON
+ * `noy-db describe <file.noydb>` — emit a human-readable YAML/JSON
  * description of a bundle's structure (collections, fields, indexes,
  * FKs, MVs, overlays, derivations) with optional counters.
  *
@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto'
 import { stringify as yamlStringify } from 'yaml'
 import type { VaultSchemaSnapshot } from '@noy-db/hub/introspection'
 import type { EncryptedEnvelope, NoydbStore, VaultSnapshot } from '@noy-db/hub/to'
-import { createNoydb, readPod, loadPersistedSchema } from '@noy-db/hub'
+import { createNoydb, readPod, loadPersistedSchema, type EnclaveKey } from '@noy-db/hub'
 import { ConflictError } from '@noy-db/hub/to'
 
 const VERSION = '0.1.0'
@@ -135,7 +135,7 @@ export async function describeBundle(opts: DescribeOptions): Promise<string> {
     // here would let the two drift, and a reader cannot tell which is right.
     reports: rest.reports,
     _provenance: {
-      generatedBy: `noydb describe v${VERSION}`,
+      generatedBy: `noy-db describe v${VERSION}`,
       source: basename(opts.bundlePath),
       sourceSha256,
       emittedAt: enriched.emittedAt,
@@ -166,7 +166,7 @@ export async function describeBundle(opts: DescribeOptions): Promise<string> {
 
 async function enrichWithFullSchemas(
   snapshot: VaultSchemaSnapshot,
-  vault: { _introspectState(): { adapter: NoydbStore; name: string; getDEK: (n: string) => Promise<CryptoKey> } },
+  vault: { _introspectState(): { adapter: NoydbStore; name: string; getDEK: (n: string) => Promise<EnclaveKey> } },
   collectionNames: readonly string[],
 ): Promise<VaultSchemaSnapshot> {
   const state = vault._introspectState()
@@ -195,7 +195,7 @@ async function enrichWithFullSchemas(
 
 async function writeSidecarSchemas(
   outPath: string,
-  vault: { _introspectState(): { adapter: NoydbStore; name: string; getDEK: (n: string) => Promise<CryptoKey> } },
+  vault: { _introspectState(): { adapter: NoydbStore; name: string; getDEK: (n: string) => Promise<EnclaveKey> } },
   collectionNames: readonly string[],
 ): Promise<void> {
   const state = vault._introspectState()
@@ -299,7 +299,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs | { error: string } {
 
 function usage(): string {
   return [
-    'usage: noydb describe <bundle-path> [options]',
+    'usage: noy-db describe <bundle-path> [options]',
     '',
     '  --format <yaml|json>     output format (default: yaml)',
     '  --with-stats             include records / bytes / oldest / newest per collection',
