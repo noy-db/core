@@ -46,7 +46,14 @@
  * {@link DoctorCheck}) from its ROOT entry. The doctor imports each `@noy-db/*`
  * dependency named in the project's package.json and runs what it finds. A
  * package that exports nothing contributes nothing; a package that fails to
- * import is reported as `NOY-D002`, never thrown.
+ * import is reported as `NOY-D003`, never thrown.
+ *
+ * ⚠️ Three ways a satellite's checks can fail to run, and only the first used
+ * to say anything: it throws on import (`NOY-D003`), its root entry does not
+ * resolve for an ESM import (`NOY-D006`), or a check it exports fails the
+ * shape filter below (`NOY-D007`). The last two were silent `continue`s —
+ * which made the first adopter's likeliest mistake the one this tool could
+ * not report.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -302,10 +309,29 @@ async function satelliteChecks(root: string, manifest: DoctorContext['manifest']
       const entry = isRecord(pkg.exports) && '.' in pkg.exports
         ? (() => { const dot = pkg.exports['.']; return typeof dot === 'string' ? dot : isRecord(dot) ? (dot['default'] as string | undefined) ?? (dot['import'] as string | undefined) : undefined })()
         : pkg.module ?? pkg.main
-      if (!entry) continue
+      if (!entry) {
+        // ⚠️ Two different shapes land here and only ONE is worth a finding.
+        // A `.` export whose conditions we cannot import (CJS-only) means the
+        // package intends a root entry and we cannot reach it — say so. A
+        // package with NO `.` at all is subpath-only BY DESIGN — `@noy-db/ports`
+        // is, exporting `/to`, `/as` and friends — so there is nothing to scan
+        // and nothing for its author to fix. Reporting that one would put a
+        // mis-diagnosis at the top of every project that installs it.
+        // `info`, not `warn`, even when it fires: most packages ship no checks
+        // at all, so the honest reading is "not scannable", never "broken".
+        if (isRecord(pkg.exports) && '.' in pkg.exports) {
+          findings.push(f('NOY-D006', 'info', `\`${name}\` has no importable root entry, so any \`noydbDoctorChecks\` it ships were not run`, 'ask the package to expose an `import` or `default` condition on its `.` export', name))
+        }
+        continue
+      }
       const mod = await import(pathToFileURL(join(dirname(manifestPath), entry)).href) as { noydbDoctorChecks?: unknown }
       if (Array.isArray(mod.noydbDoctorChecks)) {
-        for (const c of mod.noydbDoctorChecks as DoctorCheck[]) if (c && typeof c.id === 'string' && typeof c.run === 'function') checks.push(c)
+        for (const c of mod.noydbDoctorChecks as DoctorCheck[]) {
+          if (c && typeof c.id === 'string' && typeof c.run === 'function') { checks.push(c); continue }
+          // Registered but unusable. Dropping this silently is what made a typo
+          // in `id` or `run` indistinguishable from shipping no checks at all.
+          findings.push(f('NOY-D007', 'warn', `\`${name}\` exported a \`noydbDoctorChecks\` entry that is not a check (needs a string \`id\` and a \`run\` function), so it was skipped`, 'fix the export in that package — each entry needs both fields', name))
+        }
       }
     } catch (err) {
       findings.push(f('NOY-D003', 'warn', `\`${name}\` is installed but failed to import: ${(err as Error).message.split('\n')[0]}`, 'reinstall it, or check its peer dependencies', name))
@@ -406,7 +432,8 @@ export async function runDoctor(argv: readonly string[]): Promise<number> {
   const flag = (n: string): string | undefined => argv.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3)
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write([
-      'Usage: noy-db doctor [config.mjs] [--mode=dev|prod] [--vault=<name>] [--json] [--fix] [--fail-level=error|warn|info]',
+      'Usage: noy-db doctor [config.mjs] [--mode=dev|prod] [--vault=<name>] [--json] [--fix] [--no-satellites]',
+      '                     [--fail-level=error|warn|info]',
       '',
       'Readiness checks that need no secret. Ids are stable (NOY-S secret · NOY-R recovery · NOY-T topology ·',
       'NOY-C capsule · NOY-D dependencies · NOY-H hygiene); every finding carries a fix.',
@@ -415,6 +442,10 @@ export async function runDoctor(argv: readonly string[]): Promise<number> {
       '  --fail-level  exit 1 at or above this level. DEFAULT: error. Pass --fail-level=warn to gate a CI job on warnings too.',
       '  --fix         apply the idempotent fixes (today: gitignore .env)',
       '  --json        machine-readable report',
+      '  --no-satellites  skip satellites entirely',
+      '',
+      'Satellites: doctor imports every installed `@noy-db/*` dependency except hub to collect the',
+      '`noydbDoctorChecks` it exports, so it runs code from your node_modules. --no-satellites skips that.',
       '  crypto        the in-memory crypto round-trip (formerly `noy-db verify`)',
     ].join('\n') + '\n')
     return 0
@@ -425,11 +456,13 @@ export async function runDoctor(argv: readonly string[]): Promise<number> {
   const failArg = (flag('fail-level') ?? 'error') as DoctorLevel
   if (!(failArg in LEVEL_RANK)) { process.stderr.write(`--fail-level must be error, warn or info (got ${failArg})\n`); return 2 }
   const vault = flag('vault')
+  const noSatellites = argv.includes('--no-satellites')
 
   const report = await doctor({
     ...(configArg ? { configPath: resolve(configArg) } : {}),
     ...(modeArg ? { mode: modeArg } : {}),
     ...(vault ? { vaults: [vault] } : {}),
+    ...(noSatellites ? { noSatellites: true } : {}),
   })
   let fixed: string[] = []
   if (argv.includes('--fix')) fixed = applyFixes(process.cwd(), report)
