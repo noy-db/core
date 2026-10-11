@@ -157,7 +157,7 @@ Each prefix reads as a preposition — the mental model stays the same as you sc
 
 | Prefix | Reads as | What it is | Catalog |
 |---|---|---|---|
-| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 3 essentials (`to-file`, `to-browser-idb`, `to-meter`) in this repo, plus the built-in `memoryStore()` in the hub itself; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://noy-db.lanna.ai/families/to) |
+| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 2 essentials (`to-file`, `to-browser-idb`) on the core line; `to-meter` is a store WRAPPER and lives in [noy-db/in](https://github.com/noy-db/in) beside its consumers, plus the built-in `memoryStore()` in the hub itself; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://noy-db.lanna.ai/families/to) |
 | **`in-`** | *"runs **in** a framework"* | **Framework integrations** — thin reactive bindings. React, Next.js, Vue, Nuxt, Pinia, Svelte, Zustand, TanStack Query/Table, Yjs CRDT, LLM tool-calling. | [→ integrations.md](https://noy-db.lanna.ai/families/in) |
 | **`on-`** | *"you get **on** via this method"* | **Unlock / auth** — composable primitives. Passkeys (WebAuthn), OIDC split-key, magic links, TOTP, email OTP, recovery codes, Shamir k-of-n, duress + honeypot. | [→ auth.md](https://noy-db.lanna.ai/families/on) |
 | **`as-`** | *"export **as** XLSX / JSON / …"* | **Portable artefacts** — two-tier authorisation with audit ledger. CSV, Excel, XML, JSON, NDJSON, SQL dump, PDF blobs, ZIP, and the encrypted `.noydb` bundle. | [→ exports.md](https://noy-db.lanna.ai/families/as) |
@@ -229,7 +229,7 @@ loadAll(vault)
 saveAll(vault, data)
 ```
 
-> If your existing storage can implement these six methods, it can store noy-db ciphertext. **These six are all that is REQUIRED** — the kernel ships a **built-in in-memory store** (so `store` is optional for the in-memory case); 3 essential `to-*` stores (`to-file`, `to-browser-idb`, `to-meter`) ship here for persistence; `to-memory`, the fuller in-memory backend, and 18 more extended stores (SQL, cloud, remote-FS, personal drives) live in [noy-db-to](https://github.com/noy-db/to). A custom store is `createStore(opts => ({ name, ...methods }))`.
+> If your existing storage can implement these six methods, it can store noy-db ciphertext. **These six are all that is REQUIRED** — the kernel ships a **built-in in-memory store** (so `store` is optional for the in-memory case); the essential `to-file` and `to-browser-idb` ship here for persistence; `to-memory`, the fuller in-memory backend, and 18 more extended stores (SQL, cloud, remote-FS, personal drives) live in [noy-db-to](https://github.com/noy-db/to). A custom store is `createStore(opts => ({ name, ...methods }))`.
 
 ⭐ **Six more members are OPTIONAL, and each has a defined fallback** — so a store implements only what
 its backend can do natively, and the hub degrades rather than refusing:
