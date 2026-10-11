@@ -1,5 +1,14 @@
 # Changelog — hub
 
+## 0.10.0-pre.1
+
+**The first-entry pre-release.** Hub source since `0.10.0-pre.0`: two exports nothing could import are
+gone (#149); the delegation docs say *content key* where the code uses one (#162); error strings and
+docs no longer name paths that do not exist (family#93, #94). `@noy-db/to-meter` leaves core's line for
+**`noy-db/in`** (family#117) — it value-imports hub's root, so it lives beside its consumers; core now
+ships ten packages. The user-facing work of this line is in `create-noy-db` (one `noy-db` bin, `doctor`,
+`add`, the `minimal` template, the README as the door) — see its CHANGELOG.
+
 ## 0.10.0-pre.0
 
 **The first pre-release of the 0.10 line: core gets smaller.** No hub source changed since `0.9.0`;

@@ -1,6 +1,6 @@
 # Changelog — create-noy-db
 
-## Unreleased
+## 0.10.0-pre.1
 
 - **`minimal` is the default template, behind a gate (family#115).** *"Use the recommended setup?"* → hub + browser storage, one file; "no" or any explicit flag opens the full prompts. `--yes` defaults to `minimal`. Measured chunk: 95 kB gzip — hub's root-barrel floor (family#120).
 - **`noy-db doctor` (family#116).** Readiness checks with stable ids (S/R/T/C/D/H), dev|prod modes, `--json`, `--fail-level` (default error, stated in --help), `--fix` (gitignore .env). Satellites register checks via `noydbDoctorChecks`.
