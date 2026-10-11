@@ -30,6 +30,13 @@ export interface RenderTokens {
   PROJECT_NAME: string
   /** The chosen adapter (browser/file/memory). */
   ADAPTER: string
+  /**
+   * The npm package that adapter resolves to, for prose: `@noy-db/to-browser-idb`,
+   * `@noy-db/to-file`, or `@noy-db/hub` (memory is hub's built-in `memoryStore`).
+   * Until 2026-10-11 the Nuxt README rendered `@noy-db/{{ADAPTER}}` → `@noy-db/browser`,
+   * a package that does not exist (family#108).
+   */
+  ADAPTER_PACKAGE: string
   /** "true" or "false" — written into `nuxt.config.ts` for `noydb.devtools`. */
   DEVTOOLS: string
   /** A literal `[...]` block of seed records, or `[]` if `sampleData` is false. */
@@ -71,6 +78,13 @@ export interface RenderTokens {
 // Set to the in line cut in the SAME family cut as this hub (0.10.0-pre.0,
 // ruled 2026-09-29); resolvable once `in` has published, minutes after core.
 export const NOYDB_IN_VERSION = '0.10.0-pre.0'
+
+/** The package a wizard adapter choice names in generated prose (see `ADAPTER_PACKAGE`). */
+export const ADAPTER_PACKAGES = {
+  browser: '@noy-db/to-browser-idb',
+  file: '@noy-db/to-file',
+  memory: '@noy-db/hub',
+} as const
 
 /**
  * Walks `src` recursively and copies every file into `dest`, substituting

@@ -39,7 +39,7 @@ const PACKAGES_DIR = path.resolve(new URL('..', import.meta.url).pathname, '..')
 async function renderedManifest(name: string): Promise<Record<string, Record<string, string>>> {
   const raw = await readFile(path.join(templateDir(name), 'package.json'), 'utf8')
   return JSON.parse(applyTokens(raw, {
-    PROJECT_NAME: 'pins-probe', ADAPTER: 'browser', DEVTOOLS: 'false', SEED_INVOICES: '[]',
+    PROJECT_NAME: 'pins-probe', ADAPTER: 'browser', ADAPTER_PACKAGE: '@noy-db/to-browser-idb', DEVTOOLS: 'false', SEED_INVOICES: '[]',
     NOYDB_VERSION: await ownVersion(),
     NOYDB_IN_VERSION,
   }))

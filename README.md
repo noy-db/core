@@ -1,6 +1,5 @@
 <div align="center">
 
-<sub><a href="https://github.com/noy-db/docs/blob/main/content/docs/th/README.md">🇹🇭 ภาษาไทย</a></sub>
 
 <img alt="noy-db logo" src="https://raw.githubusercontent.com/noy-db/docs/main/content/docs/assets/brand.svg" width="180">
 
@@ -95,7 +94,7 @@ store: toBrowserIdb()
 
 Extended cloud and SQL backends (`@noy-db/to-aws-dynamo`, `@noy-db/to-aws-s3`, `@noy-db/to-postgres`, and 13 more) live in the **[noy-db-to](https://github.com/noy-db/to)** companion repo — same npm names, separate install.
 
-→ Full store catalog: **[Storage stores (`to-*`)](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md)**.
+→ Full store catalog: **[Storage stores (`to-*`)](https://github.com/noy-db/docs/tree/main/content/docs/families/to)**.
 
 ---
 
@@ -121,9 +120,9 @@ const db = await createNoydb({
 
 | Cluster | Services |
 |---|---|
-| **Read & Query** | [indexing](https://github.com/noy-db/docs/blob/main/content/docs/services/indexing.md) · [joins](https://github.com/noy-db/docs/blob/main/content/docs/services/joins.md) · [aggregate](https://github.com/noy-db/docs/blob/main/content/docs/services/aggregate.md) · [live](https://github.com/noy-db/docs/blob/main/content/docs/services/live.md) |
+| **Read & Query** | [indexing](https://github.com/noy-db/docs/blob/main/content/docs/services/indexing.md) · [joins](https://github.com/noy-db/docs/blob/main/content/docs/services/joins.md) · [aggregate](https://github.com/noy-db/docs/blob/main/content/docs/services/reduce.md) · [live](https://github.com/noy-db/docs/blob/main/content/docs/services/live.md) |
 | **Write & Mutate** | [history](https://github.com/noy-db/docs/blob/main/content/docs/services/history.md) · [transactions](https://github.com/noy-db/docs/blob/main/content/docs/services/transactions.md) · [crdt](https://github.com/noy-db/docs/blob/main/content/docs/services/crdt.md) |
-| **Derived data** | [derivations](https://github.com/noy-db/docs/blob/main/content/docs/services/derivations.md) · [materialized-views](https://github.com/noy-db/docs/blob/main/content/docs/services/derivations.md#materialized-views) · [overlay-views](https://github.com/noy-db/docs/blob/main/content/docs/services/derivations.md#overlay-views) |
+| **Derived data** | [derivations](https://github.com/noy-db/docs/blob/main/content/docs/services/derivations.md) · [materialized-views](https://github.com/noy-db/docs/blob/main/content/docs/services/materialized-views.md) · [overlay-views](https://github.com/noy-db/docs/blob/main/content/docs/services/overlay-views.md) |
 | **Data Shape** | [blobs](https://github.com/noy-db/docs/blob/main/content/docs/services/blobs.md) · [i18n](https://github.com/noy-db/docs/blob/main/content/docs/services/i18n.md) |
 | **Time & Audit** | [periods](https://github.com/noy-db/docs/blob/main/content/docs/services/periods.md) · [consent](https://github.com/noy-db/docs/blob/main/content/docs/services/consent.md) · [guards](https://github.com/noy-db/docs/blob/main/content/docs/services/guards.md) |
 | **Snapshot & Portability** | [shadow](https://github.com/noy-db/docs/blob/main/content/docs/services/shadow.md) · [bundle](https://github.com/noy-db/docs/blob/main/content/docs/services/bundle.md) |
@@ -140,7 +139,7 @@ Playground apps and the showcase suite now live in **[noy-db-docs](https://githu
 
 - **[`playground/cli/`](https://github.com/noy-db/docs/tree/main/playground/cli)** — guided 5-minute CLI walkthrough. Shows CRUD, multi-user, sync, backup.
 - **[`playground/nuxt/`](https://github.com/noy-db/docs/tree/main/playground/nuxt)** — runnable Nuxt 4 reference app (invoices, multi-tenant, biometric unlock, magic-link client portal).
-- **[`showcases/`](https://github.com/noy-db/docs/tree/main/showcases)** — 50 progressive end-to-end tests that double as tutorials. Numbered 00-49 across storage, multi-user, services, auth, exports, frameworks, and session-share transports — pick a feature and read the runnable code. Plus recipe tests verifying the starter applications.
+- **[`showcases/`](https://github.com/noy-db/docs/tree/main/showcases)** — 132 progressive end-to-end tests that double as tutorials. Numbered 00-49 across storage, multi-user, services, auth, exports, frameworks, and session-share transports — pick a feature and read the runnable code. Plus recipe tests verifying the starter applications.
 
 ---
 
@@ -150,12 +149,12 @@ Each prefix reads as a preposition — the mental model stays the same as you sc
 
 | Prefix | Reads as | What it is | Catalog |
 |---|---|---|---|
-| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 3 essentials (`to-file`, `to-browser-idb`, `to-meter`) in this repo, plus the built-in `memoryStore()` in the hub itself; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
-| **`in-`** | *"runs **in** a framework"* | **Framework integrations** — thin reactive bindings. React, Next.js, Vue, Nuxt, Pinia, Svelte, Zustand, TanStack Query/Table, Yjs CRDT, LLM tool-calling. | [→ integrations.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/in-integrations.md) |
-| **`on-`** | *"you get **on** via this method"* | **Unlock / auth** — composable primitives. Passkeys (WebAuthn), OIDC split-key, magic links, TOTP, email OTP, recovery codes, Shamir k-of-n, duress + honeypot. | [→ auth.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/on-auth.md) |
-| **`as-`** | *"export **as** XLSX / JSON / …"* | **Portable artefacts** — two-tier authorisation with audit ledger. CSV, Excel, XML, JSON, NDJSON, SQL dump, PDF blobs, ZIP, and the encrypted `.noydb` bundle. | [→ exports.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/as-exports.md) |
-| **`by-`** | *"sync **by** way of …"* | **Session-share transports** — live-state bridges between realms. `@noy-db/by-peer` (WebRTC peers, renamed from `@noy-db/p2p`) and `@noy-db/by-tabs` (BroadcastChannel multi-tab) ship today; `by-server`, `by-room` reserved. | [→ transports.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/by-transports.md) |
-| **`at-`** | *"sealed **at** a trusted host"* | **Sealing-key providers** — the online complement to offline-first. A host you control unseals a scoped slice for server-side work (it *can* decrypt what it unseals — the one non-zero-knowledge family). `at-env`, `at-macos-keychain`, `at-aws-kms`, `at-gcp-kms`, `at-azure-keyvault`. | [→ at-hosts.md](https://github.com/noy-db/docs/blob/main/content/docs/packages/at-hosts.md) |
+| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 3 essentials (`to-file`, `to-browser-idb`, `to-meter`) in this repo, plus the built-in `memoryStore()` in the hub itself; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| **`in-`** | *"runs **in** a framework"* | **Framework integrations** — thin reactive bindings. React, Next.js, Vue, Nuxt, Pinia, Svelte, Zustand, TanStack Query/Table, Yjs CRDT, LLM tool-calling. | [→ integrations.md](https://github.com/noy-db/docs/tree/main/content/docs/families/in) |
+| **`on-`** | *"you get **on** via this method"* | **Unlock / auth** — composable primitives. Passkeys (WebAuthn), OIDC split-key, magic links, TOTP, email OTP, recovery codes, Shamir k-of-n, duress + honeypot. | [→ auth.md](https://github.com/noy-db/docs/tree/main/content/docs/families/on) |
+| **`as-`** | *"export **as** XLSX / JSON / …"* | **Portable artefacts** — two-tier authorisation with audit ledger. CSV, Excel, XML, JSON, NDJSON, SQL dump, PDF blobs, ZIP, and the encrypted `.noydb` bundle. | [→ exports.md](https://github.com/noy-db/docs/tree/main/content/docs/families/as) |
+| **`by-`** | *"sync **by** way of …"* | **Session-share transports** — live-state bridges between realms. `@noy-db/by-peer` (WebRTC peers, renamed from `@noy-db/p2p`) and `@noy-db/by-tabs` (BroadcastChannel multi-tab) ship today; `by-server`, `by-room` reserved. | [→ transports.md](https://github.com/noy-db/docs/tree/main/content/docs/families/by) |
+| **`at-`** | *"sealed **at** a trusted host"* | **Sealing-key providers** — the online complement to offline-first. A host you control unseals a scoped slice for server-side work (it *can* decrypt what it unseals — the one non-zero-knowledge family). `at-env`, `at-macos-keychain`, `at-aws-kms`, `at-gcp-kms`, `at-azure-keyvault`. | [→ at-hosts.md](https://github.com/noy-db/docs/tree/main/content/docs/families/at) |
 
 Plus the hub (`@noy-db/hub`) and the standalone tools: `@noy-db/cli`, `create-noy-db` (scaffolder).
 
@@ -288,13 +287,13 @@ Pre-1.0 (today): both channels can be ahead of where you'd expect a `0.x` librar
 
 | Platform | Runtime | Default backend |
 |---|---|---|
-| 🖥️ Desktop (macOS / Linux / Windows) | Node 18+, Bun, Deno | [`to-file`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
-| 📱 Mobile browser | Safari 14+, Chrome 90+ | [`to-browser-idb`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
-| 🌐 Desktop browser | Chrome, Firefox, Safari, Edge | [`to-browser-idb`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
-| ⚡ PWA / offline web app | Service Worker + browser | [`to-browser-idb`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
-| 🖧 Server (headless) | Node 18+ | [`to-file`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) / `to-aws-dynamo` / `to-postgres` *(noy-db-to)* |
-| 💾 USB stick / removable disk | Any OS + any runtime | [`to-file`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
-| 🔌 Electron / Tauri | Desktop shell | [`to-file`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
+| 🖥️ Desktop (macOS / Linux / Windows) | Node 18+, Bun, Deno | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| 📱 Mobile browser | Safari 14+, Chrome 90+ | [`to-browser-idb`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| 🌐 Desktop browser | Chrome, Firefox, Safari, Edge | [`to-browser-idb`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| ⚡ PWA / offline web app | Service Worker + browser | [`to-browser-idb`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| 🖧 Server (headless) | Node 18+ | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) / `to-aws-dynamo` / `to-postgres` *(noy-db-to)* |
+| 💾 USB stick / removable disk | Any OS + any runtime | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| 🔌 Electron / Tauri | Desktop shell | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
 | ☁️ Cloudflare Workers | Edge JS | `to-cloudflare-d1` + `to-cloudflare-r2` *(noy-db-to)* |
 | 🧪 Tests / CI | Any JS runtime | built-in `memoryStore()` — nothing to install |
 
@@ -401,14 +400,12 @@ The hub package itself uses only `crypto.subtle`, which is built into every targ
 | see what's always-on (the floor) | [`docs/core/`](https://github.com/noy-db/docs/tree/main/content/docs/core) |
 | browse the 24 opt-in services | [`docs/services/`](https://github.com/noy-db/docs/tree/main/content/docs/services) — the service index |
 | copy a starter recipe | [`docs/recipes/`](https://github.com/noy-db/docs/tree/main/content/docs/recipes) — personal-notebook · accounting-app · realtime-crdt-app · analytics-app |
-| pick a storage backend | [`docs/packages/to-stores.md`](https://github.com/noy-db/docs/blob/main/content/docs/packages/to-stores.md) |
-| pick a framework integration | [`docs/packages/in-integrations.md`](https://github.com/noy-db/docs/blob/main/content/docs/packages/in-integrations.md) |
-| pick an unlock method | [`docs/packages/on-auth.md`](https://github.com/noy-db/docs/blob/main/content/docs/packages/on-auth.md) |
-| pick an export format | [`docs/packages/as-exports.md`](https://github.com/noy-db/docs/blob/main/content/docs/packages/as-exports.md) |
-| pick a session-share transport | [`docs/packages/by-transports.md`](https://github.com/noy-db/docs/blob/main/content/docs/packages/by-transports.md) |
+| pick a storage backend | [`docs/packages/to-stores.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| pick a framework integration | [`docs/packages/in-integrations.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/in) |
+| pick an unlock method | [`docs/packages/on-auth.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/on) |
+| pick an export format | [`docs/packages/as-exports.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/as) |
+| pick a session-share transport | [`docs/packages/by-transports.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/by) |
 | see real workflows | [`showcases/`](https://github.com/noy-db/docs/tree/main/showcases) |
-| check what is stable or next | [`ROADMAP.md`](https://github.com/noy-db/docs/blob/main/ROADMAP.md) |
-| audit design decisions | [`SPEC.md`](https://github.com/noy-db/docs/blob/main/SPEC.md) |
 
 ---
 

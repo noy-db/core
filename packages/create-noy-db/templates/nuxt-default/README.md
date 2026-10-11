@@ -8,7 +8,7 @@ A Nuxt 4 + Pinia + [noy-db](https://github.com/noy-db/core) starter, scaffolded 
 - **Pinia** — reactive state management
 - **@noy-db/in-nuxt** — Nuxt module for noy-db (auto-imports, SSR-safe runtime, devtools tab)
 - **@noy-db/in-pinia** — `defineNoydbStore` — drop-in `defineStore` replacement that wires a Pinia store to an encrypted compartment + collection
-- **@noy-db/{{ADAPTER}}** — storage adapter
+- **{{ADAPTER_PACKAGE}}** — the storage adapter you chose (`{{ADAPTER}}`)
 
 Everything stored is encrypted with AES-256-GCM before it touches the adapter. The adapter only ever sees ciphertext.
 
@@ -32,7 +32,6 @@ This scaffolds `app/stores/clients.ts` and `app/pages/clients.vue`. Edit the gen
 
 ## Documentation
 
-- [noy-db getting started](https://github.com/noy-db/core/blob/main/docs/quickstart.md)
-- [End-user features](https://github.com/noy-db/core/blob/main/docs/features.md)
-- [Architecture](https://github.com/noy-db/core/blob/main/docs/architecture.md)
-- [Roadmap](https://github.com/noy-db/docs/blob/main/ROADMAP.md)
+- [noy-db getting started](https://github.com/noy-db/docs/blob/main/content/docs/start/index.md)
+- [End-user features](https://github.com/noy-db/docs/blob/main/content/docs/core/index.md)
+- [Architecture](https://github.com/noy-db/docs/tree/main/content/docs/architecture)

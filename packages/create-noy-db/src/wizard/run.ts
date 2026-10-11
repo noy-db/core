@@ -21,7 +21,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import * as p from '@clack/prompts'
 import pc from 'picocolors'
-import { NOYDB_IN_VERSION, ownVersion, renderTemplate, templateDir, type RenderTokens } from './render.js'
+import { ADAPTER_PACKAGES, NOYDB_IN_VERSION, ownVersion, renderTemplate, templateDir, type RenderTokens } from './render.js'
 import type {
   WizardAdapter,
   WizardOptions,
@@ -174,9 +174,10 @@ async function runFreshMode(
     ? options.template ?? 'nuxt-default'
     : await promptTemplate(options.template, msg)
 
-  const syncAdapter: WizardAdapter | 'none' = yes
-    ? options.syncAdapter ?? 'none'
-    : await promptSyncAdapter(options.syncAdapter, adapter, msg)
+  // No sync prompt: until 2026-10-11 the wizard asked for a sync target and no
+  // template consumed the answer (family#108). The `--sync` flag is still
+  // parsed and carried in the result so a template CAN consume it; nothing asks.
+  const syncAdapter: WizardAdapter | 'none' = options.syncAdapter ?? 'none'
 
   // ── Validate target directory ──────────────────────────────────────
   // We refuse to write into a non-empty directory. Empty + missing are
@@ -189,6 +190,7 @@ async function runFreshMode(
   const tokens: RenderTokens = {
     PROJECT_NAME: projectName,
     ADAPTER: adapter,
+    ADAPTER_PACKAGE: ADAPTER_PACKAGES[adapter],
     DEVTOOLS: 'true',
     SEED_INVOICES: sampleData
       ? JSON.stringify(DEFAULT_SEED, null, 2).replace(/\n/g, '\n  ')
@@ -204,18 +206,20 @@ async function runFreshMode(
     tokens,
   )
 
+  // The next steps print in BOTH modes. Under --yes they were gated with the
+  // decorations, so `npm create noy-db --yes` wrote a project and said nothing
+  // — measured at 38 bytes, a spinner (family#108). We don't run `npm install`
+  // ourselves — the user picks the package manager.
+  const nextSteps = [
+    `${pc.bold('cd')} ${projectName}`,
+    `${pc.bold('pnpm install')}     ${pc.dim('(or npm/yarn/bun)')}`,
+    `${pc.bold('pnpm dev')}`,
+  ].join('\n')
   if (!yes) {
-    // Print a friendly summary so the user knows what happened. We don't
-    // run `npm install` ourselves — the user picks the package manager.
-    p.note(
-      [
-        `${pc.bold('cd')} ${projectName}`,
-        `${pc.bold('pnpm install')}     ${pc.dim('(or npm/yarn/bun)')}`,
-        `${pc.bold('pnpm dev')}`,
-      ].join('\n'),
-      msg.freshNextStepsTitle,
-    )
+    p.note(nextSteps, msg.freshNextStepsTitle)
     p.outro(pc.green(msg.freshOutroDone))
+  } else {
+    process.stdout.write(`${msg.freshOutroDone}\n\n${msg.freshNextStepsTitle}\n${nextSteps}\n`)
   }
 
   return {
@@ -433,32 +437,6 @@ async function promptAdapter(initial: WizardAdapter | undefined, msg: WizardMess
   })
   if (p.isCancel(result)) {
     p.cancel(msg.cancelled)
-    process.exit(1)
-  }
-  return result
-}
-
-async function promptSyncAdapter(
-  initial: WizardAdapter | 'none' | undefined,
-  primary: WizardAdapter,
-  _msg: WizardMessages,
-): Promise<WizardAdapter | 'none'> {
-  if (initial !== undefined) return initial
-  const choices = (['none', 'memory', 'file', 'browser'] as const).filter(
-    (x) => x !== primary,
-  )
-  const labels: Record<WizardAdapter | 'none', string> = {
-    none: 'No sync — local only',
-    memory: 'In-memory (testing / CI)',
-    file: 'JSON files (USB / shared drive)',
-    browser: 'IndexedDB (other tabs / PWAs)',
-  }
-  const result = await p.select<WizardAdapter | 'none'>({
-    message: 'Add a sync target?',
-    options: choices.map((value) => ({ value, label: labels[value] })),
-    initialValue: 'none',
-  })
-  if (p.isCancel(result)) {
     process.exit(1)
   }
   return result

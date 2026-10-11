@@ -26,7 +26,7 @@ yarn create noy-db my-app
 bun  create noy-db my-app
 ```
 
-The wizard asks at most 5 questions — project name, adapter, sample data, starter template, and sync adapter — then writes a complete starter into `./my-app/`. Nothing is installed automatically: pick your package manager and run it yourself (the wizard closes by printing `cd <project>`, `pnpm install`, `pnpm dev`).
+The wizard asks at most 4 questions — project name, adapter, sample data, and starter template — then writes a complete starter into `./my-app/`. Nothing is installed automatically: pick your package manager and run it yourself (the wizard closes by printing `cd <project>`, `pnpm install`, `pnpm dev`).
 
 Four starter templates ship in the package:
 
