@@ -108,6 +108,13 @@ describe('describeBundle — programmatic API', () => {
       generatedBy: expect.stringContaining('noy-db describe'),
       sourceSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     })
+    // family#124 — the version, not just the name. The two assertions above pass
+    // against any version string, which is how a local `const VERSION = '0.1.0'`
+    // survived into a package shipping 0.10.0-pre.1. Compare to package.json so
+    // re-hardcoding it fails here rather than in a docs consumer's parser.
+    const own = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
+    expect(parsed._provenance).toMatchObject({ generatedBy: `noy-db describe v${own.version}` })
+
     expect(parsed.vault).toBe('acme')
     expect((parsed.collections as Record<string, unknown>).invoices).toBeDefined()
   })

@@ -19,8 +19,8 @@ import type { VaultSchemaSnapshot } from '@noy-db/hub/introspection'
 import type { EncryptedEnvelope, NoydbStore, VaultSnapshot } from '@noy-db/hub/to'
 import { createNoydb, readPod, loadPersistedSchema, type EnclaveKey } from '@noy-db/hub'
 import { ConflictError } from '@noy-db/hub/to'
+import { ownVersion } from '../../wizard/render.js'
 
-const VERSION = '0.1.0'
 
 export type DescribeFormat = 'yaml' | 'json'
 export type SchemasMode = 'none' | 'full' | 'sidecar'
@@ -135,7 +135,10 @@ export async function describeBundle(opts: DescribeOptions): Promise<string> {
     // here would let the two drift, and a reader cannot tell which is right.
     reports: rest.reports,
     _provenance: {
-      generatedBy: `noy-db describe v${VERSION}`,
+      // family#124 — `VERSION` was a local `const '0.1.0'` that never moved while the
+      // package shipped 0.10.0-pre.1. The tool NAME stays `noy-db describe`; only the
+      // version is read from the package now, so provenance cannot go stale again.
+      generatedBy: `noy-db describe v${await ownVersion()}`,
       source: basename(opts.bundlePath),
       sourceSha256,
       emittedAt: enriched.emittedAt,
