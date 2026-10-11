@@ -77,7 +77,7 @@ export interface RenderTokens {
 // with in-* 0.8.0 (peer hub ^0.8.0) — an ERESOLVE under npm's strict peers.
 // Set to the in line cut in the SAME family cut as this hub (0.10.0-pre.0,
 // ruled 2026-09-29); resolvable once `in` has published, minutes after core.
-export const NOYDB_IN_VERSION = '0.10.0-pre.0'
+export const NOYDB_IN_VERSION = '0.10.0-pre.1'
 
 /** The package a wizard adapter choice names in generated prose (see `ADAPTER_PACKAGE`). */
 export const ADAPTER_PACKAGES = {
