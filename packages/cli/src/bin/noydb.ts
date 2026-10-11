@@ -16,19 +16,10 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { translate } from '../translate.js'
 
 declare const __CLI_VERSION__: string
 const VERSION = __CLI_VERSION__
-
-/** old `noydb` argv → new `noy-db` argv. */
-export function translate(argv: readonly string[]): string[] {
-  const [cmd, ...rest] = argv
-  switch (cmd) {
-    case 'inspect': return ['pod', 'inspect', ...rest]
-    case 'verify':  return ['pod', 'verify', ...rest]
-    default:        return [...argv]
-  }
-}
 
 /**
  * The path of `create-noy-db`'s `noy-db` bin as installed in the caller's project, or null.
