@@ -34,14 +34,22 @@ An encrypted, offline-first, **serverless** document store. The library lives in
 
 ---
 
-> 📚 **Documentation, tutorials, showcases, and recipes live in [noy-db-docs](https://github.com/noy-db/docs)** — the docs site, the 00-49 numbered showcase suite, the CLI/Nuxt playgrounds, and the runnable starter recipes all moved there. This repo stays a lean, production package tree.
+## Start
+
+```bash
+npm create noy-db@latest      # one question, one file, an encrypted vault in the browser
+```
+
+Then `noy-db doctor` tells you what is configured and what is not yet, and `noy-db add --list` shows every store, framework, unlock method and export you can add. **Docs, tutorials and the playground: [noy-db.lanna.ai/start](https://noy-db.lanna.ai/start).** Prefer no scaffold? `pnpm add @noy-db/hub` and the [30-second example](#30-second-vanilla-example) below is the whole API you need on day one.
+
+> This repo is the core package tree. Showcases, playgrounds and recipes live in [noy-db/docs](https://github.com/noy-db/docs) and are served at [noy-db.lanna.ai](https://noy-db.lanna.ai).
 
 ---
 
 ## What makes noy-db different
 
 - **🔒 Hard privacy by construction.** Stores only ever see ciphertext. AES-256-GCM with per-user keys derived from a secret via PBKDF2. Breach the cloud, subpoena the provider, lose the USB stick — **every one of those surfaces already holds ciphertext**. Zero crypto dependencies — only the Web Crypto API.
-- **☁️ Serverless, runs anywhere.** No noy-db server. No Docker. No managed service. The library embeds in your app — ~30 KB, 0 runtime deps. Works in Node 18+, Bun, Deno, every modern browser, Cloudflare Workers, Electron, mobile PWAs.
+- **☁️ Serverless, runs anywhere.** No noy-db server. No Docker. No managed service. The library embeds in your app — 0 runtime deps; a put/get app ships ~95 kB gzip today (hub's root barrel; [family#120](https://github.com/noy-db/family/issues/120) is the slimmer door), the Find-only query path alone is 28.8 kB. Works in Node 18+, Bun, Deno, every modern browser, Cloudflare Workers, Electron, mobile PWAs.
 - **📴 Offline-first.** Every operation works without network. Sync when you want to, to whatever you want to. Single code path for online and offline — no "online mode" to toggle.
 - **👥 Multi-user, no auth server.** 5 roles (owner / admin / operator / viewer / client), per-collection permissions, key rotation on revoke. The keyring travels with the data.
 - **🧩 One core, many bridges.** `@noy-db/hub` is the encrypted document-store core. ~60 optional `to-*` / `in-*` / `on-*` / `as-*` / `by-*` / `at-*` packages let existing apps keep their preferred storage, framework, unlock method, export format, session-share transport, and server-side sealing host — without changing anything else.
@@ -94,7 +102,7 @@ store: toBrowserIdb()
 
 Extended cloud and SQL backends (`@noy-db/to-aws-dynamo`, `@noy-db/to-aws-s3`, `@noy-db/to-postgres`, and 13 more) live in the **[noy-db-to](https://github.com/noy-db/to)** companion repo — same npm names, separate install.
 
-→ Full store catalog: **[Storage stores (`to-*`)](https://github.com/noy-db/docs/tree/main/content/docs/families/to)**.
+→ Full store catalog: **[Storage stores (`to-*`)](https://noy-db.lanna.ai/families/to)**.
 
 ---
 
@@ -120,16 +128,16 @@ const db = await createNoydb({
 
 | Cluster | Services |
 |---|---|
-| **Read & Query** | [indexing](https://github.com/noy-db/docs/blob/main/content/docs/services/indexing.md) · [joins](https://github.com/noy-db/docs/blob/main/content/docs/services/joins.md) · [aggregate](https://github.com/noy-db/docs/blob/main/content/docs/services/reduce.md) · [live](https://github.com/noy-db/docs/blob/main/content/docs/services/live.md) |
-| **Write & Mutate** | [history](https://github.com/noy-db/docs/blob/main/content/docs/services/history.md) · [transactions](https://github.com/noy-db/docs/blob/main/content/docs/services/transactions.md) · [crdt](https://github.com/noy-db/docs/blob/main/content/docs/services/crdt.md) |
-| **Derived data** | [derivations](https://github.com/noy-db/docs/blob/main/content/docs/services/derivations.md) · [materialized-views](https://github.com/noy-db/docs/blob/main/content/docs/services/materialized-views.md) · [overlay-views](https://github.com/noy-db/docs/blob/main/content/docs/services/overlay-views.md) |
-| **Data Shape** | [blobs](https://github.com/noy-db/docs/blob/main/content/docs/services/blobs.md) · [i18n](https://github.com/noy-db/docs/blob/main/content/docs/services/i18n.md) |
-| **Time & Audit** | [periods](https://github.com/noy-db/docs/blob/main/content/docs/services/periods.md) · [consent](https://github.com/noy-db/docs/blob/main/content/docs/services/consent.md) · [guards](https://github.com/noy-db/docs/blob/main/content/docs/services/guards.md) |
-| **Snapshot & Portability** | [shadow](https://github.com/noy-db/docs/blob/main/content/docs/services/shadow.md) · [bundle](https://github.com/noy-db/docs/blob/main/content/docs/services/bundle.md) |
-| **Collaboration & Auth** | [sync](https://github.com/noy-db/docs/blob/main/content/docs/services/sync.md) · [team](https://github.com/noy-db/docs/blob/main/content/docs/services/team.md) · [session](https://github.com/noy-db/docs/blob/main/content/docs/services/session.md) |
-| **Operations** | [routing](https://github.com/noy-db/docs/blob/main/content/docs/services/routing.md) |
+| **Read & Query** | [indexing](https://noy-db.lanna.ai/services/indexing) · [joins](https://noy-db.lanna.ai/services/joins) · [aggregate](https://noy-db.lanna.ai/services/reduce) · [live](https://noy-db.lanna.ai/services/live) |
+| **Write & Mutate** | [history](https://noy-db.lanna.ai/services/history) · [transactions](https://noy-db.lanna.ai/services/transactions) · [crdt](https://noy-db.lanna.ai/services/crdt) |
+| **Derived data** | [derivations](https://noy-db.lanna.ai/services/derivations) · [materialized-views](https://noy-db.lanna.ai/services/materialized-views) · [overlay-views](https://noy-db.lanna.ai/services/overlay-views) |
+| **Data Shape** | [blobs](https://noy-db.lanna.ai/services/blobs) · [i18n](https://noy-db.lanna.ai/services/i18n) |
+| **Time & Audit** | [periods](https://noy-db.lanna.ai/services/periods) · [consent](https://noy-db.lanna.ai/services/consent) · [guards](https://noy-db.lanna.ai/services/guards) |
+| **Snapshot & Portability** | [shadow](https://noy-db.lanna.ai/services/shadow) · [bundle](https://noy-db.lanna.ai/services/bundle) |
+| **Collaboration & Auth** | [sync](https://noy-db.lanna.ai/services/sync) · [team](https://noy-db.lanna.ai/services/team) · [session](https://noy-db.lanna.ai/services/session) |
+| **Operations** | [routing](https://noy-db.lanna.ai/services/routing) |
 
-→ Starter recipes: **[noy-db-docs/content/docs/recipes](https://github.com/noy-db/docs/tree/main/content/docs/recipes)** — personal-notebook · accounting-app · realtime-crdt-app · analytics-app
+→ Starter recipes: **[noy-db-docs/content/docs/recipes](https://noy-db.lanna.ai/recipes)** — personal-notebook · accounting-app · realtime-crdt-app · analytics-app
 
 ---
 
@@ -149,12 +157,12 @@ Each prefix reads as a preposition — the mental model stays the same as you sc
 
 | Prefix | Reads as | What it is | Catalog |
 |---|---|---|---|
-| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 3 essentials (`to-file`, `to-browser-idb`, `to-meter`) in this repo, plus the built-in `memoryStore()` in the hub itself; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
-| **`in-`** | *"runs **in** a framework"* | **Framework integrations** — thin reactive bindings. React, Next.js, Vue, Nuxt, Pinia, Svelte, Zustand, TanStack Query/Table, Yjs CRDT, LLM tool-calling. | [→ integrations.md](https://github.com/noy-db/docs/tree/main/content/docs/families/in) |
-| **`on-`** | *"you get **on** via this method"* | **Unlock / auth** — composable primitives. Passkeys (WebAuthn), OIDC split-key, magic links, TOTP, email OTP, recovery codes, Shamir k-of-n, duress + honeypot. | [→ auth.md](https://github.com/noy-db/docs/tree/main/content/docs/families/on) |
-| **`as-`** | *"export **as** XLSX / JSON / …"* | **Portable artefacts** — two-tier authorisation with audit ledger. CSV, Excel, XML, JSON, NDJSON, SQL dump, PDF blobs, ZIP, and the encrypted `.noydb` bundle. | [→ exports.md](https://github.com/noy-db/docs/tree/main/content/docs/families/as) |
-| **`by-`** | *"sync **by** way of …"* | **Session-share transports** — live-state bridges between realms. `@noy-db/by-peer` (WebRTC peers, renamed from `@noy-db/p2p`) and `@noy-db/by-tabs` (BroadcastChannel multi-tab) ship today; `by-server`, `by-room` reserved. | [→ transports.md](https://github.com/noy-db/docs/tree/main/content/docs/families/by) |
-| **`at-`** | *"sealed **at** a trusted host"* | **Sealing-key providers** — the online complement to offline-first. A host you control unseals a scoped slice for server-side work (it *can* decrypt what it unseals — the one non-zero-knowledge family). `at-env`, `at-macos-keychain`, `at-aws-kms`, `at-gcp-kms`, `at-azure-keyvault`. | [→ at-hosts.md](https://github.com/noy-db/docs/tree/main/content/docs/families/at) |
+| **`to-`** | *"data goes **to** a backend"* | **Storage destinations** — the only piece that touches ciphertext on the wire. 3 essentials (`to-file`, `to-browser-idb`, `to-meter`) in this repo, plus the built-in `memoryStore()` in the hub itself; extended cloud/SQL/remote-FS backends in [noy-db-to](https://github.com/noy-db/to). | [→ stores.md](https://noy-db.lanna.ai/families/to) |
+| **`in-`** | *"runs **in** a framework"* | **Framework integrations** — thin reactive bindings. React, Next.js, Vue, Nuxt, Pinia, Svelte, Zustand, TanStack Query/Table, Yjs CRDT, LLM tool-calling. | [→ integrations.md](https://noy-db.lanna.ai/families/in) |
+| **`on-`** | *"you get **on** via this method"* | **Unlock / auth** — composable primitives. Passkeys (WebAuthn), OIDC split-key, magic links, TOTP, email OTP, recovery codes, Shamir k-of-n, duress + honeypot. | [→ auth.md](https://noy-db.lanna.ai/families/on) |
+| **`as-`** | *"export **as** XLSX / JSON / …"* | **Portable artefacts** — two-tier authorisation with audit ledger. CSV, Excel, XML, JSON, NDJSON, SQL dump, PDF blobs, ZIP, and the encrypted `.noydb` bundle. | [→ exports.md](https://noy-db.lanna.ai/families/as) |
+| **`by-`** | *"sync **by** way of …"* | **Session-share transports** — live-state bridges between realms. `@noy-db/by-peer` (WebRTC peers, renamed from `@noy-db/p2p`) and `@noy-db/by-tabs` (BroadcastChannel multi-tab) ship today; `by-server`, `by-room` reserved. | [→ transports.md](https://noy-db.lanna.ai/families/by) |
+| **`at-`** | *"sealed **at** a trusted host"* | **Sealing-key providers** — the online complement to offline-first. A host you control unseals a scoped slice for server-side work (it *can* decrypt what it unseals — the one non-zero-knowledge family). `at-env`, `at-macos-keychain`, `at-aws-kms`, `at-gcp-kms`, `at-azure-keyvault`. | [→ at-hosts.md](https://noy-db.lanna.ai/families/at) |
 
 Plus the hub (`@noy-db/hub`) and the standalone tools: `@noy-db/cli`, `create-noy-db` (scaffolder).
 
@@ -265,7 +273,7 @@ pnpm add @noy-db/in-nextjs @noy-db/in-react @noy-db/hub @noy-db/to-browser-idb
 pnpm add @noy-db/hub @noy-db/to-file @noy-db/to-aws-dynamo
 ```
 
-For starter applications see [`noy-db-docs/content/docs/recipes`](https://github.com/noy-db/docs/tree/main/content/docs/recipes) — four runnable recipes covering personal, accounting, real-time, and analytics shapes.
+For starter applications see [`noy-db-docs/content/docs/recipes`](https://noy-db.lanna.ai/recipes) — four runnable recipes covering personal, accounting, real-time, and analytics shapes.
 
 ### Release channels
 
@@ -287,13 +295,13 @@ Pre-1.0 (today): both channels can be ahead of where you'd expect a `0.x` librar
 
 | Platform | Runtime | Default backend |
 |---|---|---|
-| 🖥️ Desktop (macOS / Linux / Windows) | Node 18+, Bun, Deno | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
-| 📱 Mobile browser | Safari 14+, Chrome 90+ | [`to-browser-idb`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
-| 🌐 Desktop browser | Chrome, Firefox, Safari, Edge | [`to-browser-idb`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
-| ⚡ PWA / offline web app | Service Worker + browser | [`to-browser-idb`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
-| 🖧 Server (headless) | Node 18+ | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) / `to-aws-dynamo` / `to-postgres` *(noy-db-to)* |
-| 💾 USB stick / removable disk | Any OS + any runtime | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
-| 🔌 Electron / Tauri | Desktop shell | [`to-file`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
+| 🖥️ Desktop (macOS / Linux / Windows) | Node 18+, Bun, Deno | [`to-file`](https://noy-db.lanna.ai/families/to) |
+| 📱 Mobile browser | Safari 14+, Chrome 90+ | [`to-browser-idb`](https://noy-db.lanna.ai/families/to) |
+| 🌐 Desktop browser | Chrome, Firefox, Safari, Edge | [`to-browser-idb`](https://noy-db.lanna.ai/families/to) |
+| ⚡ PWA / offline web app | Service Worker + browser | [`to-browser-idb`](https://noy-db.lanna.ai/families/to) |
+| 🖧 Server (headless) | Node 18+ | [`to-file`](https://noy-db.lanna.ai/families/to) / `to-aws-dynamo` / `to-postgres` *(noy-db-to)* |
+| 💾 USB stick / removable disk | Any OS + any runtime | [`to-file`](https://noy-db.lanna.ai/families/to) |
+| 🔌 Electron / Tauri | Desktop shell | [`to-file`](https://noy-db.lanna.ai/families/to) |
 | ☁️ Cloudflare Workers | Edge JS | `to-cloudflare-d1` + `to-cloudflare-r2` *(noy-db-to)* |
 | 🧪 Tests / CI | Any JS runtime | built-in `memoryStore()` — nothing to install |
 
@@ -348,7 +356,7 @@ noy-db does not inspect your data. It cannot — that is the architectural point
 | **viewer** | all | — | — | — | yes |
 | **client** | granted collections | — | — | — | ACL-scoped |
 
-Every mutation (grant, revoke, rotate, elevate) writes a hash-chained audit ledger entry. Hierarchical per-record classification tiers (`collection.elevate()` / `demote()` / `delegate()` / invisibility / ghost modes) plus scoped tier-elevated handles (`vault.elevate(tier, { ttlMs, reason })` for time-boxed privileged writes) are covered in the [`history`](https://github.com/noy-db/docs/blob/main/content/docs/services/history.md) and [`team`](https://github.com/noy-db/docs/blob/main/content/docs/services/team.md) services.
+Every mutation (grant, revoke, rotate, elevate) writes a hash-chained audit ledger entry. Hierarchical per-record classification tiers (`collection.elevate()` / `demote()` / `delegate()` / invisibility / ghost modes) plus scoped tier-elevated handles (`vault.elevate(tier, { ttlMs, reason })` for time-boxed privileged writes) are covered in the [`history`](https://noy-db.lanna.ai/services/history) and [`team`](https://noy-db.lanna.ai/services/team) services.
 
 ---
 
@@ -378,7 +386,7 @@ Stores **only see ciphertext**. Encryption happens in core before data reaches a
 
 noy-db is an international open-source project. The first production consumer was an enterprise pilot — the library's design assumptions (offline-first, multi-user, sensitive domain data, per-tenant isolation, USB-based workflows for intermittent connectivity) come directly from that real-world deployment.
 
-**Multi-language data is a first-class concern, not an afterthought.** The optional [`i18n`](https://github.com/noy-db/docs/blob/main/content/docs/services/i18n.md) service lets a single field hold values in multiple locales (`i18nText({ languages: ['en', 'th', 'zh'] })`), pairs enum-like fields with shared label dictionaries (`dictKey('status', ['draft', 'paid'])` resolving to per-locale labels), and resolves the right locale at read time without touching ciphertext on the wire. Dictionaries are themselves encrypted and versioned, so even your translation strings stay private. Records, dictionaries, and exports are Unicode-clean — Thai (ภาษาไทย), Chinese (中文), Arabic (العربية), Devanagari (हिंदी), Cyrillic, Hebrew, every script the Web Crypto API and your storage backend can carry. Locale-aware exports round-trip human-readable headers back to stable keys (the `xlsx` reader inverts dictionary labels on import; same for `csv`, `json`, `ndjson`, `xml`).
+**Multi-language data is a first-class concern, not an afterthought.** The optional [`i18n`](https://noy-db.lanna.ai/services/i18n) service lets a single field hold values in multiple locales (`i18nText({ languages: ['en', 'th', 'zh'] })`), pairs enum-like fields with shared label dictionaries (`dictKey('status', ['draft', 'paid'])` resolving to per-locale labels), and resolves the right locale at read time without touching ciphertext on the wire. Dictionaries are themselves encrypted and versioned, so even your translation strings stay private. Records, dictionaries, and exports are Unicode-clean — Thai (ภาษาไทย), Chinese (中文), Arabic (العربية), Devanagari (हिंदी), Cyrillic, Hebrew, every script the Web Crypto API and your storage backend can carry. Locale-aware exports round-trip human-readable headers back to stable keys (the `xlsx` reader inverts dictionary labels on import; same for `csv`, `json`, `ndjson`, `xml`).
 
 ---
 
@@ -397,14 +405,14 @@ The hub package itself uses only `crypto.subtle`, which is built into every targ
 
 | If you want to… | Read |
 |---|---|
-| see what's always-on (the floor) | [`docs/core/`](https://github.com/noy-db/docs/tree/main/content/docs/core) |
-| browse the 24 opt-in services | [`docs/services/`](https://github.com/noy-db/docs/tree/main/content/docs/services) — the service index |
-| copy a starter recipe | [`docs/recipes/`](https://github.com/noy-db/docs/tree/main/content/docs/recipes) — personal-notebook · accounting-app · realtime-crdt-app · analytics-app |
-| pick a storage backend | [`docs/packages/to-stores.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/to) |
-| pick a framework integration | [`docs/packages/in-integrations.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/in) |
-| pick an unlock method | [`docs/packages/on-auth.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/on) |
-| pick an export format | [`docs/packages/as-exports.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/as) |
-| pick a session-share transport | [`docs/packages/by-transports.md`](https://github.com/noy-db/docs/tree/main/content/docs/families/by) |
+| see what's always-on (the floor) | [Core](https://noy-db.lanna.ai/core) |
+| browse the 24 opt-in services | [Services](https://noy-db.lanna.ai/services) — the service index |
+| copy a starter recipe | [Recipes](https://noy-db.lanna.ai/recipes) — personal-notebook · accounting-app · realtime-crdt-app · analytics-app |
+| pick a storage backend | [Storage stores](https://noy-db.lanna.ai/families/to) |
+| pick a framework integration | [Framework integrations](https://noy-db.lanna.ai/families/in) |
+| pick an unlock method | [Unlock methods](https://noy-db.lanna.ai/families/on) |
+| pick an export format | [Export formats](https://noy-db.lanna.ai/families/as) |
+| pick a session-share transport | [Session-share transports](https://noy-db.lanna.ai/families/by) |
 | see real workflows | [`showcases/`](https://github.com/noy-db/docs/tree/main/showcases) |
 
 ---
