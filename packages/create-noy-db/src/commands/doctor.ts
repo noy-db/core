@@ -32,11 +32,13 @@
  * plaintext JSON wrapping ciphertext DEKs) and `_meta/recovery-*`. It never
  * derives a key and never decrypts a record.
  *
- * ⚠️ Two readers hub does not export yet: `loadShamirRecoveryEntries` and
- * `hasRecoveryEnrolled` (only the paper reader is on the root barrel). The
- * Shamir check reads `_meta/recovery-shamir` through the store and parses the
- * documented shape; when hub exports the reader, swap it in (family#92/#94
- * territory — the introspection asymmetry is the same defect).
+ * ⚠️ Hub's root barrel exports only the PAPER recovery reader; the Shamir side
+ * is internal (the same paper-first bias family#94 fixed at the read layer,
+ * repeated at the export layer). So NOY-R reads `_meta/recovery-shamir`
+ * through the store and parses the documented shape. ⛔ Do not "fix" this by
+ * asking hub to export the document readers — that publishes a storage shape
+ * that family#96 may retire. The right swap is hub's structured
+ * `listRecoveryEnrollments(store, vault)` (family#122); adopt it when it ships.
  *
  * ## Satellite checks
  *
