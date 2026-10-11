@@ -173,18 +173,6 @@ importers:
         specifier: ^22.0.0
         version: 22.19.17
 
-  packages/to-meter:
-    devDependencies:
-      '@noy-db/hub':
-        specifier: workspace:*
-        version: link:../hub
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.17
-      happy-dom:
-        specifier: ^18.0.0
-        version: 18.0.1
-
   test-harnesses/benchmarks:
     devDependencies:
       '@noy-db/hub':

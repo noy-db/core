@@ -56,7 +56,7 @@ pnpm add @noy-db/hub
 | [`to-nfs`](https://www.npmjs.com/package/@noy-db/to-nfs) | NFS mounts |
 | [`to-icloud`](https://www.npmjs.com/package/@noy-db/to-icloud) | iCloud Drive (.icloud-aware) |
 | [`to-drive`](https://www.npmjs.com/package/@noy-db/to-drive) | Google Drive bundle |
-| [`to-meter`](https://www.npmjs.com/package/@noy-db/to-meter) | Wrap any store with metrics |
+| [`to-meter`](https://www.npmjs.com/package/@noy-db/to-meter) | Wrap any store with metrics (ships from [noy-db/in](https://github.com/noy-db/in) since 0.10.0-pre.1) |
 
 ### Optional ecosystem
 
