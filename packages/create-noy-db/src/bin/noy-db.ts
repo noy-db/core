@@ -14,6 +14,7 @@
  *   noy-db user add <id> <role> [options]     grant a user (was `add user`)
  *   noy-db user rotate [options]              rotate DEKs (was `rotate`)
  *   noy-db backup <target> [options]          dump a vault to a file
+ *   noy-db doctor [config] [--mode] [--fix]  readiness checks with stable ids (family#116)
  *   noy-db doctor crypto                      in-memory crypto round-trip (was `verify`)
  *   noy-db pod inspect <file.noydb>           bundle header, no secret
  *   noy-db pod verify  <file.noydb>           bundle integrity, no secret
@@ -61,6 +62,7 @@ import { runVerify as runPodVerify } from '../commands/pod/verify.js'
 import { runDescribe } from '../commands/pod/describe.js'
 import { runConfigValidate, runConfigScaffold, runConfigProfiles } from '../commands/pod/config.js'
 import { runMonitor } from '../commands/pod/monitor.js'
+import { runDoctor } from '../commands/doctor.js'
 
 const HELP = `Usage: noy-db <command> [args]
 
@@ -69,6 +71,7 @@ Project
   user add <userId> <role> [options]           Grant a new user access to a vault
   user rotate [options]                        Rotate DEKs for a vault
   backup <target> [options]                    Dump a vault to a file
+  doctor [config] [--mode=prod] [--fix]        Readiness checks: secret, recovery, topology, capsule, deps, hygiene
   doctor crypto                                In-memory crypto round-trip check
 
 Pods (.noydb files)
@@ -96,7 +99,7 @@ Examples:
   noy-db user add ann operator --dir ./data --vault demo-co --user owner-alice --collections invoices:rw
   noy-db config profiles
   noy-db config scaffold --profile=B > noydb.config.mjs
-  noy-db doctor crypto
+  noy-db doctor --mode=prod --fail-level=warn
 
 New project? \`npm create noy-db@latest\`.
 `
@@ -145,9 +148,8 @@ async function main(): Promise<void> {
       return
 
     case 'doctor': {
-      const [sub] = rest
-      if (sub === 'crypto') { await runCryptoCheck(); return }
-      fail(`\`noy-db doctor\` takes \`crypto\` today; the readiness checks land in family#116`)
+      if (rest[0] === 'crypto') { await runCryptoCheck(); return }
+      process.exit(await runDoctor(rest))
       return
     }
 

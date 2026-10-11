@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **`minimal` is the default template, behind a gate (family#115).** *"Use the recommended setup?"* → hub + browser storage, one file; "no" or any explicit flag opens the full prompts. `--yes` defaults to `minimal`. Measured chunk: 95 kB gzip — hub's root-barrel floor (family#120).
+- **`noy-db doctor` (family#116).** Readiness checks with stable ids (S/R/T/C/D/H), dev|prod modes, `--json`, `--fail-level` (default error, stated in --help), `--fix` (gitignore .env). Satellites register checks via `noydbDoctorChecks`.
 - **One command line (family#114).** `@noy-db/cli`'s commands moved here under `noy-db`: `pod inspect|verify`, `describe`, `config validate|scaffold|profiles`, `monitor`. `verify` → `doctor crypto`, `add user` → `user add`, `rotate` → `user rotate` (old spellings still work, printing the new one). `config profiles` lists the ten topology profiles; `config scaffold --help` is help. `noy-db inspect` reaches `@noy-db/in-devtools-tui` when installed, names it when not. New dependency: `yaml` (for `describe`).
 
 ## 0.10.0-pre.0

@@ -60,5 +60,10 @@ export type { MonitorOptions, MeterSnapshotView } from './commands/pod/monitor.j
 export { describeBundle, runDescribe } from './commands/pod/describe.js'
 export type { DescribeOptions, DescribeFormat, SchemasMode } from './commands/pod/describe.js'
 
+// The doctor (family#116): readiness checks with stable ids. A satellite registers
+// checks by exporting `noydbDoctorChecks: DoctorCheck[]` from its root entry.
+export { doctor, runDoctor, formatReport, applyFixes, BUILTIN_CHECKS } from './commands/doctor.js'
+export type { DoctorCheck, DoctorContext, DoctorFinding, DoctorLevel, DoctorMode, DoctorReport, DoctorOptions } from './commands/doctor.js'
+
 export type { ReadSecret } from './commands/shared.js'
 export { assertRole, parseCollectionList } from './commands/shared.js'
