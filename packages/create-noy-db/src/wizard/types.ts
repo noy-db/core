@@ -24,18 +24,22 @@ export type WizardAdapter = 'browser' | 'file' | 'memory'
 /**
  * Which starter template to scaffold in fresh-project mode.
  *
- * - `nuxt-default` — Nuxt 4 + Pinia + in-nuxt, SSR-friendly. Default.
- * - `vanilla` — Vite + TS, no framework. Smallest footprint.
+ * - `minimal` — Vite + TS, one file: open a vault, put/get. **Default** since 2026-10-11
+ *   (family#115): the recommended door scaffolded Nuxt (628 packages) while the
+ *   README promised "nothing beyond hub".
+ * - `nuxt-default` — Nuxt 4 + Pinia + in-nuxt, SSR-friendly.
+ * - `vanilla` — Vite + TS, no framework, an invoice table UI.
  * - `vite-vue` — Vite + Vue 3 + Pinia + in-pinia. Client-side SPA.
  * - `electron` — Electron + Vue 3 + to-file. USB-stick / local-disk workflow.
  *
  * Augment mode (detected Nuxt project) ignores this field — the
  * mutation path is shared regardless of the original scaffold.
  */
-export type WizardTemplate = 'nuxt-default' | 'vanilla' | 'vite-vue' | 'electron'
+export type WizardTemplate = 'minimal' | 'nuxt-default' | 'vanilla' | 'vite-vue' | 'electron'
 
 /** Every built-in template name, exposed for validation + help text. */
 export const WIZARD_TEMPLATES: readonly WizardTemplate[] = [
+  'minimal',
   'nuxt-default',
   'vanilla',
   'vite-vue',

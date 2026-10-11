@@ -33,7 +33,7 @@ import { promisify } from 'node:util'
 import { NOYDB_IN_VERSION, applyTokens, ownVersion, templateDir } from '../src/wizard/render.js'
 
 const run = promisify(execFile)
-const TEMPLATES = ['nuxt-default', 'vite-vue', 'vanilla', 'electron'] as const
+const TEMPLATES = ['minimal', 'nuxt-default', 'vite-vue', 'vanilla', 'electron'] as const
 const PACKAGES_DIR = path.resolve(new URL('..', import.meta.url).pathname, '..')
 
 async function renderedManifest(name: string): Promise<Record<string, Record<string, string>>> {

@@ -34,7 +34,8 @@ Four starter templates ship in the package:
 |---|---|---|
 | `nuxt-default` | Nuxt 4 + Pinia | SSR + file-based routing — **the default** |
 | `vite-vue` | Vite + Vue 3 + Pinia | Client-side SPA, shorter install graph |
-| `vanilla` | Vite + TypeScript | No framework, smallest footprint |
+| `minimal` | Vite + TypeScript, one file | **Default.** hub + browser storage, put/get; add more with `noy-db add` |
+| `vanilla` | Vite + TypeScript | No framework, an invoice-table UI |
 | `electron` | Electron + Vue 3 | Desktop app with the `to-file` adapter — USB workflow |
 
 Skip the prompts with `--yes`:
