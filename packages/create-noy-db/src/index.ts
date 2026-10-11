@@ -64,6 +64,9 @@ export type { DescribeOptions, DescribeFormat, SchemasMode } from './commands/po
 // checks by exporting `noydbDoctorChecks: DoctorCheck[]` from its root entry.
 export { doctor, runDoctor, formatReport, applyFixes, BUILTIN_CHECKS } from './commands/doctor.js'
 export type { DoctorCheck, DoctorContext, DoctorFinding, DoctorLevel, DoctorMode, DoctorReport, DoctorOptions } from './commands/doctor.js'
+// `noy-db add <package>` / `--list` (family#118): the landscape, from the docs catalog.
+export { addPackage, runAddPackage, loadCatalog, bundledCatalog, findPackage, formatList, normalisePrefix, detectPackageManager, installArgv, snippetFor, CATALOG_URL } from './commands/add-package.js'
+export type { Catalog, CatalogPackage, CatalogPrefix, AddOptions, AddResult, PackageManager } from './commands/add-package.js'
 
 export type { ReadSecret } from './commands/shared.js'
 export { assertRole, parseCollectionList } from './commands/shared.js'

@@ -63,11 +63,14 @@ import { runDescribe } from '../commands/pod/describe.js'
 import { runConfigValidate, runConfigScaffold, runConfigProfiles } from '../commands/pod/config.js'
 import { runMonitor } from '../commands/pod/monitor.js'
 import { runDoctor } from '../commands/doctor.js'
+import { runAddPackage } from '../commands/add-package.js'
 
 const HELP = `Usage: noy-db <command> [args]
 
 Project
   add <collection>                             Scaffold a new collection store + page
+  add <@noy-db/package> [--dev] [--dry-run]    Install a package, wire it, print the trust boundary
+  add --list [to|in|on|as|by|at]               The landscape — every package, by layer
   user add <userId> <role> [options]           Grant a new user access to a vault
   user rotate [options]                        Rotate DEKs for a vault
   backup <target> [options]                    Dump a vault to a file
@@ -120,10 +123,17 @@ async function main(): Promise<void> {
       process.stdout.write(HELP)
       return
 
-    case 'add':
+    case 'add': {
       if (rest[0] === 'user') { renamed('add user', 'user add'); await runAddUser(rest.slice(1)); return }
+      // A @noy-db package, a prefixed name (to-aws-s3), or --list → the landscape verb.
+      // A bare word (invoices) → scaffold a collection, as before.
+      const first = rest[0]
+      if (rest.some((a) => a === '--list' || a === '--help') || (first && /^(@noy-db\/|to-|in-|on-|as-|by-|at-)/.test(first))) {
+        process.exit(await runAddPackage(rest))
+      }
       await runAdd(rest)
       return
+    }
 
     case 'user': {
       const [sub, ...subRest] = rest
