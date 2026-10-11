@@ -61,11 +61,11 @@ describe('parseArgs', () => {
   })
 
   it('rejects an unknown template', () => {
-    expect(() => parseArgs(['--template', 'svelte'])).toThrow(/electron|vanilla|vite-vue|nuxt-default/)
+    expect(() => parseArgs(['--template', 'svelte'])).toThrow(/minimal|electron|vanilla|vite-vue|nuxt-default/)
   })
 
   it('rejects a missing --template value', () => {
-    expect(() => parseArgs(['--template'])).toThrow(/electron|vanilla|vite-vue|nuxt-default/)
+    expect(() => parseArgs(['--template'])).toThrow(/minimal|electron|vanilla|vite-vue|nuxt-default/)
   })
 
   it('parses --sync none', () => {

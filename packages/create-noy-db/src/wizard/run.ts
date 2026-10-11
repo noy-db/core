@@ -162,17 +162,32 @@ async function runFreshMode(
     ? options.projectName ?? 'my-noy-db-app'
     : await promptProjectName(options.projectName, msg)
 
-  const adapter: WizardAdapter = yes
-    ? options.adapter ?? 'browser'
-    : await promptAdapter(options.adapter, msg)
+  // ── The gate (family#115) ──────────────────────────────────────────
+  // One question hides the rest: "use the recommended setup?" Yes means the
+  // `minimal` template with browser storage — hub + one store, one file.
+  // Only a "no" opens template / adapter / sample-data. Any explicit flag
+  // (--template, --adapter, --no-sample-data) skips the gate, as does --yes.
+  const explicit = options.template !== undefined || options.adapter !== undefined || options.sampleData !== undefined
+  const recommended = yes || explicit ? false : await promptRecommended(msg)
 
-  const sampleData: boolean = yes
-    ? options.sampleData ?? true
-    : await promptSampleData(options.sampleData, msg)
+  const template: WizardTemplate = recommended
+    ? 'minimal'
+    : yes
+      ? options.template ?? 'minimal'
+      : await promptTemplate(options.template, msg)
 
-  const template: WizardTemplate = yes
-    ? options.template ?? 'nuxt-default'
-    : await promptTemplate(options.template, msg)
+  const adapter: WizardAdapter = recommended
+    ? 'browser'
+    : yes
+      ? options.adapter ?? 'browser'
+      : await promptAdapter(options.adapter, msg)
+
+  // `minimal` has no sample data to seed; don't ask.
+  const sampleData: boolean = recommended || template === 'minimal'
+    ? options.sampleData ?? false
+    : yes
+      ? options.sampleData ?? true
+      : await promptSampleData(options.sampleData, msg)
 
   // No sync prompt: until 2026-10-11 the wizard asked for a sync target and no
   // template consumed the answer (family#108). The `--sync` flag is still
@@ -442,6 +457,14 @@ async function promptAdapter(initial: WizardAdapter | undefined, msg: WizardMess
   return result
 }
 
+async function promptRecommended(msg: WizardMessages): Promise<boolean> {
+  const result = await p.confirm({ message: msg.promptRecommended, initialValue: true })
+  if (p.isCancel(result)) {
+    process.exit(1)
+  }
+  return result
+}
+
 async function promptTemplate(
   initial: WizardTemplate | undefined,
   _msg: WizardMessages,
@@ -451,9 +474,14 @@ async function promptTemplate(
     message: 'Pick a starter template',
     options: [
       {
+        value: 'minimal',
+        label: 'Minimal — Vite + TypeScript, one file',
+        hint: 'hub + browser storage, put/get (recommended)',
+      },
+      {
         value: 'nuxt-default',
         label: 'Nuxt 4 + Pinia',
-        hint: 'SSR + file-based routing (recommended default)',
+        hint: 'SSR + file-based routing',
       },
       {
         value: 'vite-vue',
@@ -471,7 +499,7 @@ async function promptTemplate(
         hint: 'Desktop app with to-file adapter — USB workflow',
       },
     ],
-    initialValue: 'nuxt-default',
+    initialValue: 'minimal',
   })
   if (p.isCancel(result)) {
     process.exit(1)

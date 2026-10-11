@@ -14,7 +14,7 @@ import type { WizardMessages } from './types.js'
 export const en: WizardMessages = {
   wizardIntro:
     'A wizard for noy-db — None Of Your DataBase.\n' +
-    'Generates a fresh Nuxt 4 + Pinia + encrypted-store starter.',
+    'Generates a fresh encrypted-store starter — minimal by default, Nuxt and more on request.',
 
   promptProjectName: 'Project name',
   promptProjectNamePlaceholder: 'my-noy-db-app',
@@ -26,6 +26,7 @@ export const en: WizardMessages = {
   adapterMemoryLabel:
     'memory — no persistence (ideal for tests and demos)',
   promptSampleData: 'Include sample invoice records?',
+  promptRecommended: 'Use the recommended setup? (hub + browser storage, no framework — add more later with `noy-db add`)',
 
   freshNextStepsTitle: 'Next steps',
   freshOutroDone: '✔ Done — happy encrypting!',

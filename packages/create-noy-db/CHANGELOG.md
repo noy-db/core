@@ -1,5 +1,9 @@
 # Changelog — create-noy-db
 
+## Unreleased
+
+- **`minimal` is the default template, behind a gate (family#115).** *"Use the recommended setup?"* → hub + browser storage, one file; "no" or any explicit flag opens the full prompts. `--yes` defaults to `minimal`. Measured chunk: 95 kB gzip — hub's root-barrel floor (family#120).
+
 ## 0.10.0-pre.0
 
 Lockstep bump to 0.10.0-pre.0; no package-level change in this release. See `@noy-db/hub` 0.10.0-pre.0 for the line's notes.

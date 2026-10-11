@@ -53,6 +53,7 @@ export interface WizardMessages {
   adapterMemoryLabel: string
   /** "Include sample invoice records?" confirm label. */
   promptSampleData: string
+  promptRecommended: string
 
   // ─── Fresh-mode outro ────────────────────────────────────────
   /** Title of the "Next steps" note block. */
