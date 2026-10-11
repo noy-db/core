@@ -1,5 +1,5 @@
 /**
- * Tests for `noydb describe` — bundle → structured YAML / JSON audit.
+ * Tests for `noy-db describe` — bundle → structured YAML / JSON audit.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { NoydbStore, EncryptedEnvelope, VaultSnapshot } from '@noy-db/hub'
 import { ConflictError, createNoydb, writePod } from '@noy-db/hub'
-import { describeBundle } from '../src/commands/describe.js'
+import { describeBundle } from '../src/commands/pod/describe.js'
 
 function memoryStore(): NoydbStore {
   const data = new Map<string, Map<string, Map<string, EncryptedEnvelope>>>()
@@ -85,7 +85,7 @@ describe('describeBundle — programmatic API', () => {
     })
     expect(out).toMatch(/_noydb_snapshot:/)
     expect(out).toMatch(/_provenance:/)
-    expect(out).toMatch(/generatedBy: noydb describe/)
+    expect(out).toMatch(/generatedBy: noy-db describe/)
     expect(out).toMatch(/source: /)
     expect(out).toMatch(/sourceSha256: [0-9a-f]{64}/)
     expect(out).toMatch(/emittedAt: /)
@@ -105,7 +105,7 @@ describe('describeBundle — programmatic API', () => {
     const parsed = JSON.parse(out) as Record<string, unknown>
     expect(parsed._noydb_snapshot).toBe(2) // #1447 — format 2 adds `reports` 
     expect(parsed._provenance).toMatchObject({
-      generatedBy: expect.stringContaining('noydb describe'),
+      generatedBy: expect.stringContaining('noy-db describe'),
       sourceSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     })
     expect(parsed.vault).toBe('acme')

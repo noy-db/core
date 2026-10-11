@@ -1,85 +1,71 @@
 #!/usr/bin/env node
 /**
- * `noydb` — command dispatcher.
+ * `noydb` — a REDIRECT, since 2026-10-11 (family#114).
  *
- * Routes argv to the appropriate subcommand. Kept minimal by design
- * (no commander/yargs dep) — scope is small enough for flat
- * if/else routing. Revisit if/when the CLI grows past ~5 commands.
+ * Every command this bin carried (`inspect`, `verify`, `describe`, `config`,
+ * `monitor`) lives in `create-noy-db`'s `noy-db` bin, the one door after
+ * `npm create noy-db`. This file maps the old spelling to the new one, prints
+ * it once, and execs it when `noy-db` is installed beside this package; when
+ * it is not, it says what to install. It carries no command logic of its own.
  *
- *   noydb inspect <file.noydb>
- *   noydb verify  <file.noydb>
- *   noydb describe <file.noydb>
- *   noydb config validate <file.ts>
- *   noydb config scaffold [--profile=<A-J>]
- *   noydb monitor <config.ts> [--interval=ms]
- *   noydb --help
- *   noydb --version
+ * `@noy-db/cli` is deprecated on npm at the stable 0.10.0 (not the pre),
+ * pointing at `create-noy-db`.
  *
  * @module
  */
-import { runInspect } from '../commands/inspect.js'
-import { runVerify } from '../commands/verify.js'
-import { runConfigValidate, runConfigScaffold } from '../commands/config.js'
-import { runMonitor } from '../commands/monitor.js'
-import { runDescribe } from '../commands/describe.js'
+import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
-// Replaced at build time by tsup's `define` with the package.json version.
 declare const __CLI_VERSION__: string
 const VERSION = __CLI_VERSION__
 
-function usage(): string {
-  return [
-    'noydb — command-line tools for @noy-db',
-    '',
-    'Usage:',
-    '  noydb inspect <file.noydb>                 Print bundle header (no secret)',
-    '  noydb verify  <file.noydb>                 Verify bundle integrity (no secret)',
-    '  noydb describe <file.noydb> [options]      Emit YAML/JSON audit of a bundle',
-    '  noydb config validate <file.js|mjs>        Sanity-check a NoydbOptions file',
-    '  noydb config scaffold [--profile=<A-J>]    Emit a topology-profile skeleton',
-    '  noydb monitor <file.js|mjs> [--interval=ms] Live dashboard of store metrics',
-    '',
-    'TypeScript configs: run under a TS-capable runtime, e.g. `npx tsx $(which noydb) config validate foo.ts`.',
-    '  noydb --version                            Print CLI version',
-    '  noydb --help                               Show this message',
-    '',
-    'Profiles for `config scaffold` map to docs/guides/topology-matrix.md § View 3.',
-  ].join('\n')
+/** old `noydb` argv → new `noy-db` argv. */
+export function translate(argv: readonly string[]): string[] {
+  const [cmd, ...rest] = argv
+  switch (cmd) {
+    case 'inspect': return ['pod', 'inspect', ...rest]
+    case 'verify':  return ['pod', 'verify', ...rest]
+    default:        return [...argv]
+  }
 }
 
-async function main(argv: readonly string[]): Promise<number> {
-  const [cmd, ...rest] = argv
-
-  if (!cmd || cmd === '--help' || cmd === '-h' || cmd === 'help') {
-    process.stdout.write(usage() + '\n')
-    return 0
+/**
+ * The path of `create-noy-db`'s `noy-db` bin as installed in the caller's project, or null.
+ * Walks `node_modules` by PATH rather than `require.resolve('create-noy-db/package.json')`:
+ * that package's `exports` map lists only `.`, so Node refuses the subpath.
+ */
+function findNoyDbBin(): string | null {
+  let dir = process.cwd()
+  for (;;) {
+    const manifestPath = join(dir, 'node_modules', 'create-noy-db', 'package.json')
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { bin?: Record<string, string> }
+      const rel = manifest.bin?.['noy-db']
+      return rel ? join(dirname(manifestPath), rel) : null
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
   }
+}
+
+function main(argv: readonly string[]): number {
+  const [cmd] = argv
   if (cmd === '--version' || cmd === '-v') {
     process.stdout.write(VERSION + '\n')
     return 0
   }
+  const next = translate(argv)
+  process.stderr.write(`(\`noydb${argv.length ? ' ' + argv.join(' ') : ''}\` is now \`noy-db ${next.join(' ')}\` — @noy-db/cli only redirects)\n`)
 
-  switch (cmd) {
-    case 'inspect':  return runInspect(rest)
-    case 'verify':   return runVerify(rest)
-    case 'describe': return runDescribe(rest)
-    case 'monitor':  return runMonitor(rest)
-    case 'config': {
-      const [sub, ...subRest] = rest
-      if (sub === 'validate') return runConfigValidate(subRest)
-      if (sub === 'scaffold') return runConfigScaffold(subRest)
-      process.stderr.write(`unknown config subcommand: ${sub ?? '(none)'}\n`)
-      return 2
-    }
-    default:
-      process.stderr.write(`unknown command: ${cmd}\n\n${usage()}\n`)
-      return 2
+  const bin = findNoyDbBin()
+  if (!bin) {
+    process.stderr.write('create-noy-db is not installed here: `pnpm add -D create-noy-db` and run `noy-db` directly.\n')
+    return 2
   }
+  const r = spawnSync(process.execPath, [bin, ...next], { stdio: 'inherit' })
+  return r.status ?? 1
 }
 
-main(process.argv.slice(2))
-  .then((code) => process.exit(code))
-  .catch((err) => {
-    process.stderr.write(`fatal: ${(err as Error).message}\n`)
-    process.exit(1)
-  })
+process.exit(main(process.argv.slice(2)))

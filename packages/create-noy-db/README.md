@@ -121,9 +121,9 @@ Validation errors and stack traces stay in English regardless of language so bug
 
 ---
 
-## `noy-db` — the CLI tool
+## `noy-db` — the one command line
 
-The `noy-db` bin ships inside the same `create-noy-db` package. Install it as a dev dependency and it's available via `pnpm exec` / `npx`:
+The `noy-db` bin ships inside the same `create-noy-db` package; it is the only CLI you need after `npm create noy-db` (the former `@noy-db/cli` is a redirect to it). Install it as a dev dependency and it's available via `pnpm exec` / `npx`:
 
 ```bash
 pnpm add -D create-noy-db
@@ -135,16 +135,26 @@ pnpm exec noy-db <command>
 | Command | Purpose |
 |---|---|
 | `noy-db add <collection>` | Scaffold a new Pinia store + Vue page for a collection |
-| `noy-db add user <id> <role>` | Grant a new user access to a compartment |
-| `noy-db verify` | In-memory crypto round-trip integrity check |
-| `noy-db rotate` | Rotate DEKs for one or more collections |
-| `noy-db backup <target>` | Dump a compartment to an encrypted file |
+| `noy-db user add <id> <role>` | Grant a new user access to a vault |
+| `noy-db user rotate` | Rotate DEKs for one or more collections |
+| `noy-db backup <target>` | Dump a vault to an encrypted file |
+| `noy-db doctor crypto` | In-memory crypto round-trip check |
+| `noy-db pod inspect <file.noydb>` | Print a pod's header — no secret needed |
+| `noy-db pod verify <file.noydb>` | Verify a pod's integrity — no secret needed |
+| `noy-db describe <file.noydb>` | YAML/JSON schema audit of a pod |
+| `noy-db config validate <file>` | Sanity-check a `NoydbOptions` file |
+| `noy-db config scaffold --profile=<id>` | Topology skeleton to stdout, `.env` template to stderr |
+| `noy-db config profiles` | List the ten topology profiles |
+| `noy-db monitor <file>` | Live store metrics (the config's store must be metered) |
+| `noy-db inspect <file> --vault=<v>` | Terminal inspector — uses `@noy-db/in-devtools-tui` when installed |
 
-All commands that touch real compartments use the **file adapter** and require these flags:
+The old spellings `add user`, `rotate` and `verify` still work and print the new one.
+
+Commands that touch a real vault use the **file adapter** and take these flags:
 
 - `--dir <path>` — the data directory. Defaults to `./data`.
-- `--compartment <name>` — the compartment (tenant) name. Required.
-- `--user <id>` — your own user id in the compartment. Required.
+- `--vault <name>` — the vault (tenant) name. Required.
+- `--user <id>` — your own user id in the vault. Required.
 
 You'll be prompted for your secret at runtime. Secrets are never echoed, never logged, never written to disk, and cleared from process memory when the command exits.
 
@@ -161,14 +171,14 @@ pnpm exec noy-db add clients
 
 Refuses to overwrite existing files — if either target already exists, the command exits non-zero without touching anything. There's no `--force` flag; delete the old files manually if you want to regenerate.
 
-### `noy-db add user <userId> <role> [options]`
+### `noy-db user add <userId> <role> [options]`
 
-Grants a new user access to a compartment. Two secret prompts: yours (caller), then the new user's (with confirmation).
+Grants a new user access to a vault. Two secret prompts: yours (caller), then the new user's (with confirmation).
 
 ```bash
-pnpm exec noy-db add user accountant-ann operator \
+pnpm exec noy-db user add accountant-ann operator \
   --dir ./data \
-  --compartment demo-co \
+  --vault demo-co \
   --user owner-alice \
   --collections invoices:rw,clients:ro
 ```
@@ -185,27 +195,27 @@ Roles:
 
 For `operator` and `client`, the `--collections` flag is required. Format: `name1:rw,name2:ro,name3:rw`.
 
-### `noy-db verify`
+### `noy-db doctor crypto`
 
 Runs an end-to-end crypto round-trip against an in-memory adapter. No real data is touched; the command creates a throwaway compartment, writes a record, reads it back, and verifies it decrypts correctly. Useful as a sanity check that `@noy-db/hub` and your local Node version agree on Web Crypto.
 
 ```bash
-pnpm exec noy-db verify
+pnpm exec noy-db doctor crypto
 # ✔ noy-db integrity check passed (126ms)
 ```
 
 Exits non-zero if anything diverges.
 
-### `noy-db rotate [options]`
+### `noy-db user rotate [options]`
 
-Rotate the DEKs for one or more collections in a compartment. Generates fresh keys, re-encrypts every record with the new keys, and re-wraps the new keys into every user's keyring. Nobody is revoked — everyone keeps their current permissions with fresh key material.
+Rotate the DEKs for one or more collections in a vault. Generates fresh keys, re-encrypts every record with the new keys, and re-wraps the new keys into every user's keyring. Nobody is revoked — everyone keeps their current permissions with fresh key material.
 
 ```bash
 # Rotate every collection in the compartment
-pnpm exec noy-db rotate --dir ./data --compartment demo-co --user owner-alice
+pnpm exec noy-db user rotate --dir ./data --vault demo-co --user owner-alice
 
 # Rotate specific collections only
-pnpm exec noy-db rotate --dir ./data --compartment demo-co --user owner-alice \
+pnpm exec noy-db user rotate --dir ./data --vault demo-co --user owner-alice \
   --collections invoices,clients
 ```
 
@@ -222,7 +232,7 @@ Dump a compartment to a local file. The dump is a **verifiable backup**: it incl
 
 ```bash
 pnpm exec noy-db backup ./backups/demo-2026-04-07.json \
-  --dir ./data --compartment demo-co --user owner-alice
+  --dir ./data --vault demo-co --user owner-alice
 ```
 
 Target paths:

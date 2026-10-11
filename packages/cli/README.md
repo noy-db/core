@@ -1,34 +1,26 @@
-# @noy-db/cli
+# @noy-db/cli — deprecated, redirects to `noy-db`
 
 [![npm](https://img.shields.io/npm/v/%40noy-db/cli.svg)](https://www.npmjs.com/package/@noy-db/cli)
 
-> Command-line tool for noy-db
-
-Part of [**`@noy-db/hub`**](https://www.npmjs.com/package/@noy-db/hub) — the zero-knowledge, offline-first, encrypted document store.
-
-## Install
+Every command this package carried now lives in [`create-noy-db`](https://www.npmjs.com/package/create-noy-db)'s **`noy-db`** bin — the one command line after `npm create noy-db`.
 
 ```bash
-pnpm add -D @noy-db/cli
-npx noydb --help
+pnpm add -D create-noy-db
+noy-db --help
 ```
 
-## What it is
+| was | now |
+|---|---|
+| `noydb inspect <file.noydb>` | `noy-db pod inspect <file.noydb>` |
+| `noydb verify <file.noydb>` | `noy-db pod verify <file.noydb>` |
+| `noydb describe <file.noydb>` | `noy-db describe <file.noydb>` |
+| `noydb config validate <file>` | `noy-db config validate <file>` |
+| `noydb config scaffold --profile=<id>` | `noy-db config scaffold --profile=<id>` (and `noy-db config profiles` lists them) |
+| `noydb monitor <file>` | `noy-db monitor <file>` |
 
-Command-line tool for noy-db — inspect .noydb pods without decrypting, verify integrity, validate config objects, scaffold topology profiles, and monitor a live vault's store metrics.
-
-## Status
-
-**Pre-release.** API may change before `1.0`. Run `noydb --version` for the installed version.
+While installed, `noydb <cmd>` prints the new spelling and runs it for you. Programmatic imports (`import { describeBundle } from '@noy-db/cli'`) keep resolving; import from `create-noy-db` instead.
 
 ## Documentation
 
-See the [main repository](https://github.com/noy-db/core#readme) for setup, examples, and the full subsystem catalog.
-
+- Main repository — [noy-db/core](https://github.com/noy-db/core#readme)
 - Source — [`packages/cli`](https://github.com/noy-db/core/tree/main/packages/cli)
-- Issues — [github.com/noy-db/core/issues](https://github.com/noy-db/core/issues)
-- Spec — [`SPEC.md`](https://github.com/noy-db/docs/blob/main/SPEC.md)
-
-## License
-
-[Apache-2.0](./LICENSE) © vLannaAi

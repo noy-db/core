@@ -1,5 +1,9 @@
 # @noy-db/cli
 
+## Unreleased
+
+- **Now a redirect (family#114).** Every command moved to `create-noy-db`'s `noy-db` bin. `noydb <cmd>` prints the new spelling and execs `noy-db`; `inspect`/`verify` map to `pod inspect`/`pod verify`. Programmatic exports re-export from `create-noy-db`. Deprecated on npm at the stable 0.10.0.
+
 ## 0.10.0-pre.0
 
 Lockstep bump to 0.10.0-pre.0; no package-level change in this release. See `@noy-db/hub` 0.10.0-pre.0 for the line's notes.

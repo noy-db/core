@@ -1,7 +1,7 @@
 {
   "name": "create-noy-db",
   "version": "0.10.0-pre.0",
-  "description": "Wizard + CLI tool for noy-db: scaffold a fresh Nuxt 4 + Pinia encrypted store, or add collections to an existing project. Invoke via `npm create noy-db`.",
+  "description": "The one noy-db command line: `npm create noy-db` scaffolds a project; `noy-db` then adds collections and users, rotates keys, backs up, inspects and verifies .noydb pods, audits schemas, validates and scaffolds configs, and monitors a live store.",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/create-noy-db#readme",
@@ -49,23 +49,33 @@
     "magicast": "^0.3.5",
     "diff": "^7.0.0",
     "@noy-db/hub": "workspace:*",
-    "@noy-db/to-file": "workspace:*"
+    "@noy-db/to-file": "workspace:*",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@types/diff": "^7.0.0",
     "@types/node": "^22.0.0",
-    "@types/diff": "^7.0.0"
+    "zod": "^4.0.0",
+    "zod-to-json-schema": "^3.25.2"
   },
   "keywords": [
-    "noy-db",
-    "create",
-    "scaffolder",
-    "wizard",
     "cli",
+    "config",
+    "create",
+    "describe",
+    "encryption",
+    "inspect",
+    "monitor",
+    "noy-db",
+    "noydb-bundle",
     "nuxt",
     "nuxt4",
     "pinia",
+    "pod",
+    "scaffolder",
+    "verify",
     "vue",
-    "encryption",
+    "wizard",
     "zero-knowledge"
   ],
   "publishConfig": {

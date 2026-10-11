@@ -40,6 +40,10 @@ export default defineConfig({
     'diff',
     '@noy-db/hub',
     '@noy-db/to-file',
+    'yaml',
+    // Reached lazily by `noy-db inspect` / `monitor`; never bundled, never a dependency.
+    '@noy-db/in-devtools-tui',
+    '@noy-db/to-meter',
     'node:fs',
     'node:fs/promises',
     'node:path',

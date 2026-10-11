@@ -1,5 +1,5 @@
 /**
- * `noydb config validate` and `noydb config scaffold`.
+ * `noy-db config validate` and `noy-db config scaffold`.
  *
  * **validate** — sanity-check a `NoydbOptions` value at runtime. The
  * input file is expected to default-export a `NoydbOptions` object
@@ -12,7 +12,7 @@
  *   - `blob` routes (if present) sit on a bundle-capable store.
  *
  * **scaffold** — emit a working skeleton for one of the topology
- * profiles from `docs/guides/topology-matrix.md`. The `.ts`/`.mjs`
+ * profiles (`noy-db config profiles` lists them). The `.ts`/`.mjs`
  * config is written to **stdout** (pipe it straight to a file, e.g.
  * `> noydb.config.mjs`); the companion `.env` template is written to
  * **stderr** so it stays out of the piped config.
@@ -102,7 +102,7 @@ export function validateOptions(opts: unknown): ValidationReport {
  *  **TypeScript note.** Node cannot `import()` a bare `.ts` file without
  *  a loader. If the adopter's config is TypeScript, they should either
  *  compile it first (`tsc foo.ts`) or run the CLI under a TS-capable
- *  runtime (e.g. `tsx $(which noydb) config validate foo.ts`). The
+ *  runtime (e.g. `tsx $(which noy-db) config validate foo.ts`). The
  *  function throws a human-readable error for `.ts` input rather than
  *  propagating Node's cryptic `Unknown file extension` message. */
 export async function loadOptionsFromFile(filePath: string): Promise<unknown> {
@@ -111,8 +111,8 @@ export async function loadOptionsFromFile(filePath: string): Promise<unknown> {
     throw new Error(
       `TypeScript config files are not directly loadable — Node has no native .ts loader.\n` +
       `  Options:\n` +
-      `    (a) compile first:  tsc ${filePath} && noydb config validate ${filePath.replace(/\.[mc]?ts$/, '.js')}\n` +
-      `    (b) run via tsx:    npx tsx $(which noydb) config validate ${filePath}\n` +
+      `    (a) compile first:  tsc ${filePath} && noy-db config validate ${filePath.replace(/\.[mc]?ts$/, '.js')}\n` +
+      `    (b) run via tsx:    npx tsx $(which noy-db) config validate ${filePath}\n` +
       `    (c) rename to .mjs/.js if your config has no TS-only syntax`,
     )
   }
@@ -127,7 +127,7 @@ export async function loadOptionsFromFile(filePath: string): Promise<unknown> {
 export async function runConfigValidate(argv: readonly string[]): Promise<number> {
   const file = argv[0]
   if (!file) {
-    process.stderr.write('usage: noydb config validate <file.ts|js>\n')
+    process.stderr.write('usage: noy-db config validate <file.ts|js>\n')
     return 2
   }
   let opts: unknown
@@ -145,8 +145,15 @@ export async function runConfigValidate(argv: readonly string[]): Promise<number
 
 // ── Scaffold ────────────────────────────────────────────────────────────
 
-/** Profiles match `docs/guides/topology-matrix.md` § View 3. */
-export type Profile = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J'
+/**
+ * The ten topology profiles. ⛔ This table IS the documentation: until 2026-10-11
+ * every pointer went to `docs/guides/topology-matrix.md`, a path that existed in
+ * no public repo, so profiles B–J were undiscoverable from the CLI (family#109).
+ * `noy-db config profiles` prints it; a profile's `notes` string stays the one
+ * authority for what it is.
+ */
+export const PROFILE_IDS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'] as const
+export type Profile = (typeof PROFILE_IDS)[number]
 
 export interface ScaffoldResult {
   profile: Profile
@@ -352,18 +359,32 @@ export function scaffold(profile: Profile): ScaffoldResult {
   }
 }
 
+/** One line per profile — the `notes` string of each, which is the authority. */
+export function listProfiles(): string {
+  return PROFILE_IDS.map((id) => `  ${id}  ${scaffold(id).notes}`).join('\n')
+}
+
+export function runConfigProfiles(): number {
+  process.stdout.write(`Topology profiles for \`noy-db config scaffold --profile=<id>\`:\n${listProfiles()}\n`)
+  return 0
+}
+
 export async function runConfigScaffold(argv: readonly string[]): Promise<number> {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(`Usage: noy-db config scaffold [--profile=<id>]   (default A)\n\n${listProfiles()}\n\nThe config goes to stdout; the .env template goes to stderr.\n`)
+    return 0
+  }
   const profileArg = argv.find((a) => a.startsWith('--profile='))
   const profile = (profileArg?.split('=')[1] ?? 'A') as Profile
-  if (!/^[A-J]$/.test(profile)) {
-    process.stderr.write(`unknown profile: ${profile}. Valid: A-J (see docs/guides/topology-matrix.md)\n`)
+  if (!(PROFILE_IDS as readonly string[]).includes(profile)) {
+    process.stderr.write(`unknown profile: ${profile}. Valid: ${PROFILE_IDS.join(' ')} — run \`noy-db config profiles\`\n`)
     return 2
   }
   const out = scaffold(profile)
-  // The config goes to stdout so `noydb config scaffold > noydb.config.mjs`
+  // The config goes to stdout so `noy-db config scaffold > noydb.config.mjs`
   // captures a loadable module with no .env contamination; the companion
   // .env template goes to stderr as guidance (see #705).
-  process.stdout.write(`// ── noydb config (profile ${out.profile}) ───────────────────\n`)
+  process.stdout.write(`// ── noy-db config (profile ${out.profile}) ───────────────────\n`)
   process.stdout.write(`// ${out.notes}\n\n`)
   process.stdout.write(out.code + '\n')
   if (out.env) {
