@@ -45,7 +45,7 @@ The wizard auto-detects whether cwd is an existing Nuxt 4 project:
 Options:
   -y, --yes               Skip prompts; use defaults for missing values
       --adapter <name>    Adapter: browser (default) | file | memory
-      --template <name>   Template: nuxt-default (default) | vite-vue | vanilla | electron
+      --template <name>   Template: minimal (default) | nuxt-default | vite-vue | vanilla | electron
       --sync <name>       Sync target (multi-backend):
                           none (default) | memory | file | browser
       --no-sample-data    (fresh mode) Skip the seed invoice records
@@ -60,6 +60,8 @@ Examples:
   # Fresh project in a new directory
   npm create noy-db my-app
   npm create noy-db my-app --yes --adapter file
+  npm create noy-db my-app --yes                      # minimal: hub + browser storage
+  npm create noy-db my-app --yes --template nuxt-default
   npm create noy-db my-app --yes --template vite-vue
   npm create noy-db my-app --yes --template vanilla
 

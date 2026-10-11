@@ -251,7 +251,7 @@ describe('runWizard — non-interactive', () => {
     await rmrf(tmp)
   })
 
-  it('generates a project with all defaults when yes:true', async () => {
+  it('generates a project with all defaults when yes:true — minimal since family#115', async () => {
     const result = await runFresh({
       yes: true,
       projectName: 'default-app',
@@ -260,15 +260,23 @@ describe('runWizard — non-interactive', () => {
 
     expect(result.options.projectName).toBe('default-app')
     expect(result.options.adapter).toBe('browser')
-    expect(result.options.sampleData).toBe(true)
+    expect(result.options.template).toBe('minimal')
+    expect(result.options.sampleData).toBe(false)
     expect(result.projectPath).toBe(path.join(tmp, 'default-app'))
     expect(result.files).toContain('package.json')
+    expect(result.files).not.toContain('nuxt.config.ts')
+  })
+
+  it('the Nuxt template keeps its defaults when asked for by name', async () => {
+    const result = await runFresh({ yes: true, projectName: 'nuxt-app', template: 'nuxt-default', cwd: tmp })
+    expect(result.options.sampleData).toBe(true)
     expect(result.files).toContain('nuxt.config.ts')
   })
 
   it('respects explicit adapter and sampleData', async () => {
     const result = await runFresh({
       yes: true,
+      template: 'nuxt-default', // sample data is Nuxt's; minimal (the default) seeds nothing
       projectName: 'file-app',
       adapter: 'file',
       sampleData: false,
@@ -283,6 +291,7 @@ describe('runWizard — non-interactive', () => {
   it('generates seed data when sampleData:true', async () => {
     const result = await runFresh({
       yes: true,
+      template: 'nuxt-default',
       projectName: 'seeded-app',
       sampleData: true,
       cwd: tmp,
@@ -337,10 +346,11 @@ describe('runWizard — template selection (v0.17.1 )', () => {
     await rmrf(tmp)
   })
 
-  it('defaults to nuxt-default when no template is passed', async () => {
+  it('defaults to minimal when no template is passed (family#115; was nuxt-default)', async () => {
     const result = await runFresh({ yes: true, projectName: 'app-default', cwd: tmp })
-    expect(result.options.template).toBe('nuxt-default')
-    expect(result.files).toContain('nuxt.config.ts')
+    expect(result.options.template).toBe('minimal')
+    expect(result.files).toContain('src/main.ts')
+    expect(result.files).not.toContain('nuxt.config.ts')
   })
 
   it('scaffolds the vite-vue template when --template vite-vue', async () => {
@@ -364,6 +374,25 @@ describe('runWizard — template selection (v0.17.1 )', () => {
     expect(pkg.dependencies['pinia']).toBeDefined()
     expect(pkg.dependencies['@noy-db/in-pinia']).toBeDefined()
     expect(pkg.dependencies['@noy-db/to-browser-idb']).toBeDefined()
+  })
+
+  it('scaffolds the minimal template by default — the recommended door is one file (family#115)', async () => {
+    const result = await runFresh({ yes: true, projectName: 'app-min', cwd: tmp })
+    expect(result.options.template).toBe('minimal')
+    expect(result.options.adapter).toBe('browser')
+    expect(result.options.sampleData).toBe(false) // minimal seeds nothing; it must not ask or claim to
+    expect(result.files).toContain('src/main.ts')
+    expect(result.files).toContain('index.html')
+    expect(result.files).not.toContain('nuxt.config.ts')
+    expect(result.files).not.toContain('src/style.css') // vanilla's UI; minimal has none
+
+    const pkg = JSON.parse(await readFile(path.join(result.projectPath, 'package.json')))
+    expect(Object.keys(pkg.dependencies).sort()).toEqual(['@noy-db/hub', '@noy-db/to-browser-idb'])
+    const main = await readFile(path.join(result.projectPath, 'src/main.ts'))
+    expect(main).toContain("from '@noy-db/hub'")
+    expect(main).toContain('app-min')
+    const readme = await readFile(path.join(result.projectPath, 'README.md'))
+    expect(readme).toContain('@noy-db/to-browser-idb') // ADAPTER_PACKAGE, not a phantom name
   })
 
   it('scaffolds the vanilla template when --template vanilla', async () => {
@@ -459,7 +488,7 @@ describe('runWizard — template selection (v0.17.1 )', () => {
 // so every scaffolded app failed `pnpm install`).
 
 describe('template dependency pins (#703)', () => {
-  const TEMPLATES = ['nuxt-default', 'vite-vue', 'vanilla', 'electron']
+  const TEMPLATES = ['minimal', 'nuxt-default', 'vite-vue', 'vanilla', 'electron']
   const PINNED = /^(@noy-db\/|create-noy-db$)/
 
   it.each(TEMPLATES)('%s pins every noy-db dep via {{NOYDB_VERSION}}, never a literal version', async (name) => {

@@ -36,6 +36,7 @@ export const th: WizardMessages = {
   adapterMemoryLabel:
     'memory — ไม่บันทึกข้อมูล (เหมาะสำหรับการทดสอบและตัวอย่าง)',
   promptSampleData: 'เพิ่มข้อมูลตัวอย่างใบแจ้งหนี้หรือไม่?',
+  promptRecommended: 'ใช้การตั้งค่าที่แนะนำไหม? (hub + พื้นที่เก็บข้อมูลในเบราว์เซอร์ ไม่มีเฟรมเวิร์ก — เพิ่มทีหลังได้ด้วย `noy-db add`)',
 
   freshNextStepsTitle: 'ขั้นตอนถัดไป',
   freshOutroDone: '✔ เสร็จเรียบร้อย — ขอให้สนุกกับการเข้ารหัส!',
