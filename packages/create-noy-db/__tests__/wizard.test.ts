@@ -92,6 +92,7 @@ describe('applyTokens', () => {
   const tokens = {
     PROJECT_NAME: 'demo',
     ADAPTER: 'browser',
+    ADAPTER_PACKAGE: '@noy-db/to-browser-idb',
     DEVTOOLS: 'true',
     SEED_INVOICES: '[]',
     NOYDB_VERSION: '0.0.0-test.0',
@@ -137,6 +138,7 @@ describe('renderTemplate', () => {
     const files = await renderTemplate(src, tmp, {
       PROJECT_NAME: 'demo-app',
       ADAPTER: 'browser',
+      ADAPTER_PACKAGE: '@noy-db/to-browser-idb',
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
@@ -161,6 +163,7 @@ describe('renderTemplate', () => {
     await renderTemplate(templateDir('nuxt-default'), tmp, {
       PROJECT_NAME: 'my-special-app',
       ADAPTER: 'file',
+      ADAPTER_PACKAGE: '@noy-db/to-file',
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
@@ -179,6 +182,7 @@ describe('renderTemplate', () => {
     await renderTemplate(templateDir('nuxt-default'), tmp, {
       PROJECT_NAME: 'demo',
       ADAPTER: 'memory',
+      ADAPTER_PACKAGE: '@noy-db/hub',
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
@@ -193,6 +197,7 @@ describe('renderTemplate', () => {
     await renderTemplate(templateDir('nuxt-default'), tmp, {
       PROJECT_NAME: 'demo',
       ADAPTER: 'browser',
+      ADAPTER_PACKAGE: '@noy-db/to-browser-idb',
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
@@ -207,6 +212,7 @@ describe('renderTemplate', () => {
     await renderTemplate(templateDir('nuxt-default'), tmp, {
       PROJECT_NAME: 'demo',
       ADAPTER: 'browser',
+      ADAPTER_PACKAGE: '@noy-db/to-browser-idb',
       DEVTOOLS: 'true',
       SEED_INVOICES: '[]',
       NOYDB_VERSION: '0.0.0-test.0',
@@ -220,6 +226,7 @@ describe('renderTemplate', () => {
     await renderTemplate(templateDir('nuxt-default'), tmp, {
       PROJECT_NAME: 'demo',
       ADAPTER: 'browser',
+      ADAPTER_PACKAGE: '@noy-db/to-browser-idb',
       DEVTOOLS: 'true',
       SEED_INVOICES: '[\n    { "id": "inv-1", "client": "X" }\n  ]',
       NOYDB_VERSION: '0.0.0-test.0',
@@ -481,6 +488,7 @@ describe('template dependency pins (#703)', () => {
       await renderTemplate(templateDir('nuxt-default'), tmp2, {
         PROJECT_NAME: 'pinned-app',
         ADAPTER: 'browser',
+        ADAPTER_PACKAGE: '@noy-db/to-browser-idb',
         DEVTOOLS: 'true',
         SEED_INVOICES: '[]',
         NOYDB_VERSION: '9.9.9-pre.9',

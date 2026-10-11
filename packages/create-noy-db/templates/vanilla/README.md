@@ -71,7 +71,6 @@ CRUD helpers. Edit the generated interface to match your domain.
 
 ## Documentation
 
-- [noy-db getting started](https://github.com/noy-db/core/blob/main/docs/quickstart.md)
-- [Topology matrix](https://github.com/noy-db/core/blob/main/docs/topologies.md) — pick the right stack
-- [Architecture](https://github.com/noy-db/core/blob/main/docs/architecture.md)
-- [Roadmap](https://github.com/noy-db/docs/blob/main/ROADMAP.md)
+- [noy-db getting started](https://github.com/noy-db/docs/blob/main/content/docs/start/index.md)
+- [Topology matrix](https://github.com/noy-db/docs/blob/main/content/docs/families/cli.md) — pick the right stack
+- [Architecture](https://github.com/noy-db/docs/tree/main/content/docs/architecture)
