@@ -4,6 +4,7 @@
   "values": [
     "CapsuleNotSupportedError",
     "KEY_BITS",
+    "TamperedError",
     "assertCapsuleSupports",
     "base64ToBuffer",
     "bufferToBase64",
