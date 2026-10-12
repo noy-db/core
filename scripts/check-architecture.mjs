@@ -2853,6 +2853,56 @@ function* staticImportSpecs(code) {
   for (const m of code.matchAll(SIDE_EFFECT_IMPORT_RE)) yield m[1]
 }
 
+// Matches a dynamic `import('…')` whose specifier is a STRING LITERAL. #169.
+//
+// ⚠️ The carve-out this replaces said a dynamic import "is not statically
+// analyzable here", and that was overstated: a literal specifier is exactly as
+// analyzable as a static one — only a COMPUTED specifier (`import(path)`,
+// `import(`./${name}.js`)`) is not, and that remains uncheckable by design.
+// Measured cost of the overstatement: six dynamic imports reached past the
+// capsule barrel while `pnpm check:architecture` stayed green.
+const DYNAMIC_IMPORT_LITERAL_RE = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+
+/** Dynamic `import('…')` specifiers in `code` that are string literals. */
+function* dynamicImportSpecs(code) {
+  for (const m of code.matchAll(DYNAMIC_IMPORT_LITERAL_RE)) yield m[1]
+}
+
+// ⛔ Files outside `capsule/**` that reach past the capsule barrel by DYNAMIC
+// import, grandfathered by #169 with their exact specifiers.
+//
+// ⭐ A RATCHET, following Check 10b's precedent (ten files / 38 calls, driven to
+// zero one commit at a time, then turned into a ban). A new bypass fails; a
+// listed one that disappears ALSO fails, so the map cannot rot into a permanent
+// exemption nobody re-reads.
+//
+// ⚠️ WHY THESE FIVE ARE NOT SIMPLY ROUTED THROUGH THE DOOR, which is what makes
+// them debt rather than an oversight: `revealSealedField`, `verifyDigestField`,
+// `verifyTextField` and `matchGroupFields` are NOT among the capsule
+// primitives, and they are not shared plumbing either — they orchestrate over
+// `pbkdf2VerifyDigest` and `blindedEqual`, which are `enclave-aes`'s own and
+// are in no group. Routing them means either widening the fork-swap contract
+// with four non-primitive functions (every capsule must then implement them) or
+// promoting those two to primitives and moving the orchestration into
+// `capsule/plumbing/`. That is a contract decision, sequenced on family#168
+// (tagging each door primitive with its group) — not something to settle by
+// editing an import.
+//
+// ⛔ Consequence to keep in view while they are listed: `enclave-aes` ships
+// inside hub whatever `#capsule` is bound to, so these resolve to the REFERENCE
+// capsule even in an exclave build. A capsule that refuses the `classify` group
+// would still see classify work here — which is the half-built-vault outcome a
+// typed refusal exists to prevent (family#156).
+const DYNAMIC_ENCLAVE_BYPASS = new Map([
+  ['packages/hub/src/via/classified/active.ts', [
+    '../../capsule/enclave-aes/classify/reveal.js',
+    '../../capsule/enclave-aes/classify/verify.js',
+  ]],
+  ['packages/hub/src/kernel/collection.ts', [
+    '../capsule/enclave-aes/classify/verify.js',
+  ]],
+])
+
 /** Path of a resolved import, relative to `hub/src`, POSIX-separated. */
 function importTargetRelToHubSrc(fromFile, spec, hubSrc) {
   return relative(hubSrc, resolve(dirname(fromFile), spec)).split('\\').join('/')
@@ -2933,9 +2983,12 @@ function checkPortLayering() {
 // enclave path deeper than the barrel (e.g. './enclave/crypto.js' or
 // '../capsule/enclave-aes/record-keys/index.js') reaches around that contract.
 // Only hub/src is scanned — tests aren't architecture-bound, though they
-// were migrated to the barrel too for consistency. Only static
-// `import`/`export … from` clauses are checked; a dynamic `import()` is
-// not statically analyzable here (same carve-out as port-layering above).
+// were migrated to the barrel too for consistency.
+//
+// ⭐ SINCE #169 a dynamic `import('…')` with a LITERAL specifier is checked too,
+// against `DYNAMIC_ENCLAVE_BYPASS`. The old carve-out said dynamic imports were
+// "not statically analyzable here" — true only of a COMPUTED specifier, and six
+// literal ones had reached past the barrel with this check green.
 //
 // The reverse direction (C3 — self-contained folder, Enclave Contract v1):
 // a file INSIDE capsule/enclave-aes/** may import only spine types (kernel/**,
@@ -2990,6 +3043,35 @@ function checkEnclaveBarrelOnly() {
           file,
         )
       }
+    }
+
+    // #169 — the same rule for a dynamic `import('…')` with a literal specifier.
+    // A lazy import is still a reach past the barrel: it binds the REFERENCE
+    // capsule, which ships inside hub no matter what `#capsule` resolves to.
+    const allowed = DYNAMIC_ENCLAVE_BYPASS.get(rel) ?? []
+    const seen = new Set()
+    for (const spec of dynamicImportSpecs(code)) {
+      if (!spec.startsWith('.')) continue
+      const target = importTargetRelToHubSrc(file, spec, hubSrc)
+      if (insideEnclave) continue
+      if (!target.startsWith('capsule/enclave-aes/') || target === 'capsule/enclave-aes/index.js') continue
+      seen.add(spec)
+      if (allowed.includes(spec)) continue
+      fail(
+        'capsule-door-only',
+        `${rel} dynamically imports "${spec}" — reaches past the enclave barrel. A lazy import is not an exemption: enclave-aes ships inside hub whatever "#capsule" is bound to, so this loads the REFERENCE capsule even in a build bound to another one. Import the door (capsule/index.js), or add a grandfathered entry to DYNAMIC_ENCLAVE_BYPASS with the reason.`,
+        file,
+      )
+    }
+    // ⭐ A listed specifier that no longer exists fails too — otherwise the map
+    // decays into a permanent exemption and the ratchet stops ratcheting.
+    for (const spec of allowed) {
+      if (seen.has(spec)) continue
+      fail(
+        'capsule-door-only',
+        `${rel} no longer dynamically imports "${spec}", but DYNAMIC_ENCLAVE_BYPASS still grandfathers it. Delete that entry — the map is a ratchet, and a stale row is an exemption nobody re-reads.`,
+        file,
+      )
     }
   })
 }
