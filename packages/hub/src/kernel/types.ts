@@ -706,6 +706,16 @@ export interface ListPageResult {
  * materialises persisted index side-cars as `_idx/<field>/<recordId>` — but no
  * slash-separated component of it may be empty, `.` or `..`.
  *
+ * ⛔ **A NUL (`\x00`) is legal in an id too, and hub emits one** (family#174).
+ * `resolveSequenceKey` and `resolvePeriodKey` join a partition as
+ * `${name}\x00${parts}`, chosen precisely because a NUL cannot occur in a plain
+ * series name — so a partitioned key can never collide with an unpartitioned
+ * one. A store that refuses the byte cannot hold a partitioned sequence or
+ * period at all. A FILESYSTEM-backed store must therefore **encode** id
+ * components (at least NUL and `%`, which the encoding itself needs) and
+ * **decode on `list`** — an encoding without a matching decode reports an id
+ * that no `get` resolves. `@noy-db/ports/to` has the round-trip case.
+ *
  * ⛔ A store must therefore **accept** `/` in an id. Refusing the separator
  * breaks hub's own writes, which is a real measured failure rather than a
  * hypothetical: `to-file` created only the collection directory, so every

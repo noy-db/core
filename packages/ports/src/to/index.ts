@@ -577,6 +577,36 @@ export function runStoreConformanceTests(
         // pass by silently discarding the record.
         expect(await adapter.get('comp1', 'coll1', '../../escaped')).toEqual(envelope)
       })
+
+      it('round-trips an id containing a NUL byte, through put, get AND list (family#174)', async () => {
+        // ⛔ HUB EMITS THESE. `resolveSequenceKey` and `resolvePeriodKey` join a
+        // partition as `${name}\x00${parts}`, chosen precisely because a NUL
+        // cannot occur in a plain series name — so a partitioned key can never
+        // collide with an unpartitioned one. A store that cannot hold one
+        // cannot hold a partitioned sequence or period, and until this case
+        // existed nothing in the kit said so: `to-file` refused the byte and
+        // `@noy-db/to-memory` accepted it, and both passed.
+        //
+        // ⚠️ `list` IS PART OF THE ASSERTION, not thoroughness. A filesystem
+        // store must ENCODE the byte to store it at all, and an encoding with
+        // no matching decode produces a store that writes a record it can read
+        // by id and then reports a different id from `list` — so `loadAll`,
+        // sync enumeration and export all see a key that no `get` resolves.
+        // Encoding without decoding is the failure this case is shaped to
+        // catch, and it is invisible to a put/get pair.
+        const id = `invoice\u0000${'2026'}/EU`
+        const envelope = makeEnvelope(1, 'nul-partitioned')
+        await adapter.put('comp-nul', 'coll1', id, envelope)
+
+        expect(await adapter.get('comp-nul', 'coll1', id)).toEqual(envelope)
+        expect(await adapter.list('comp-nul', 'coll1')).toContain(id)
+
+        // And it is a DISTINCT key from the same string with the NUL removed —
+        // an encoding that drops the byte rather than escaping it would collide
+        // a partitioned series with an unpartitioned one, which is the exact
+        // property hub picked NUL for.
+        expect(await adapter.get('comp-nul', 'coll1', 'invoice2026/EU')).toBeNull()
+      })
     })
 
     // ─── Optional capability surface (#845) ────────────────────────
