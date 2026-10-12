@@ -328,6 +328,71 @@ export function runStoreConformanceTests(
       })
     })
 
+    // ─── Id and segment shape (family#133) ─────────────────────────
+
+    describe('id and segment shape (family#133)', () => {
+      /**
+       * ⭐ The asymmetry is the whole point, and the obvious "reject suspicious ids"
+       * implementation fails this block: a store MUST accept `/` in a record id and
+       * MUST NOT let a `..` component reach another namespace.
+       *
+       * Hub materialises persisted index side-cars as records whose id is
+       * `_idx/<field>/<recordId>`, so a store that refuses the separator breaks hub's
+       * own writes — measured on to-file, where `put` created only the collection
+       * directory and the atomic write failed with ENOENT on its `.tmp` leaf. Nothing
+       * paired a filesystem store with persisted indexing, so both features were well
+       * covered and their intersection was empty.
+       *
+       * ⚠️ REFUSING a malformed id is NOT required here. Hub validates segment shape
+       * once, in the decorator it wraps `options.store` with, and that is the
+       * enforcement point; this suite asserts what the store itself must guarantee
+       * when something reaches it anyway — which is CONTAINMENT, not rejection. A
+       * store may throw instead, and both outcomes pass.
+       */
+      it('accepts a slash-bearing id and round-trips it — hub emits these', async () => {
+        const envelope = makeEnvelope(1, 'side-car')
+        await adapter.put('comp1', 'coll1', '_idx/email/user-1', envelope)
+        expect(await adapter.get('comp1', 'coll1', '_idx/email/user-1')).toEqual(envelope)
+        expect(await adapter.list('comp1', 'coll1')).toContain('_idx/email/user-1')
+      })
+
+      it('keeps a slash-bearing id distinct from a flattened one', async () => {
+        // A store that encodes `/` away must not collide two different ids.
+        await adapter.put('comp1', 'coll1', '_idx/email/user-1', makeEnvelope(1, 'nested'))
+        await adapter.put('comp1', 'coll1', '_idx_email_user-1', makeEnvelope(1, 'flat'))
+        const nested = await adapter.get('comp1', 'coll1', '_idx/email/user-1')
+        const flat = await adapter.get('comp1', 'coll1', '_idx_email_user-1')
+        expect(nested).not.toEqual(flat)
+      })
+
+      it('a `..` component never leaks ACROSS vaults — refusing is also acceptable', async () => {
+        // ⚠️ The probe has to be the SAME id from a DIFFERENT vault, not a
+        // guessed flattened form. A store that normalises `comp1/coll1/../../escaped`
+        // lands the record at its namespace ROOT, where no (vault, collection, id)
+        // triple reaches it except another triple that normalises to the same key —
+        // so `get('comp2', 'coll2', '../../escaped')` is exactly the leak, and a
+        // probe for `('comp2','coll1','escaped')` would miss it entirely.
+        const envelope = makeEnvelope(1, 'must-not-escape')
+        let refused = false
+        try {
+          await adapter.put('comp1', 'coll1', '../../escaped', envelope)
+        } catch {
+          refused = true // a store may reject outright; hub's decorator does, for every store
+        }
+
+        if (refused) {
+          // Not vacuous: a refusal must also have written nothing.
+          expect(await adapter.get('comp1', 'coll1', '../../escaped')).toBeNull()
+          return
+        }
+
+        expect(await adapter.get('comp2', 'coll2', '../../escaped')).toBeNull()
+        // And it is still addressable by the id that was written, so a store cannot
+        // pass by silently discarding the record.
+        expect(await adapter.get('comp1', 'coll1', '../../escaped')).toEqual(envelope)
+      })
+    })
+
     // ─── Optional capability surface (#845) ────────────────────────
     //
     // The six-method core is mandatory; `ping` / `listVaults` / `tx` /

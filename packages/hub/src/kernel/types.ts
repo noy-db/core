@@ -698,6 +698,31 @@ export interface ListPageResult {
 
 // ─── Store Interface ───────────────────────────────────────────────────
 
+/**
+ * ## Segment shape — part of the contract (family#133)
+ *
+ * `vault` and `collection` are single names: never empty, never `.` or `..`,
+ * and they carry no path separator. A record `id` **may** contain `/` — hub
+ * materialises persisted index side-cars as `_idx/<field>/<recordId>` — but no
+ * slash-separated component of it may be empty, `.` or `..`.
+ *
+ * ⛔ A store must therefore **accept** `/` in an id. Refusing the separator
+ * breaks hub's own writes, which is a real measured failure rather than a
+ * hypothetical: `to-file` created only the collection directory, so every
+ * side-car write failed with `ENOENT` on its atomic-write leaf and persisted
+ * indexing never worked on that store.
+ *
+ * ⚠️ **Hub does not validate this centrally yet.** Enforcing it once, in a
+ * decorator around `options.store` at construction, is family#133's second half
+ * and is NOT implemented — so today a malformed id reaches whichever store the
+ * caller mounted, and nothing above it refuses first.
+ *
+ * What a store MUST guarantee either way is **containment**: if a malformed id
+ * reaches it, the record must not become readable under a different
+ * `(vault, collection)` pair. A store may also reject outright —
+ * `@noy-db/ports/to` accepts either, and its `broken-escapes-namespace` control
+ * is a store that collapses `..` and lets an id climb out of its vault.
+ */
 export interface NoydbStore {
   /**
    * Optional human-readable store name (e.g. 'memory', 'file', 'dynamo').
