@@ -19,7 +19,7 @@
  *
  * @module
  */
-import type { NoydbStore, ExportStreamOptions, VaultSnapshot } from './types.js'
+import type { NoydbStore, ExportStreamOptions, VaultSnapshot, EncryptedEnvelope } from './types.js'
 
 /** Where an export's collection names and record ids come from. */
 export interface ExportSource {
@@ -29,6 +29,18 @@ export interface ExportSource {
   readonly scoped: boolean
   /** Record ids in one collection. */
   ids(collection: string): Promise<readonly string[]>
+  /**
+   * The raw envelope for one record, for `withEnvelopeMeta` (family#166).
+   *
+   * ⚠️ THE TWO SOURCES ANSWER THIS AT DIFFERENT PRICES, and the caller must
+   * only ask when the option was set. The bulk source already holds the whole
+   * snapshot, so this is a map lookup; the scoped source enumerated with `list`
+   * and has no envelopes, so this is a store `get` per record. Making it part
+   * of the source interface rather than reaching for `adapter` at the call site
+   * is what keeps that difference in ONE place — the same reason core#45b put
+   * the enumeration strategy here.
+   */
+  envelope(collection: string, id: string): Promise<EncryptedEnvelope | null>
 }
 
 /**
@@ -57,6 +69,10 @@ export async function resolveExportSource(
       // decrypt most of them — the fetch would already have happened, which is
       // precisely the half that makes "scoping" a word rather than a property.
       ids: async (collection) => await adapter.list(vault, collection),
+      // One `get` per record, and only when `withEnvelopeMeta` is set — a
+      // scoped export that does not ask still reads exactly what core#45b
+      // narrowed it to.
+      envelope: async (collection, id) => await adapter.get(vault, collection, id),
     }
   }
 
@@ -67,5 +83,27 @@ export async function resolveExportSource(
     collections: Object.keys(snapshot).sort(),
     scoped: false,
     ids: async (collection) => Object.keys(snapshot[collection] ?? {}),
+    // Free: the envelope is already in the snapshot this source was built from.
+    envelope: async (collection, id) => snapshot[collection]?.[id] ?? null,
   }
+}
+
+/**
+ * `_v`/`_ts` for one exported record (family#166).
+ *
+ * ⚠️ A NULL ENVELOPE YIELDS VERSION 0, not a gap. The record was readable a
+ * moment ago (the caller only asks after a non-null `get`), so null here means
+ * it was deleted mid-export — and family#147 ruled that absence IS version 0
+ * at the store contract, so reporting 0 is the same answer the CAS gives rather
+ * than a new sentinel. Returning `undefined` instead would break the
+ * positional alignment that `ExportChunk.envelopeMeta` is built on, which is
+ * the one property a consumer cannot recover.
+ */
+export async function readEnvelopeMeta(
+  source: ExportSource,
+  collection: string,
+  id: string,
+): Promise<{ version: number; ts: string }> {
+  const envelope = await source.envelope(collection, id)
+  return { version: envelope?._v ?? 0, ts: envelope?._ts ?? '' }
 }

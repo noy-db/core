@@ -1,7 +1,7 @@
 import type { OpenCollectionOptions } from '../port/with/collection-options.js'
 import { populateCollectionRegistries } from '../port/with/collection-registries.js'
 import { NO_BLOBS } from '../port/with/blob-strategy.js'
-import { resolveExportSource } from './export-scope.js'
+import { resolveExportSource, readEnvelopeMeta } from './export-scope.js'
 import { sealRejection, openRejection } from './rejection-seal.js'
 import type { RestoreToHost } from '../port/with/restore-host.js'
 import type { StrategyBag } from '../port/with/strategies.js'
@@ -3707,9 +3707,15 @@ export class Vault {
         // because `get()` is the canonical decrypt+schema-validate path
         // and any future cache/index plumbing rides through it.
         const records: unknown[] = []
+        // family#166 — appended in THIS branch, never a second loop over `ids`:
+        // `records` drops an unreadable record, so a second loop would shift every
+        // later version by one. Reasoning: ExportChunk.envelopeMeta.
+        const envelopeMeta = opts.withEnvelopeMeta === true ? [] as Array<{ version: number; ts: string }> : undefined
         for (const id of ids) {
           const record = await coll.get(id, localeOpts)
-          if (record !== null) records.push(exportRedact(coll, record))
+          if (record === null) continue
+          records.push(exportRedact(coll, record))
+          if (envelopeMeta !== undefined) envelopeMeta.push(await readEnvelopeMeta(source, collectionName, id))
         }
         const chunk: ExportChunk = {
           collection: collectionName,
@@ -3718,6 +3724,7 @@ export class Vault {
           records,
           ...(dictionaries !== undefined ? { dictionaries } : {}),
           ...(ledgerHead ? { ledgerHead } : {}),
+          ...(envelopeMeta !== undefined ? { envelopeMeta } : {}),
         }
         yield chunk
       } else {
@@ -3734,6 +3741,7 @@ export class Vault {
             records: [exportRedact(coll, record)],
             ...(dictionaries !== undefined ? { dictionaries } : {}),
             ...(ledgerHead ? { ledgerHead } : {}),
+            ...(opts.withEnvelopeMeta === true ? { envelopeMeta: [await readEnvelopeMeta(source, collectionName, id)] } : {}),
           }
           yield chunk
         }
