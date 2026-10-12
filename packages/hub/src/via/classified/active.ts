@@ -51,7 +51,12 @@ export function withClassified(): ClassifiedStrategy {
       return result
     },
     async computeTarget(ctx, field, candidate, costByte) {
-      const { computeBidxTarget } = await import('../../capsule/enclave-aes/classify/find.js')
+      // family#169 — through the DOOR, not into `enclave-aes/classify/find.js`.
+      // The door already re-exports this one, so the direct path was a pure
+      // routing miss: it bound the reference capsule even in a build whose
+      // `#capsule` resolves elsewhere. Still dynamic, so the laziness this call
+      // site wants is unchanged.
+      const { computeBidxTarget } = await import('../../capsule/index.js')
       const dek = await ctx.getDEK()
       return computeBidxTarget(candidate, policyOf(ctx.spec).normalize, dek, ctx.collection, field, costByte)
     },
