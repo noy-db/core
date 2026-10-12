@@ -58,7 +58,7 @@
  */
 
 import { readFile, mkdir, readdir, unlink, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { atomicWrite } from './atomic-write.js'
 import type {
   NoydbStore,
@@ -74,7 +74,7 @@ import type {
   WritePodOptions,
   PodReadResult,
 } from '@noy-db/hub'
-import { writePod, readPod } from '@noy-db/hub'
+import { writePod, readPod, ValidationError } from '@noy-db/hub'
 
 /**
  * Options for `toFile()`.
@@ -103,13 +103,74 @@ export interface JsonFileOptions {
  */
 export function toFile(options: JsonFileOptions): NoydbStore {
   const { dir, pretty = true } = options
+  const root = resolve(dir)
+
+  /**
+   * Defence in depth for family#133. `join` COLLAPSES `..` rather than refusing it, so
+   * `join(dir, '..', c, id)` lands outside `dir` and reads as an ordinary path. Every
+   * segment reaches us from a caller, and record ids in particular travel with data —
+   * a sync peer, an imported pod, application input.
+   *
+   * ⚠️ This is the store's own backstop, NOT the primary guard: hub validates segment
+   * shape at the kernel boundary, which is where every store inherits it. Keep both —
+   * an out-of-tree caller can hold a `NoydbStore` reference without going through hub
+   * at all.
+   *
+   * ⛔ Do NOT harden this into "no `/` in an id". Hub itself emits
+   * `_idx/<field>/<recordId>` ids for persisted index side-cars (see hub's
+   * `persisted-indexes.ts`, which documents ids as slash-bearing on purpose), so
+   * refusing the separator would break hub's own writes. Containment is the property;
+   * the separator is not.
+   */
+  function contained(path: string, what: string): string {
+    const p = resolve(path)
+    if (p !== root && !p.startsWith(root + sep)) {
+      throw new ValidationError(`to-file: ${what} resolves outside the store directory`)
+    }
+    return path
+  }
+
+  /**
+   * Segment shape, mirroring the rule hub applies at the kernel boundary (family#133).
+   *
+   * ⚠️ Containment alone is NOT enough, and the cheap guard misses the interesting case:
+   * `join(dir, 'v', '..', 'i.json')` is `{dir}/i.json`, which is still INSIDE the store
+   * directory. It escapes the VAULT, not the store — and on a multi-tenant mount the
+   * vault boundary is the one that matters. So shape is checked per segment and
+   * containment stays as the backstop beneath it.
+   *
+   * `vault` and `collection` are single names: no separator, no `.`/`..`, never empty.
+   * `id` MAY carry `/` — hub's index side-cars are `_idx/<field>/<recordId>` — so each
+   * of its slash-separated components is checked instead of the whole string.
+   */
+  function assertName(value: string, what: string): void {
+    if (value === '' || value === '.' || value === '..' || value.includes('/') || value.includes('\\') || value.includes('\0')) {
+      throw new ValidationError(`to-file: ${what} must be a single path segment, got ${JSON.stringify(value)}`)
+    }
+  }
+
+  function assertId(id: string): void {
+    if (id.includes('\\') || id.includes('\0')) {
+      throw new ValidationError(`to-file: record id must not contain a backslash or NUL, got ${JSON.stringify(id)}`)
+    }
+    for (const part of id.split('/')) {
+      if (part === '' || part === '.' || part === '..') {
+        throw new ValidationError(`to-file: record id has an empty, "." or ".." component, got ${JSON.stringify(id)}`)
+      }
+    }
+  }
 
   function recordPath(vault: string, collection: string, id: string): string {
-    return join(dir, vault, collection, `${id}.json`)
+    assertName(vault, 'vault')
+    assertName(collection, 'collection')
+    assertId(id)
+    return contained(join(dir, vault, collection, `${id}.json`), `record "${id}"`)
   }
 
   function collectionDir(vault: string, collection: string): string {
-    return join(dir, vault, collection)
+    assertName(vault, 'vault')
+    assertName(collection, 'collection')
+    return contained(join(dir, vault, collection), `collection "${collection}"`)
   }
 
   async function ensureDir(path: string): Promise<void> {
@@ -163,7 +224,11 @@ export function toFile(options: JsonFileOptions): NoydbStore {
         }
       }
 
-      await ensureDir(collectionDir(vault, collection))
+      // family#133 — the id's parent, not the collection dir: a side-car id like
+      // `_idx/<field>/<recordId>` nests below the collection, and the atomic write
+      // failed with ENOENT on its `.tmp` leaf because nothing created that directory.
+      // Persisted indexing therefore never worked on a to-file mount.
+      await ensureDir(dirname(path))
       await atomicWrite(path, serialize(envelope))
     },
 
