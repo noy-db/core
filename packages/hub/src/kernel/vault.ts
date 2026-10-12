@@ -3707,6 +3707,7 @@ export class Vault {
         // because `get()` is the canonical decrypt+schema-validate path
         // and any future cache/index plumbing rides through it.
         const records: unknown[] = []
+        const chunkIds: string[] = [] // family#151 — same branch as `records`
         // family#166 — appended in THIS branch, never a second loop over `ids`:
         // `records` drops an unreadable record, so a second loop would shift every
         // later version by one. Reasoning: ExportChunk.envelopeMeta.
@@ -3715,6 +3716,7 @@ export class Vault {
           const record = await coll.get(id, localeOpts)
           if (record === null) continue
           records.push(exportRedact(coll, record))
+          chunkIds.push(id)
           if (envelopeMeta !== undefined) envelopeMeta.push(await readEnvelopeMeta(source, collectionName, id))
         }
         const chunk: ExportChunk = {
@@ -3722,6 +3724,7 @@ export class Vault {
           schema,
           refs,
           records,
+          ids: chunkIds,
           ...(dictionaries !== undefined ? { dictionaries } : {}),
           ...(ledgerHead ? { ledgerHead } : {}),
           ...(envelopeMeta !== undefined ? { envelopeMeta } : {}),
@@ -3739,6 +3742,7 @@ export class Vault {
             schema,
             refs,
             records: [exportRedact(coll, record)],
+            ids: [id],
             ...(dictionaries !== undefined ? { dictionaries } : {}),
             ...(ledgerHead ? { ledgerHead } : {}),
             ...(opts.withEnvelopeMeta === true ? { envelopeMeta: [await readEnvelopeMeta(source, collectionName, id)] } : {}),

@@ -1674,7 +1674,14 @@ const KERNEL_SURFACE_BUDGET = {
   // `port/with/restore-host.ts`; what lives here is the closure bundle and its doc comment, which
   // is the shape the ceiling exists to force. `port-layering` caught the first attempt importing
   // the engine's types directly — `import type` does not exempt a static import from that rule.
-  'packages/hub/src/kernel/vault.ts': 3840,
+  // Bumped 3840→3844 (family#151): `exportStream` now carries each record's
+  // HUB ID on the chunk, which is four lines — a parallel array built in the
+  // same branch as `records` and threaded into both yield paths.
+  // ⛔ It cannot live anywhere else: the id is the store key, known only here,
+  // and it is what lets `diffVault` stop keying on a record FIELD and silently
+  // dropping every record that has none. A service cannot supply it because a
+  // service is not on the export path.
+  'packages/hub/src/kernel/vault.ts': 3844,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
