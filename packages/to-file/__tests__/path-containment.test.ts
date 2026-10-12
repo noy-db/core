@@ -22,7 +22,7 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'to-file-containment-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-const ENV: EncryptedEnvelope = { _v: 1, _iv: '', _data: '{}' }
+const ENV: EncryptedEnvelope = { _noydb: 1, _v: 1, _ts: '2026-10-12T00:00:00Z', _iv: '', _data: '{}' }
 
 describe('family#133 — path containment', () => {
   it('refuses a traversal in EVERY segment, not just the vault', async () => {

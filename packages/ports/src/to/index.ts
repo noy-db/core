@@ -343,11 +343,12 @@ export function runStoreConformanceTests(
        * paired a filesystem store with persisted indexing, so both features were well
        * covered and their intersection was empty.
        *
-       * ⚠️ REFUSING a malformed id is NOT required here. Hub validates segment shape
-       * once, in the decorator it wraps `options.store` with, and that is the
-       * enforcement point; this suite asserts what the store itself must guarantee
-       * when something reaches it anyway — which is CONTAINMENT, not rejection. A
-       * store may throw instead, and both outcomes pass.
+       * ⚠️ REFUSING a malformed id is NOT required here. This suite asserts what the
+       * store itself must guarantee — CONTAINMENT, not rejection — and a store may
+       * throw instead, with both outcomes passing. ⛔ Note hub does NOT yet validate
+       * segment shape centrally: the decorator around `options.store` is family#133's
+       * second half and is unwritten, so today the store is the only thing between a
+       * malformed id and the disk.
        */
       it('accepts a slash-bearing id and round-trips it — hub emits these', async () => {
         const envelope = makeEnvelope(1, 'side-car')
@@ -381,8 +382,19 @@ export function runStoreConformanceTests(
         }
 
         if (refused) {
-          // Not vacuous: a refusal must also have written nothing.
-          expect(await adapter.get('comp1', 'coll1', '../../escaped')).toBeNull()
+          // Not vacuous: a refusal must also have written nothing. ⚠️ A store that
+          // validates shape centrally refuses the READ on the same id too, which is
+          // correct and must not fail this case — "not readable" is the property, so
+          // a throw and a null both discharge it. Asserting `toBeNull()` alone fails
+          // every such store; measured on to-file, which validates in `recordPath`
+          // and therefore throws from `get`.
+          let leaked: unknown = null
+          try {
+            leaked = await adapter.get('comp1', 'coll1', '../../escaped')
+          } catch {
+            return // refused the read as well
+          }
+          expect(leaked).toBeNull()
           return
         }
 
