@@ -111,10 +111,12 @@ export function toFile(options: JsonFileOptions): NoydbStore {
    * segment reaches us from a caller, and record ids in particular travel with data —
    * a sync peer, an imported pod, application input.
    *
-   * ⚠️ Today this is the ONLY guard, not a backstop: hub's central check (a decorator
-   * around `options.store`) is family#133's second half and is unwritten. Keep it even
-   * once that lands — an out-of-tree caller can hold a `NoydbStore` reference without
-   * going through hub at all.
+   * ⚠️ Hub's central check LANDED (family#133's second half —
+   * `guardStoreSegments()` around the mounted store), so this is now a backstop
+   * rather than the only guard. ⛔ Keep it anyway, which is the whole reason it was
+   * written to stand alone: an out-of-tree caller can hold a `NoydbStore` reference
+   * without going through hub at all, and this package is published for exactly
+   * that kind of consumer.
    *
    * ⛔ Do NOT harden this into "no `/` in an id". Hub itself emits
    * `_idx/<field>/<recordId>` ids for persisted index side-cars (see hub's

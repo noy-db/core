@@ -1908,16 +1908,21 @@ const KERNEL_SURFACE_BUDGET = {
   // them would have broken the readers they exist for. These lines are the two blocks saying so.
   // ⭐ Net effect of #128 on this file is SMALLER surface, not larger: two accessors lost their
   // public names to `_`, and the kernel-api golden shrank by 8.
-  // Bumped 2480→2486 (family#156): `createNoydb()` now refuses an enabled
-  // service whose group the bound capsule does not declare — one import line
-  // and a three-line guarded call. ⛔ It cannot move to a service, which is
-  // what this ceiling normally asks for: it GATES the services, and it must run
-  // before any default is resolved so a refused vault is never half-built. The
-  // reasoning lives in `kernel/capsule-requirements.ts`, deliberately, so the
-  // call site stays four lines; raising this by six was the alternative to
-  // deleting the explanation, and an unexplained guard is the more expensive of
-  // the two.
-  'packages/hub/src/kernel/noydb.ts': 2486,  // see the #1121 note above
+  // Bumped 2480→2486 (family#156), then 2486→2489 (family#133): `createNoydb()`
+  // refuses an enabled service whose group the bound capsule lacks, and wraps
+  // the mounted store in hub's central segment check.
+  // ⛔ NEITHER CAN MOVE TO A SERVICE, which is what this ceiling normally asks
+  // for. The capability check GATES the services and must run before any
+  // default resolves, so a refused vault is never half-built; the segment guard
+  // is part of the store CONTRACT, which every vault has whether or not it opts
+  // into anything. A service-resident contract guard is one a caller can skip.
+  // ⚠️ Both reasonings live in their own modules (`capsule-requirements.ts`,
+  // `store-segment-guard.ts`) precisely to keep these call sites to three lines
+  // each. The nine lines bought here were the alternative to deleting the
+  // explanations, and an unexplained guard in the always-on kernel is the more
+  // expensive of the two. ⛔ Do not read this as the ceiling being soft: both
+  // raises were measured, and each one shrank its call site first.
+  'packages/hub/src/kernel/noydb.ts': 2489,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

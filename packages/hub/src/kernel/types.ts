@@ -712,10 +712,16 @@ export interface ListPageResult {
  * side-car write failed with `ENOENT` on its atomic-write leaf and persisted
  * indexing never worked on that store.
  *
- * ⚠️ **Hub does not validate this centrally yet.** Enforcing it once, in a
- * decorator around `options.store` at construction, is family#133's second half
- * and is NOT implemented — so today a malformed id reaches whichever store the
- * caller mounted, and nothing above it refuses first.
+ * ✅ **Hub validates this centrally since family#133's second half.**
+ * `createNoydb()` wraps the mounted store in `guardStoreSegments()`
+ * (`kernel/store-segment-guard.ts`), so a malformed vault, collection or id is
+ * refused before any store sees it. The sentence here used to say the opposite,
+ * which was honest and is now wrong.
+ *
+ * ⚠️ A store's own guard is still required, and is not redundant: an
+ * out-of-tree caller can hold a `NoydbStore` reference and never pass through
+ * hub. `@noy-db/ports/to`'s `broken-escapes-namespace` control tests the store
+ * side precisely because hub's check cannot reach it.
  *
  * What a store MUST guarantee either way is **containment**: if a malformed id
  * reaches it, the record must not become readable under a different
