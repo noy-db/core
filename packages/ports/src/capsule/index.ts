@@ -34,7 +34,14 @@
 export { runCapsuleConformance } from './contract-cases.js'
 export type { CapsuleUnderTest, CapsuleGroup, ConformanceOptions } from './contract-cases.js'
 
-export { runEnclaveConformance, assertGroupRefuses } from './enclave-cases.js'
+export {
+  runEnclaveConformance,
+  assertGroupRefuses,
+  // family#168 — the tag table's cannot-drift half, exported so a capsule
+  // author's own suite can assert it too.
+  assertPrimitiveTagsCovered,
+  groupWithoutPrimitives,
+} from './enclave-cases.js'
 export type {
   EnclaveModule,
   EnclaveConformanceOptions,

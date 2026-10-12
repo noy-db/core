@@ -18,6 +18,7 @@ import { describe, it, expect } from 'vitest'
 import { capabilities } from '../src/capsule/index.js'
 import { CapsuleNotSupportedError, type CapsuleGroup } from '../src/capsule/contract.js'
 import { assertCapsuleSupports } from '../src/capsule/contract.js'
+import { PRIMITIVE_GROUPS, GROUPS_WITHOUT_PRIMITIVES } from '../src/capsule/contract.js'
 
 describe('capsule capabilities', () => {
   it('enclave-aes declares every group — it is the reference capsule', () => {
@@ -65,5 +66,51 @@ describe('capsule capabilities', () => {
   it('permits a group the capsule does have', () => {
     const stub = new Set<CapsuleGroup>(['cipher'])
     expect(() => assertCapsuleSupports(stub, 'cipher', 'withAnything')).not.toThrow()
+  })
+})
+
+/**
+ * family#168 — the tag table and the declared set are two halves of one claim.
+ *
+ * `PRIMITIVE_GROUPS` is total by TYPE (`Record<keyof CapsulePrimitives, …>`), so
+ * an untagged primitive cannot compile. What a type cannot say is whether the
+ * table and `capabilities()` agree about which groups exist at all — and that is
+ * precisely where the three vocabularies of core#42 drifted apart.
+ */
+describe('PRIMITIVE_GROUPS (family#168)', () => {
+  it('tags every primitive with a real group, and no group twice-classified', () => {
+    const tagged = new Set(Object.values(PRIMITIVE_GROUPS))
+    for (const g of tagged) {
+      expect(
+        GROUPS_WITHOUT_PRIMITIVES[g],
+        `"${g}" has primitives AND claims to have none — the two tables contradict`,
+      ).toBeUndefined()
+    }
+    // The split must be exhaustive over the union, or a group exists that
+    // neither table speaks for and no check will ever mention it.
+    const spoken = new Set([...tagged, ...Object.keys(GROUPS_WITHOUT_PRIMITIVES)])
+    expect([...spoken].sort()).toEqual([
+      'authenticate', 'cipher', 'classify', 'codec', 'deterministic',
+      'digest', 'per-record-keys', 'seal', 'sign', 'sealing',
+    ].sort())
+  })
+
+  it('the reference capsule declares every group its primitives are tagged with', () => {
+    // enclave-aes supports everything, so this is the direction that can fail:
+    // a tag naming a group the capsule does not declare would mean the table
+    // describes an implementation nobody ships.
+    const declared = capabilities()
+    for (const g of new Set(Object.values(PRIMITIVE_GROUPS))) {
+      expect(declared.has(g), `enclave-aes implements "${g}" primitives but does not declare it`).toBe(true)
+    }
+  })
+
+  it('⛔ wrapCek/unwrapCek are per-record-keys, not seal', () => {
+    // Ruled 2026-10-12. The shipped exclave refused them as 'seal' while this
+    // repo's own union added 'per-record-keys' expressly for them (core#42) and
+    // the kit tested them under that name. Pinned here because the next reader
+    // of the exclave will see 'seal' and assume this is the copy that is wrong.
+    expect(PRIMITIVE_GROUPS.wrapCek).toBe('per-record-keys')
+    expect(PRIMITIVE_GROUPS.unwrapCek).toBe('per-record-keys')
   })
 })

@@ -44,6 +44,8 @@ function makeStub(unsupportedGroup: Group): EnclaveModule<CryptoKey> {
       unsupportedGroup === 'deterministic' ? refuses('deterministic') : real.encryptDeterministic,
     decryptDeterministic:
       unsupportedGroup === 'deterministic' ? refuses('deterministic') : real.decryptDeterministic,
+    deriveDeterministicKey:
+      unsupportedGroup === 'deterministic' ? refuses('deterministic') : real.deriveDeterministicKey,
     wrapCek: unsupportedGroup === 'per-record-keys' ? refuses('per-record-keys') : real.wrapCek,
     unwrapCek: unsupportedGroup === 'per-record-keys' ? refuses('per-record-keys') : real.unwrapCek,
     encryptBytesWithAAD: unsupportedGroup === 'classify' ? refuses('classify') : real.encryptBytesWithAAD,

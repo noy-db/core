@@ -3938,6 +3938,21 @@ export class RecoveryProfileNotImplementedError extends NoydbError {
 // ─── Enclave Errors ────────────────────────────────────────────────────
 
 /**
+ * @deprecated Since family#168 (2026-10-12). Throw
+ * `CapsuleNotSupportedError` from `@noy-db/hub/capsule` instead; this class is
+ * removed at a later breaking cut.
+ *
+ * ⛔ WHY IT IS GOING. Two not-supported classes shipped side by side with two
+ * DIFFERENT codes — this one (`ENCLAVE_NOT_SUPPORTED`) and
+ * `CapsuleNotSupportedError` (`CAPSULE_NOT_SUPPORTED`). Hub never threw this
+ * one; `exclave-plain` threw the other; and the published conformance kit
+ * matched only this code. So a capsule refusing a group EXACTLY AS THE CONTRACT
+ * SAYS was reported by the kit as not refusing at all. Nothing failed anywhere,
+ * because the one capsule that supports every group never takes the branch.
+ *
+ * ⚠️ The kit now accepts BOTH codes, so a fork already throwing this keeps
+ * passing. That is the only reason this class still exists.
+ *
  * Thrown by a `capsule/enclave-aes` fork's **optional groups** — sealing,
  * deterministic, per-record-key lifecycle — when that fork's crypto
  * engine does not implement the requested behavior.

@@ -52,6 +52,92 @@ export type CapsuleGroup =
   | 'per-record-keys'
 
 /**
+ * Which group each primitive belongs to — the tag table family#168 asked for,
+ * so `capabilities()` cannot drift from the implementation.
+ *
+ * ⭐ `Record<keyof CapsulePrimitives, …>` IS THE MECHANISM, and the reason this
+ * is a table rather than a comment. A new primitive added without a tag is a
+ * COMPILE error here, and a tag for a primitive that no longer exists is a
+ * compile error too. A hand-kept list of group members is the second copy that
+ * drifts; three vocabularies disagreeing about `per-record-keys` (core#42) is
+ * what that drift looks like when nothing checks it.
+ *
+ * ⚠️ FOUR GROUPS HAVE NO PRIMITIVES, and that is correct, not a gap:
+ *
+ *  - `authenticate` and `seal` are POSTURE groups. They say whether a capsule
+ *    holds secrets at all, which is a property of the implementation's
+ *    intent — enforced by the `enclave-`/`exclave-` package-name rule the
+ *    conformance kit asserts, never by calling a function. A completeness
+ *    check over primitives is VACUOUSLY true for them, so it must name them as
+ *    exempt rather than report a green it cannot earn.
+ *  - `digest` and `sign` are PLUMBING. `sha256Hex`, `generateSigningKeyPair`,
+ *    `signBytes`, `verifyBytes` are shared verbatim by every capsule
+ *    (`plumbing/digest.ts`, `plumbing/sign.ts`) and are deliberately not
+ *    primitives — hashes are not secrets, and a capsule choosing its own hash
+ *    buys nothing but an envelope another capsule cannot read.
+ *
+ * ⛔ `wrapCek`/`unwrapCek` are `per-record-keys`, NOT `seal`. Ruled 2026-10-12
+ * after the two shipped artefacts were found disagreeing: `exclave-plain`
+ * refused them as `'seal'` while this union's own `per-record-keys` member was
+ * added by core#42 expressly for them, and the conformance kit has tested their
+ * refusal under that name since it shipped. The exclave is being corrected.
+ */
+export const PRIMITIVE_GROUPS: Readonly<Record<keyof CapsulePrimitives, CapsuleGroup>> = {
+  // ─── cipher: the capsule's actual encryption ────────────────────────
+  encrypt: 'cipher',
+  decrypt: 'cipher',
+  encryptBytesWithAAD: 'cipher',
+  decryptBytesWithAAD: 'cipher',
+  generateDEK: 'cipher',
+  // ─── codec: encoding, identical for every capsule ───────────────────
+  bufferToBase64: 'codec',
+  // ─── sealing: per-field key derivation ──────────────────────────────
+  deriveSealedFieldKey: 'sealing',
+  deriveSealedFieldKeyFromCek: 'sealing',
+  // ─── deterministic: equality search needs a key ─────────────────────
+  encryptDeterministic: 'deterministic',
+  deriveDeterministicKey: 'deterministic',
+  // ─── per-record keys: the CEK lifecycle ─────────────────────────────
+  wrapCek: 'per-record-keys',
+  unwrapCek: 'per-record-keys',
+  // ─── classify: the verify/blind-index group ─────────────────────────
+  mintVdigSlot: 'classify',
+  mintBidxTag: 'classify',
+  openVdigPayload: 'classify',
+  sealVdigPayload: 'classify',
+  pbkdf2VerifyDigest: 'classify',
+  blindedEqual: 'classify',
+}
+
+/**
+ * The groups `PRIMITIVE_GROUPS` cannot speak for, with the reason.
+ *
+ * Published because a completeness check MUST distinguish "this group has no
+ * unimplemented primitive" from "this group has no primitive to check" — those
+ * are the same green and different facts, and conflating them is how a capsule
+ * declares `seal` while implementing nothing a check can name.
+ */
+export const GROUPS_WITHOUT_PRIMITIVES: Readonly<Partial<Record<CapsuleGroup, string>>> = {
+  authenticate: 'posture group — asserted from the enclave-/exclave- package name, not from a primitive',
+  seal: 'posture group — asserted from the enclave-/exclave- package name, not from a primitive',
+  digest: 'plumbing — plumbing/digest.ts is shared verbatim; hashes are not secrets',
+  sign: 'plumbing — plumbing/sign.ts is shared verbatim',
+}
+
+/**
+ * The three primitives a capsule MODULE does not expose, so a check driven off
+ * the module object reaches 15 of 18.
+ *
+ * ⚠️ Not a gap in the contract — these are codec-internal by design: the record
+ * codec calls them, nothing outside `capsule/` does, and putting them on the
+ * door would publish the `_vdig` payload format as a consumer-facing API. A
+ * check that silently iterated 15 and reported "every primitive" would be
+ * stating a conjunction it never evaluated, which is this repo's own
+ * false-green shape.
+ */
+export const PRIMITIVES_NOT_ON_THE_DOOR = ['mintVdigSlot', 'openVdigPayload', 'sealVdigPayload'] as const
+
+/**
  * Thrown at `createNoydb()` when a service needs a group the bound capsule
  * does not support.
  *
@@ -87,6 +173,17 @@ export function assertCapsuleSupports(
   if (!caps.has(group)) throw new CapsuleNotSupportedError(group, requirer)
 }
 
+/**
+ * ⭐ THE CANONICAL not-supported refusal, ruled 2026-10-12 (family#168). Hub
+ * throws it, and every capsule throws it for a group it refuses.
+ *
+ * ⛔ `EnclaveNotSupportedError` (`kernel/errors.ts`, code `ENCLAVE_NOT_SUPPORTED`)
+ * is DEPRECATED and removed at a later breaking cut. Two classes with two codes
+ * shipped side by side: hub never threw the enclave one, `exclave-plain` threw
+ * this one, and the conformance kit matched only the enclave code — so a capsule
+ * refusing a group CORRECTLY was reported as not refusing at all. The kit now
+ * accepts both codes so existing forks keep passing; new code throws this.
+ */
 export class CapsuleNotSupportedError extends NoydbError {
   constructor(readonly group: CapsuleGroup, readonly requirer: string) {
     super(
