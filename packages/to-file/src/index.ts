@@ -262,8 +262,10 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       let entries
       try {
         entries = await readdir(rel ? join(base, rel) : base, { withFileTypes: true })
-      } catch {
-        return // collection (or a subtree) does not exist — nothing to list
+      } catch (err) {
+        // family#162 — ABSENCE is nothing to list; a FAILURE is not.
+        if (isAbsence(err)) return
+        throw err
       }
       for (const entry of entries) {
         const next = rel ? `${rel}/${entry.name}` : entry.name
@@ -280,6 +282,29 @@ export function toFile(options: JsonFileOptions): NoydbStore {
 
   async function ensureDir(path: string): Promise<void> {
     await mkdir(path, { recursive: true })
+  }
+
+  /**
+   * Is this error "the thing is not there", as opposed to "I could not read it"?
+   *
+   * ⛔ THE DISTINCTION IS LOAD-BEARING, and collapsing it is family#162. Every
+   * read here used to answer a FAILURE with the same value as an ABSENCE —
+   * `null` from `get`, `[]` from `list`, `{}` from `loadAll`. Hub cannot tell
+   * those apart, and it has a fail-closed gate that depends on doing so:
+   * `assertKeyringOpenAllowed` refuses to self-provision into a vault held by
+   * other principals by checking `list(vault, '_keyring')` for emptiness. An
+   * EACCES on the vault directory returned `[]`, the gate read that as "a
+   * genuinely-new vault", and hub provisioned a second owner into a vault that
+   * already had one.
+   *
+   * ⚠️ ENOENT and ENOTDIR only. ENOTDIR because a path component that is a file
+   * rather than a directory means the collection cannot exist either — but
+   * EACCES, EIO, EMFILE, ELOOP and a corrupt JSON body are all "could not
+   * read", and every one of them must reach the caller.
+   */
+  function isAbsence(err: unknown): boolean {
+    const code = (err as { code?: unknown } | null)?.code
+    return code === 'ENOENT' || code === 'ENOTDIR'
   }
 
   async function fileExists(path: string): Promise<boolean> {
@@ -314,7 +339,11 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       try {
         const content = await readFile(path, 'utf-8')
         return JSON.parse(content) as EncryptedEnvelope
-      } catch {
+      } catch (err) {
+        // family#162 — only an ABSENT file may fall through to `null`. A read
+        // failure or a corrupt body is reported, because hub reads `null` as
+        // "no such record" and will create over it.
+        if (!isAbsence(err)) throw err
         // family#174 — fall back to the pre-encoding name. See
         // `legacyRecordPath`: this is what keeps a live record whose id contains
         // a `%` readable across the encoding change.
@@ -322,7 +351,8 @@ export function toFile(options: JsonFileOptions): NoydbStore {
         if (legacy === null) return null
         try {
           return JSON.parse(await readFile(legacy, 'utf-8')) as EncryptedEnvelope
-        } catch {
+        } catch (legacyErr) {
+          if (!isAbsence(legacyErr)) throw legacyErr
           return null
         }
       }
@@ -357,8 +387,11 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       const path = recordPath(vault, collection, id)
       try {
         await unlink(path)
-      } catch {
-        // File doesn't exist — that's fine
+      } catch (err) {
+        // family#162, the write-side twin: deleting what is already gone is
+        // success, but an EACCES or EPERM reported as success is a delete the
+        // caller believes happened. Sync and forget both act on that answer.
+        if (!isAbsence(err)) throw err
       }
     },
 
@@ -385,8 +418,11 @@ export function toFile(options: JsonFileOptions): NoydbStore {
           }
           snapshot[collName] = records
         }
-      } catch {
-        // Directory doesn't exist — return empty snapshot
+      } catch (err) {
+        // family#162 — an ABSENT vault directory is an empty snapshot. Anything
+        // else is a read failure, and an empty snapshot is how hub concludes a
+        // vault has no records at all.
+        if (!isAbsence(err)) throw err
       }
 
       return snapshot

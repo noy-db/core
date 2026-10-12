@@ -553,6 +553,19 @@ export async function loadKeyring(
  * otherwise. Placed before managed-secret secret resolution (which persists
  * on first open), so a fail-closed open writes nothing.
  */
+/**
+ * ⚠️ family#162 — THIS GATE'S FAIL-CLOSED PROPERTY RESTS ON THE STORE
+ * CONTRACT. It decides "genuinely-new vault" from `list()` returning empty, so
+ * a store that answers a read FAILURE with `[]` turns the refusal below into a
+ * pass: hub then self-provisions a second owner into a vault that already has
+ * one. `NoydbStore`'s docstring states the rule (absence and failure are
+ * different answers); `to-file` violated it in `get`, `list` and `loadAll`.
+ *
+ * ⛔ Hub cannot verify it. A `[]` is a `[]` — there is no second question to
+ * ask that a store answering wrongly would answer differently. So the guard is
+ * the contract plus each store honouring it, and what hub owes is to NOT
+ * swallow a store that does throw. `__tests__/162-...` asserts that.
+ */
 export async function assertKeyringOpenAllowed(
   store: NoydbStore,
   vault: string,

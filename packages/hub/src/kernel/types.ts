@@ -706,6 +706,22 @@ export interface ListPageResult {
  * materialises persisted index side-cars as `_idx/<field>/<recordId>` — but no
  * slash-separated component of it may be empty, `.` or `..`.
  *
+ * ⛔ **ABSENCE AND FAILURE ARE DIFFERENT ANSWERS** (family#162). `get` returns
+ * `null`, `list` returns `[]` and `loadAll` returns `{}` for something that is
+ * **not there**. A read that FAILED — a permission error, an I/O error, a
+ * corrupt body — must **throw**, and must never be reported as absence.
+ *
+ * Hub cannot tell the two apart, and it has a fail-closed gate that depends on
+ * doing so: `assertKeyringOpenAllowed` refuses to self-provision into a vault
+ * held by other principals by checking `list(vault, '_keyring')` for emptiness.
+ * A store that answered an EACCES with `[]` made that gate read "a
+ * genuinely-new vault" and hub provisioned a second owner into a vault that
+ * already had one. `@noy-db/to-file` did exactly that until family#162.
+ *
+ * ⚠️ Not kit-enforceable: a conformance suite cannot inject a read failure into
+ * an arbitrary store, so this is a contract a store author honours rather than
+ * one the kit can check. That is why it is stated here, in the authority.
+ *
  * ⛔ **A NUL (`\x00`) is legal in an id too, and hub emits one** (family#174).
  * `resolveSequenceKey` and `resolvePeriodKey` join a partition as
  * `${name}\x00${parts}`, chosen precisely because a NUL cannot occur in a plain
