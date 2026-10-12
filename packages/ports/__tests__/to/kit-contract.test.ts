@@ -107,4 +107,13 @@ describe('the adapter conformance kit, run against stores broken in one way each
   it('⛔ FAILS a store implementing tx() without declaring capabilities.txAtomic', async () => {
     await expectRefused('broken-undeclared-tx', /does not declare capabilities\.txAtomic/)
   }, 120_000)
+
+  // ⭐ ONE case, and getting there took a second fixture. The first version
+  // re-addressed every key into a shared namespace, which reddened eight cases —
+  // list, loadAll, saveAll, isolation — and attributed nothing. A control that
+  // fails broadly proves the kit reacts to SOMETHING, which is what the exact
+  // count exists to rule out.
+  it('⛔ FAILS a store that collapses `..` and lets an id climb out of its vault (family#133)', async () => {
+    await expectRefused('broken-escapes-namespace', /never leaks ACROSS vaults/)
+  }, 120_000)
 })

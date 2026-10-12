@@ -58,7 +58,7 @@
  */
 
 import { readFile, mkdir, readdir, unlink, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { atomicWrite } from './atomic-write.js'
 import type {
   NoydbStore,
@@ -74,7 +74,7 @@ import type {
   WritePodOptions,
   PodReadResult,
 } from '@noy-db/hub'
-import { writePod, readPod } from '@noy-db/hub'
+import { writePod, readPod, ValidationError } from '@noy-db/hub'
 
 /**
  * Options for `toFile()`.
@@ -103,13 +103,108 @@ export interface JsonFileOptions {
  */
 export function toFile(options: JsonFileOptions): NoydbStore {
   const { dir, pretty = true } = options
+  const root = resolve(dir)
+
+  /**
+   * Defence in depth for family#133. `join` COLLAPSES `..` rather than refusing it, so
+   * `join(dir, '..', c, id)` lands outside `dir` and reads as an ordinary path. Every
+   * segment reaches us from a caller, and record ids in particular travel with data —
+   * a sync peer, an imported pod, application input.
+   *
+   * ⚠️ Today this is the ONLY guard, not a backstop: hub's central check (a decorator
+   * around `options.store`) is family#133's second half and is unwritten. Keep it even
+   * once that lands — an out-of-tree caller can hold a `NoydbStore` reference without
+   * going through hub at all.
+   *
+   * ⛔ Do NOT harden this into "no `/` in an id". Hub itself emits
+   * `_idx/<field>/<recordId>` ids for persisted index side-cars (see hub's
+   * `persisted-indexes.ts`, which documents ids as slash-bearing on purpose), so
+   * refusing the separator would break hub's own writes. Containment is the property;
+   * the separator is not.
+   */
+  function contained(path: string, what: string): string {
+    const p = resolve(path)
+    if (p !== root && !p.startsWith(root + sep)) {
+      throw new ValidationError(`to-file: ${what} resolves outside the store directory`)
+    }
+    return path
+  }
+
+  /**
+   * Segment shape, mirroring the rule hub applies at the kernel boundary (family#133).
+   *
+   * ⚠️ Containment alone is NOT enough, and the cheap guard misses the interesting case:
+   * `join(dir, 'v', '..', 'i.json')` is `{dir}/i.json`, which is still INSIDE the store
+   * directory. It escapes the VAULT, not the store — and on a multi-tenant mount the
+   * vault boundary is the one that matters. So shape is checked per segment and
+   * containment stays as the backstop beneath it.
+   *
+   * `vault` and `collection` are single names: no separator, no `.`/`..`, never empty.
+   * `id` MAY carry `/` — hub's index side-cars are `_idx/<field>/<recordId>` — so each
+   * of its slash-separated components is checked instead of the whole string.
+   */
+  function assertName(value: string, what: string): void {
+    if (value === '' || value === '.' || value === '..' || value.includes('/') || value.includes('\\') || value.includes('\0')) {
+      throw new ValidationError(`to-file: ${what} must be a single path segment, got ${JSON.stringify(value)}`)
+    }
+  }
+
+  function assertId(id: string): void {
+    if (id.includes('\\') || id.includes('\0')) {
+      throw new ValidationError(`to-file: record id must not contain a backslash or NUL, got ${JSON.stringify(id)}`)
+    }
+    for (const part of id.split('/')) {
+      if (part === '' || part === '.' || part === '..') {
+        throw new ValidationError(`to-file: record id has an empty, "." or ".." component, got ${JSON.stringify(id)}`)
+      }
+    }
+  }
 
   function recordPath(vault: string, collection: string, id: string): string {
-    return join(dir, vault, collection, `${id}.json`)
+    assertName(vault, 'vault')
+    assertName(collection, 'collection')
+    assertId(id)
+    return contained(join(dir, vault, collection, `${id}.json`), `record "${id}"`)
   }
 
   function collectionDir(vault: string, collection: string): string {
-    return join(dir, vault, collection)
+    assertName(vault, 'vault')
+    assertName(collection, 'collection')
+    return contained(join(dir, vault, collection), `collection "${collection}"`)
+  }
+
+  /**
+   * Every record id under a collection, nested ones included (family#133).
+   *
+   * ⛔ A flat `readdir` is WRONG here, and it was wrong in four methods: a
+   * slash-bearing id is a nested FILE, so `_idx/email/u1` lives at
+   * `{coll}/_idx/email/u1.json` and a one-level listing cannot see it. Hub calls
+   * `list()` to bulk-load the persisted-index mirror and filters side-cars out
+   * itself (`isIdxId`'s docstring says so), so a store that hides them does not
+   * look tidier — it reports a collection as missing its own indexes.
+   *
+   * The returned ids are joined with `/` from directory entry NAMES, never from a
+   * platform path, so they round-trip on win32 where `sep` is a backslash — and an
+   * id containing a backslash is refused at the door by `assertId`.
+   */
+  async function listIds(vault: string, collection: string): Promise<string[]> {
+    const base = collectionDir(vault, collection)
+    const ids: string[] = []
+    async function walk(rel: string): Promise<void> {
+      let entries
+      try {
+        entries = await readdir(rel ? join(base, rel) : base, { withFileTypes: true })
+      } catch {
+        return // collection (or a subtree) does not exist — nothing to list
+      }
+      for (const entry of entries) {
+        const next = rel ? `${rel}/${entry.name}` : entry.name
+        if (entry.isDirectory()) { await walk(next); continue }
+        if (entry.name.endsWith('.json')) ids.push(next.slice(0, -5))
+      }
+    }
+    await walk('')
+    return ids
   }
 
   async function ensureDir(path: string): Promise<void> {
@@ -163,7 +258,11 @@ export function toFile(options: JsonFileOptions): NoydbStore {
         }
       }
 
-      await ensureDir(collectionDir(vault, collection))
+      // family#133 — the id's parent, not the collection dir: a side-car id like
+      // `_idx/<field>/<recordId>` nests below the collection, and the atomic write
+      // failed with ENOENT on its `.tmp` leaf because nothing created that directory.
+      // Persisted indexing therefore never worked on a to-file mount.
+      await ensureDir(dirname(path))
       await atomicWrite(path, serialize(envelope))
     },
 
@@ -177,15 +276,7 @@ export function toFile(options: JsonFileOptions): NoydbStore {
     },
 
     async list(vault, collection) {
-      const dirPath = collectionDir(vault, collection)
-      try {
-        const entries = await readdir(dirPath)
-        return entries
-          .filter(f => f.endsWith('.json'))
-          .map(f => f.slice(0, -5)) // remove .json extension
-      } catch {
-        return []
-      }
+      return listIds(vault, collection)
     },
 
     async loadAll(vault) {
@@ -201,11 +292,8 @@ export function toFile(options: JsonFileOptions): NoydbStore {
           if (!collStat.isDirectory()) continue
 
           const records: Record<string, EncryptedEnvelope> = {}
-          const files = await readdir(collPath)
-          for (const file of files) {
-            if (!file.endsWith('.json')) continue
-            const id = file.slice(0, -5)
-            const content = await readFile(join(collPath, file), 'utf-8')
+          for (const id of await listIds(vault, collName)) {
+            const content = await readFile(join(collPath, `${id}.json`), 'utf-8')
             records[id] = JSON.parse(content) as EncryptedEnvelope
           }
           snapshot[collName] = records
@@ -222,7 +310,11 @@ export function toFile(options: JsonFileOptions): NoydbStore {
         const collDir = collectionDir(vault, collName)
         await ensureDir(collDir)
         for (const [id, envelope] of Object.entries(records)) {
-          await atomicWrite(join(collDir, `${id}.json`), serialize(envelope))
+          // family#133 — a nested id needs its own parent, not just the collection
+          // directory; `saveAll` had `put`'s ENOENT bug for the same reason.
+          const path = recordPath(vault, collName, id)
+          await ensureDir(dirname(path))
+          await atomicWrite(path, serialize(envelope))
         }
       }
     },
@@ -277,18 +369,7 @@ export function toFile(options: JsonFileOptions): NoydbStore {
      * so callers don't need an extra `get()` round-trip per id.
      */
     async listPage(vault, collection, cursor, limit = 100) {
-      const dirPath = collectionDir(vault, collection)
-      let files: string[]
-      try {
-        files = await readdir(dirPath)
-      } catch {
-        return { items: [], nextCursor: null }
-      }
-
-      const ids = files
-        .filter(f => f.endsWith('.json'))
-        .map(f => f.slice(0, -5))
-        .sort()
+      const ids = (await listIds(vault, collection)).sort()
 
       const start = cursor ? parseInt(cursor, 10) : 0
       const end = Math.min(start + limit, ids.length)
@@ -297,7 +378,7 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       for (let i = start; i < end; i++) {
         const id = ids[i]!
         try {
-          const content = await readFile(join(dirPath, `${id}.json`), 'utf-8')
+          const content = await readFile(recordPath(vault, collection, id), 'utf-8')
           items.push({ id, envelope: JSON.parse(content) as EncryptedEnvelope })
         } catch {
           // File disappeared between readdir and readFile — skip silently.

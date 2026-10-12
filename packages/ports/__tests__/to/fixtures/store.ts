@@ -67,3 +67,38 @@ export function undeclaredTx(): NoydbStore {
   const { txAtomic: _hidden, ...rest } = declared
   return { ...inner, capabilities: rest }
 }
+
+/**
+ * Resolves `vault/collection/id` the way a hierarchical namespace does, so a
+ * `..` component in the ID climbs out of its collection and then its vault —
+ * the exact defect family#133 found in `to-file`, where `join` collapses `..`
+ * rather than refusing it.
+ *
+ * ⭐ Broken in exactly ONE way, and that took a second attempt: the first
+ * version re-addressed every key into one shared namespace, which also broke
+ * `list`, `loadAll`, `saveAll` and isolation — eight failing cases, so the
+ * control attributed nothing. An ordinary triple must resolve to ITSELF here;
+ * only a climbing id may move.
+ */
+export function escapesNamespace(): NoydbStore {
+  const inner = memoryStore()
+  const resolveTriple = (vault: string, collection: string, id: string): [string, string, string] => {
+    const out: string[] = []
+    for (const part of `${vault}/${collection}/${id}`.split('/')) {
+      if (part === '.') continue
+      if (part === '..') { out.pop(); continue }
+      out.push(part)
+    }
+    // Degenerate only once `..` has consumed the vault and collection.
+    return [out[0] ?? '_root', out[1] ?? '_root', out.slice(2).join('/') || '_root']
+  }
+  return {
+    ...inner,
+    async get(vault, collection, id) { return await inner.get(...resolveTriple(vault, collection, id)) },
+    async put(vault, collection, id, envelope: EncryptedEnvelope, expectedVersion?: number) {
+      const [v, c, k] = resolveTriple(vault, collection, id)
+      return await inner.put(v, c, k, envelope, expectedVersion)
+    },
+    async delete(vault, collection, id) { return await inner.delete(...resolveTriple(vault, collection, id)) },
+  }
+}
