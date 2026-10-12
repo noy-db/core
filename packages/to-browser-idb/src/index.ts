@@ -136,9 +136,30 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
   const STORE_NAME = 'records'
   let dbPromise: Promise<IDBDatabase> | null = null
 
+  /**
+   * Open (or reuse) the connection.
+   *
+   * ⛔ THE CACHE IS INVALIDATED NOW, AND IT WAS NOT (family#165). `dbPromise`
+   * held a connection for the lifetime of the adapter, so once that connection
+   * went away every later transaction failed against a dead handle — forever,
+   * because nothing cleared the cache. A connection goes away for ordinary
+   * reasons: another tab runs a `versionchange`, the browser evicts the origin's
+   * storage under pressure, or the user clears site data. The adapter did not
+   * recover from any of them; it needed a page reload.
+   *
+   * ⚠️ A REJECTED open was cached too, which is the worse half: one transient
+   * failure at startup — storage not yet granted, a private-mode quirk — and
+   * every call for the rest of the session replayed that same rejection. The
+   * `catch` below clears it so the next call retries.
+   *
+   * ⚠️ `onversionchange` CLOSES deliberately. Another tab upgrading the schema
+   * is blocked until every other connection closes, so holding one open hangs
+   * the other tab rather than protecting this one. Closing and reopening on
+   * demand is what lets both make progress.
+   */
   function openDB(): Promise<IDBDatabase> {
     if (!dbPromise) {
-      dbPromise = new Promise((resolve, reject) => {
+      dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, 1)
         request.onupgradeneeded = () => {
           const db = request.result
@@ -146,9 +167,19 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
             db.createObjectStore(STORE_NAME)
           }
         }
-        request.onsuccess = () => resolve(request.result)
+        request.onsuccess = () => {
+          const db = request.result
+          // Any of these means the handle is no longer usable. Drop it so the
+          // next call reopens instead of failing against a dead connection.
+          const invalidate = (): void => { if (dbPromise !== null) dbPromise = null }
+          db.onclose = invalidate
+          db.onversionchange = () => { db.close(); invalidate() }
+          resolve(db)
+        }
         request.onerror = () => reject(request.error)
       })
+      // A cached REJECTION would make one transient failure permanent.
+      dbPromise.catch(() => { dbPromise = null })
     }
     return dbPromise
   }
@@ -157,6 +188,24 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
     return `${hashComponent(vault, obfuscate)}:${hashComponent(collection, obfuscate)}:${hashComponent(id, obfuscate)}`
   }
 
+  /**
+   * Open a transaction and hand back its store plus a `complete` promise.
+   *
+   * ⛔ `complete` CAN NEVER BE UNHANDLED (family#165). It rejects on
+   * `transaction.onerror`, and every read path here used to destructure only
+   * `{ store }` — so a transaction that failed rejected a promise nobody was
+   * listening to. That is an `unhandledrejection` event in a browser and a
+   * process-level warning (or exit, under `--unhandled-rejections=strict`) in
+   * Node: a store-level read error taking down the host application, from a
+   * path the caller was already awaiting an error from.
+   *
+   * ⚠️ The `catch` below marks the ORIGINAL promise handled without consuming
+   * it — `p.catch()` returns a new promise and leaves `p` rejecting for anyone
+   * who awaits it. So a caller that awaits `complete` still sees the real
+   * error; a caller that does not no longer crashes the host. Both halves
+   * matter, and swallowing with `.then(() => {})` on the returned value would
+   * have kept only the second.
+   */
   function tx(mode: IDBTransactionMode): Promise<{ store: IDBObjectStore; complete: Promise<void> }> {
     return openDB().then(db => {
       const transaction = db.transaction(STORE_NAME, mode)
@@ -165,6 +214,7 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
         transaction.oncomplete = () => resolve()
         transaction.onerror = () => reject(transaction.error)
       })
+      complete.catch(() => {}) // see above — handled, not consumed
       return { store, complete }
     })
   }
@@ -185,8 +235,11 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
     },
 
     async get(vault, collection, id) {
-      const { store } = await tx('readonly')
+      // family#165 — `complete` is awaited on the read paths too, so a
+      // transaction error REACHES the caller instead of rejecting into nothing.
+      const { store, complete } = await tx('readonly')
       const raw = await idbRequest(store.get(key(vault, collection, id)))
+      await complete
       if (!raw) return null
       if (obfuscate && typeof raw === 'object' && '_e' in (raw as StoredValue)) {
         return (raw as StoredValue)._e
@@ -225,13 +278,15 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
 
     async list(vault, collection) {
       const pfx = `${hashComponent(vault, obfuscate)}:${hashComponent(collection, obfuscate)}:`
-      const { store } = await tx('readonly')
+      const { store, complete } = await tx('readonly')
       const allKeys = await idbRequest(store.getAllKeys()) as string[]
 
       if (!obfuscate) {
-        return allKeys
+        const ids = allKeys
           .filter(k => typeof k === 'string' && k.startsWith(pfx))
           .map(k => k.slice(pfx.length))
+        await complete // family#165
+        return ids
       }
 
       // Obfuscated: need to read values for original IDs
@@ -243,12 +298,13 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
           ids.push(xorDecode((raw as StoredValue)._oi, obfKey))
         }
       }
+      await complete // family#165
       return ids
     },
 
     async loadAll(vault) {
       const pfx = `${hashComponent(vault, obfuscate)}:`
-      const { store } = await tx('readonly')
+      const { store, complete } = await tx('readonly')
       const allKeys = await idbRequest(store.getAllKeys()) as string[]
       const snapshot: VaultSnapshot = {}
 
@@ -281,6 +337,7 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
         snapshot[collection]![id] = envelope
       }
 
+      await complete // family#165
       return snapshot
     },
 
@@ -341,7 +398,7 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
      */
     async listPage(vault, collection, cursor, limit = 100) {
       const pfx = `${hashComponent(vault, obfuscate)}:${hashComponent(collection, obfuscate)}:`
-      const { store } = await tx('readonly')
+      const { store, complete } = await tx('readonly')
       const allKeys = await idbRequest(store.getAllKeys()) as string[]
       const matchedKeys = allKeys
         .filter(k => typeof k === 'string' && k.startsWith(pfx))
@@ -369,6 +426,7 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
         items.push({ id, envelope })
       }
 
+      await complete // family#165
       return {
         items,
         nextCursor: end < matchedKeys.length ? String(end) : null,
