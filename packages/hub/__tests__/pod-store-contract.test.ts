@@ -144,3 +144,57 @@ describe('#908 — wrapPodStore serialises concurrent writes', () => {
     expect(ids).toContain('new-0')
   })
 })
+
+/**
+ * family#147 — `saveAll` replaces the non-underscore collections and must never
+ * prune a reserved one.
+ *
+ * ⛔ The round-trip is the case that matters, and on this wrapper it was a
+ * guaranteed loss rather than a hazard: `loadAll` deliberately strips
+ * `_`-prefixed collections (#908 above), so `saveAll(await loadAll(v))` — a
+ * backup followed by a restore, the exact pair these two methods exist for —
+ * replaced the whole snapshot map and left the pod with no `_keyring`, which
+ * means unopenable. The first assertion below is that sequence verbatim.
+ */
+describe('family#147 — wrapPodStore.saveAll replaces, and never prunes a reserved collection', () => {
+  it('a loadAll → saveAll round-trip keeps the keyring', async () => {
+    const store = wrapPodStore(fakePod())
+    await store.put('v1', '_keyring', 'alice', env(1, 'kr'))
+    await store.put('v1', 'invoices', 'i1', env(1, 'inv'))
+
+    await store.saveAll('v1', await store.loadAll('v1'))
+
+    expect((await store.get('v1', '_keyring', 'alice'))?._data).toBe('kr')
+    expect((await store.get('v1', 'invoices', 'i1'))?._data).toBe('inv')
+  })
+
+  it('a carried reserved collection still overwrites — a full restore has to work', async () => {
+    const store = wrapPodStore(fakePod())
+    await store.put('v1', '_keyring', 'alice', env(1, 'original'))
+
+    await store.saveAll('v1', { _keyring: { alice: env(2, 'restored') } })
+
+    expect((await store.get('v1', '_keyring', 'alice'))?._data).toBe('restored')
+  })
+
+  it('a non-underscore collection the snapshot omits is still dropped', async () => {
+    const store = wrapPodStore(fakePod())
+    await store.put('v1', 'keep', 'k1', env(1, 'keep'))
+    await store.put('v1', 'drop', 'd1', env(1, 'drop'))
+
+    await store.saveAll('v1', { keep: { k1: env(2, 'keep-v2') } })
+
+    expect(await store.get('v1', 'drop', 'd1')).toBeNull()
+    expect((await store.get('v1', 'keep', 'k1'))?._v).toBe(2)
+  })
+
+  it('an empty record set empties its collection', async () => {
+    const store = wrapPodStore(fakePod())
+    await store.put('v1', 'invoices', 'i1', env(1))
+
+    await store.saveAll('v1', { invoices: {} })
+
+    expect(await store.get('v1', 'invoices', 'i1')).toBeNull()
+    expect(await store.list('v1', 'invoices')).toEqual([])
+  })
+})

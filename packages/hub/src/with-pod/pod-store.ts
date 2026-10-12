@@ -271,7 +271,24 @@ export function wrapPodStore(
     },
 
     async saveAll(vault: string, data: VaultSnapshot): Promise<void> {
-      snapshots.set(vault, data)
+      // family#147 — `saveAll` replaces the non-underscore collections and must
+      // never prune a reserved one. `snapshots.set(vault, data)` replaced the whole
+      // map, so a snapshot that did not carry `_keyring` dropped the live one.
+      //
+      // ⛔ On THIS store that was not a hazard but a guaranteed loss: `loadAll`
+      // above deliberately strips `_`-prefixed collections (#908), so
+      // `saveAll(await loadAll(v))` — a backup-then-restore, the exact round-trip
+      // the pair exists for — destroyed the keyring and left the pod unopenable.
+      // A reserved collection the snapshot DOES carry still overwrites, which is
+      // what makes a full restore possible.
+      const previous = await load(vault)
+      const next: VaultSnapshot = {}
+      for (const [collection, records] of Object.entries(previous)) {
+        if (collection.startsWith('_')) next[collection] = records
+      }
+      for (const [collection, records] of Object.entries(data)) next[collection] = records
+
+      snapshots.set(vault, next)
       loaded.add(vault)
       await serialFlush(vault)
     },
