@@ -300,13 +300,64 @@ function groupChecks<K>(
  * Returns the tagged-but-unexercised primitive names (empty = covered).
  */
 export function assertPrimitiveTagsCovered(group: ConformanceGroup): string[] {
-  // Names only — nothing is invoked, so the placeholder module is never touched.
-  const stub = new Proxy({}, { get: () => () => Promise.resolve() }) as EnclaveModule<unknown>
-  const exercised = new Set(groupChecks(stub, undefined, undefined)[group].map(([name]) => name))
+  const exercised = new Set(groupMemberNames(group))
   const unreachable = new Set<string>(PRIMITIVES_NOT_ON_THE_DOOR)
   return Object.entries(PRIMITIVE_GROUPS)
     .filter(([name, g]) => g === group && !unreachable.has(name) && !exercised.has(name))
     .map(([name]) => name)
+}
+
+/** The optional groups a capsule may refuse, in one place. */
+export const OPTIONAL_GROUPS = ['sealing', 'deterministic', 'per-record-keys', 'classify'] as const
+
+/**
+ * The names this suite exercises for `group`.
+ *
+ * Reads {@link groupChecks}'s table without running any of it: the thunks
+ * capture their arguments but are never invoked, so a placeholder module is
+ * safe. Exported because the per-group guarantee needs the DENOMINATOR — a
+ * refusal count means nothing without the member count, and "some refused" is
+ * the MIXED-group failure the guarantee exists to catch.
+ */
+export function groupMemberNames(group: ConformanceGroup): readonly string[] {
+  const stub = new Proxy({}, { get: () => () => Promise.resolve() }) as EnclaveModule<unknown>
+  return groupChecks(stub, undefined, undefined)[group].map(([name]) => name)
+}
+
+/**
+ * The per-group guarantee, as a pure verdict over a refusal count (family#172).
+ *
+ * ⭐ PURE ON PURPOSE. The guarantee has four shapes and only two of them are
+ * reachable with a real capsule — the reference supports everything, so its run
+ * never produces a refusal, and `exclave-plain`'s run never produces a
+ * non-refusal in a group it declines. The two FAILING shapes (a declared group
+ * that refuses, a declined group that works) are exactly what must be proven
+ * detectable, and a false control for them needs no capsule at all if the
+ * decision is separated from the measurement.
+ *
+ * ⛔ "Some refused" fails in BOTH directions, and that is the whole point. A
+ * capsule where one member of a group works while its siblings refuse is the
+ * MIXED group: a consumer cannot tell "this capsule lacks the group" from
+ * "this capsule is broken", and the refusal stops being a contract.
+ */
+export function groupVerdict(
+  group: string,
+  declared: boolean,
+  didNotRefuse: readonly string[],
+  members: readonly string[],
+): string | undefined {
+  const refused = members.length - didNotRefuse.length
+  if (declared) {
+    if (refused === 0) return undefined
+    return `capabilities() declares "${group}" but ${refused} of ${members.length} of its functions refuse ` +
+      `with a not-supported code: ${members.filter((m) => !didNotRefuse.includes(m)).join(', ')}. ` +
+      `A declared group must be implemented — refusing one is worse than not declaring it, because a ` +
+      `consumer asserts at construction and then fails at the first write.`
+  }
+  if (refused === members.length) return undefined
+  return `capabilities() does NOT declare "${group}", so every one of its functions must refuse — but ` +
+    `${didNotRefuse.length} of ${members.length} did not: ${didNotRefuse.join(', ')}. ` +
+    `A MIXED group means a consumer cannot tell "unsupported" from "broken".`
 }
 
 /**

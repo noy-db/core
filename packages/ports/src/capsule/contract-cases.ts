@@ -14,18 +14,66 @@
  * reads back before asserting any tamper is refused.
  */
 import { describe, it, expect } from 'vitest'
+import {
+  assertGroupRefuses,
+  groupMemberNames,
+  groupVerdict,
+  OPTIONAL_GROUPS,
+  type EnclaveModule,
+} from './enclave-cases.js'
 
-/** The groups a capsule may declare. Mirrors `@noy-db/hub/capsule`. */
+/**
+ * The optional-group functions a capsule must EXPOSE, whether or not it
+ * implements them.
+ *
+ * ⭐ Derived from `EnclaveModule` with `Pick`, never retyped. This file already
+ * carried one hand-copied contract that drifted (see `CapsuleGroup` above);
+ * adding a second by hand would be the same mistake with the lesson in view.
+ * `Pick` makes a signature change in `EnclaveModule` a compile error here
+ * rather than a silent divergence.
+ *
+ * ⚠️ Widening `CapsuleUnderTest` with it is a TYPE-level requirement a capsule
+ * already met in practice — both shipped capsules pass their whole module — but
+ * it is the honest shape: the contract says every symbol must exist and the
+ * optional groups may refuse, so a capsule that omits the function entirely was
+ * never conformant, and this suite had no way to say so.
+ */
+type OptionalGroupSurface<K> = Pick<
+  EnclaveModule<K>,
+  | 'deriveSealedFieldKey' | 'deriveSealedFieldKeyFromCek'
+  | 'encryptDeterministic' | 'decryptDeterministic' | 'deriveDeterministicKey'
+  | 'wrapCek' | 'unwrapCek'
+  | 'deriveVdigSlotKey' | 'pbkdf2VerifyDigest' | 'blindedEqual'
+  | 'deriveClassifyIndexKey' | 'deriveClassifyIndexSalt'
+  | 'mintBidxTag' | 'computeBidxTarget'
+>
+
+/**
+ * The groups a capsule may declare. Mirrors `@noy-db/hub/capsule`.
+ *
+ * ⛔ `per-record-keys` WAS MISSING UNTIL family#172, making this the FOURTH
+ * vocabulary for one set of names. core#42 found three disagreeing and added a
+ * drift check — but it checks `ConformanceGroup` (enclave-cases.ts) against
+ * hub's union and never looked at this one, which the kit also PUBLISHES. So a
+ * capsule author importing `CapsuleGroup` from `@noy-db/ports/capsule` got a
+ * union that could not name the group `wrapCek`/`unwrapCek` live in.
+ *
+ * ⚠️ The drift check now runs BOTH DIRECTIONS over this union
+ * (`__tests__/capsule/contract-drift.test.ts`). One direction is not enough:
+ * "every member is real" would have passed this union happily while it was
+ * missing a member.
+ */
 export type CapsuleGroup =
   | 'authenticate' | 'seal' | 'cipher' | 'digest'
   | 'sign' | 'codec' | 'sealing' | 'deterministic' | 'classify'
+  | 'per-record-keys'
 
 /**
  * The slice of a capsule this suite exercises. Structural rather than an
  * import of hub's type, so a capsule package can be tested without depending
  * on the exact hub version that declared it.
  */
-export interface CapsuleUnderTest {
+export interface CapsuleUnderTest extends OptionalGroupSurface<never> {
   capabilities(): ReadonlySet<CapsuleGroup>
   generateSalt(): Uint8Array
   deriveKey(secret: string, salt: Uint8Array): Promise<unknown>
@@ -90,6 +138,38 @@ export function runCapsuleConformance(
         const mutable = caps as Set<CapsuleGroup>
         expect(() => mutable.add('classify')).toThrow()
       })
+    })
+
+    /**
+     * family#172 — the declared set is a CLAIM, and until now nothing in THIS
+     * suite checked it against behaviour.
+     *
+     * ⛔ `assertGroupRefuses` existed and was called only by
+     * `runEnclaveConformance`, which `exclave-plain` does not run. So the
+     * per-group guarantee was exercised exclusively against the one capsule
+     * that refuses NOTHING — the reference — and never against the only one
+     * that refuses anything. Both suites were green and the guarantee was
+     * untested where it matters.
+     *
+     * ⚠️ Both directions, and neither is the interesting one on its own: a
+     * declared group whose functions refuse is a vault that fails at the first
+     * write after passing construction, and an undeclared group whose functions
+     * work is a capsule whose `capabilities()` under-reports it. The MIXED case
+     * — some refuse, some do not — fails both and is the one a consumer cannot
+     * reason about at all.
+     */
+    describe('capabilities() is checked against behaviour, group by group (family#172)', () => {
+      for (const group of OPTIONAL_GROUPS) {
+        it(`honours its "${group}" declaration`, async () => {
+          const members = groupMemberNames(group)
+          expect(members.length, `"${group}" has no members to check — the table is empty`).toBeGreaterThan(0)
+          const didNotRefuse = await assertGroupRefuses(
+            capsule as unknown as EnclaveModule<never>,
+            group,
+          )
+          expect(groupVerdict(group, caps.has(group), didNotRefuse, members)).toBeUndefined()
+        })
+      }
     })
 
     describe('cipher', () => {

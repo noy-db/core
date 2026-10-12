@@ -32,6 +32,7 @@ import type { CapsuleGroup } from '@noy-db/hub/capsule'
 import type { RecordIdentity } from '@noy-db/hub'
 import * as reference from '../../../hub/src/capsule/index.js'
 import type { ConformanceGroup, EnclaveModule } from '../../src/capsule/index.js'
+import type { CapsuleGroup as KitCapsuleGroup } from '../../src/capsule/index.js'
 
 /** Compile-time assertion: `T` must be assignable to `U`. */
 type Assert<T extends U, U> = T
@@ -41,6 +42,19 @@ type Assert<T extends U, U> = T
 // exactly what was false for `per-record-keys` until core#42 added it to
 // CapsuleGroup.
 type _GroupsAreReal = Assert<ConformanceGroup, CapsuleGroup>
+
+// ── 1b. The kit's PUBLISHED CapsuleGroup matches hub's, BOTH DIRECTIONS ───
+// family#172. `contract-cases.ts` declares its own `CapsuleGroup` and the kit
+// EXPORTS it, making it a fourth copy of one set of names — and check 1 above
+// never looked at it, because it checks `ConformanceGroup`. It was missing
+// `per-record-keys`, so a capsule author importing `CapsuleGroup` from
+// `@noy-db/ports/capsule` got a union that could not name the group
+// `wrapCek`/`unwrapCek` live in.
+//
+// ⛔ BOTH DIRECTIONS. "Every member is real" passes happily for a union that is
+// missing a member — which is exactly how this one survived core#42's sweep.
+type _KitGroupsAreReal = Assert<KitCapsuleGroup, CapsuleGroup>
+type _KitGroupsAreComplete = Assert<CapsuleGroup, KitCapsuleGroup>
 
 // ── 2. The structural identity accepts hub's real RecordIdentity ──────────
 // Red if hub adds a required field the kit's structural copy does not carry —

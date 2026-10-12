@@ -41,6 +41,10 @@ export {
   // author's own suite can assert it too.
   assertPrimitiveTagsCovered,
   groupWithoutPrimitives,
+  // family#172 — the per-group guarantee, and the denominator it needs.
+  groupVerdict,
+  groupMemberNames,
+  OPTIONAL_GROUPS,
 } from './enclave-cases.js'
 export type {
   EnclaveModule,
