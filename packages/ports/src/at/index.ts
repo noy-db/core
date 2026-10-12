@@ -58,6 +58,34 @@ export function runSealerConformanceTests(
       expect(Array.from(out)).toEqual(Array.from(secret))
     })
 
+    /**
+     * family#157 — the optional `SealContext`. Two obligations, and the first is
+     * the one an existing provider could fail by accident.
+     *
+     * ⛔ A provider MUST stay functional when the context is ABSENT and must not
+     * treat absence as an error. Hub omits it deliberately where sealed bytes
+     * have to travel — a pod's auto-unlock credentials carry no vault, because a
+     * pod may be read into a differently-named vault or inspected with none at
+     * all. Every other case in this suite calls without a context, so that half
+     * is covered everywhere; it is restated here because a provider author
+     * reading only this case needs to know the omission is intentional.
+     *
+     * ⚠️ And a provider that DOES scope key material to `ctx.vault` must be able
+     * to reverse its own output under the same context. Hub passes the identical
+     * context to the paired `unseal`, so anything else is unopenable by
+     * construction.
+     */
+    it('round-trips with a SealContext, and without one (family#157)', async () => {
+      const sealer = await make()
+      const secret = new Uint8Array([9, 8, 7, 6])
+
+      const withCtx = await sealer.unseal(await sealer.seal(secret, { vault: 'acme' }), { vault: 'acme' })
+      expect(Array.from(withCtx), 'a provider must reverse its own output under the same context').toEqual(Array.from(secret))
+
+      const withoutCtx = await sealer.unseal(await sealer.seal(secret))
+      expect(Array.from(withoutCtx), 'a provider must still work with no context — hub omits it where bytes travel').toEqual(Array.from(secret))
+    })
+
     it('round-trips an empty secret', async () => {
       // Zero-length is the boundary a length-prefixed or padded format is
       // most likely to get wrong, and hub never guarantees a minimum size.

@@ -31,6 +31,11 @@
  * and tsup's per-entry bundling keeps class identity stable across subpaths.
  */
 export type { NoydbSealer } from '../../with-party/team/managed-secret.js'
+// family#157 — the optional per-call context. A provider author binding this
+// subpath needs the TYPE to scope key material per vault, and the asymmetry
+// documented on it (absent means the bytes are meant to travel) is part of the
+// contract rather than a hint.
+export type { SealContext } from '../../with-party/team/managed-secret.js'
 export { MemorySealer, MemoryRecipientSealer } from '../../with-party/team/managed-secret.js'
 export type { RecipientSealer } from '../../kernel/types.js'
 export type { SealedSecret, SealedEnvelope, RecipientHint } from '../../with-party/team/managed-secret.js'

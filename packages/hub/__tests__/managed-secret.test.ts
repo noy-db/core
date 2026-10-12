@@ -297,3 +297,79 @@ describe('MemoryRecipientSealer', () => {
     expect(hint.material['publicKeyPem']).toMatch(/-----END PUBLIC KEY-----\n?$/)
   })
 })
+
+/**
+ * family#157 — the optional `SealContext`, and the asymmetry that is the actual
+ * contract.
+ *
+ * ⛔ The negative half is the load-bearing one, so it is a case and not a
+ * comment. A pod's auto-unlock credentials are sealed with NO context on
+ * purpose: `ReadPodOptions` carries no vault, so the reader may open the pod
+ * into a differently-named vault or inspect it with none at all. A provider
+ * that bound those bytes to a vault name would mint a credential only the
+ * originating vault could open, which defeats the format. If someone later
+ * "completes" the wiring by threading a vault into `buildAutoUnlockWrapper`,
+ * the second test here fails and says why.
+ */
+describe('family#157 — SealContext is passed where the bytes stay, and withheld where they travel', () => {
+  /** Records the ctx of every call, and still seals reversibly. */
+  function recordingSealer(id = 'rec:1') {
+    const inner = new MemorySealer({ id })
+    const calls: Array<{ op: 'seal' | 'unseal'; ctx: { vault: string } | undefined }> = []
+    const sealer: NoydbSealer = {
+      id,
+      async seal(secret, ctx) { calls.push({ op: 'seal', ctx }); return inner.seal(secret) },
+      async unseal(sealed, ctx) { calls.push({ op: 'unseal', ctx }); return inner.unseal(sealed) },
+    }
+    return { sealer, calls }
+  }
+
+  it('a managed vault secret is sealed AND unsealed under the vault name', async () => {
+    const { sealer, calls } = recordingSealer()
+    const store = inlineMemory()
+
+    // Managed mode requires a strong recovery profile before `openVault` (#195,
+    // and family#95 made the refusal atomic), so bootstrap the same way the
+    // sealing-core cases above do.
+    const db = await createNoydb({
+      store, user: 'alice', secretMode: 'managed', sealingKey: sealer,
+      shamirRecovery: shamirRecoveryProvider(),
+    })
+    await db.team.openVaultAndEnrollRecovery('acme', { recovery: [{ profile: 'shamir', k: 2, n: 3 }] })
+
+    const seals = calls.filter((c) => c.op === 'seal')
+    expect(seals.length).toBeGreaterThan(0)
+    for (const c of seals) expect(c.ctx).toEqual({ vault: 'acme' })
+
+    // A second open unseals the persisted secret — same ctx, or a provider that
+    // scoped its key material could not reverse its own output.
+    calls.length = 0
+    db.close()
+    const db2 = await createNoydb({
+      store, user: 'alice', secretMode: 'managed', sealingKey: sealer,
+      shamirRecovery: shamirRecoveryProvider(),
+    })
+    await db2.openVault('acme')
+    const unseals = calls.filter((c) => c.op === 'unseal')
+    expect(unseals.length).toBeGreaterThan(0)
+    for (const c of unseals) expect(c.ctx).toEqual({ vault: 'acme' })
+  })
+
+  it('a pod auto-unlock credential is sealed with NO context — the bytes must travel', async () => {
+    const { sealer, calls } = recordingSealer('pod:1')
+    const store = inlineMemory()
+    const db = await createNoydb({ store, user: 'alice', secret: 'pod-secret-123456' })
+    const vault = await db.openVault('acme')
+    await vault.collection('notes').put('n1', { n: 1 })
+
+    const { writePod } = await import('../src/with-pod/pod.js')
+    await writePod(vault, {
+      compression: 'none',
+      sealedCredentials: { mode: 'self-target', provider: sealer, perUser: { alice: { kind: 'secret', value: 'pod-secret-123456' } } },
+    })
+
+    const seals = calls.filter((c) => c.op === 'seal')
+    expect(seals.length).toBeGreaterThan(0)
+    for (const c of seals) expect(c.ctx).toBeUndefined()
+  })
+})

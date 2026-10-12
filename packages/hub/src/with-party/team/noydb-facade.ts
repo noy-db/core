@@ -911,7 +911,7 @@ export class TeamFacade {
       // Seal first; if the provider fails (KMS down, keychain locked),
       // we don't touch the keyring. Then run recoverSecret which
       // rewraps DEKs under the new KEK derived from the random bytes.
-      const sealed = await provider.seal(randomBytes)
+      const sealed = await provider.seal(randomBytes, { vault })
       await keyringRecoverSecret(
         this.deps.options.shamirRecovery,
         this.deps.options.store,

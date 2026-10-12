@@ -725,6 +725,13 @@ async function buildAutoUnlockWrapper(
     // mode === 'sealed-self'
     const selfSealer = provider as NoydbSealer
     for (const [userId, cred] of Object.entries(normalized.perUser)) {
+      // ⛔ NO `SealContext` here, deliberately (family#157). A pod is a PORTABLE
+      // bundle: `ReadPodOptions` carries no vault, so the reader may open it into
+      // a differently-named vault or merely inspect it with no vault at all. A
+      // provider that bound these bytes to a vault name would mint a credential
+      // only the originating vault could open — which defeats the format. The
+      // asymmetry IS the contract: ctx present means "stays in this vault", ctx
+      // absent means "these bytes travel".
       const sealed = await selfSealer.seal(encoder.encode(cred.value))
       sealedPerUser[userId] = {
         pid: selfSealer.id,
