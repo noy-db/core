@@ -5,6 +5,7 @@ import { resolveStrategies, type StrategyBag } from '../port/with/strategies.js'
 import type { RotateResult, RevokeResult, RosterVerifyResult, QuarantineResult } from '../with-party/team/keyring.js'
 import { capabilities, type EnclaveKey } from '../capsule/index.js'
 import { assertServicesSupported } from './capsule-requirements.js'
+import { guardStoreSegments, unguardedStore } from './store-segment-guard.js'
 import type {
   NoydbOptions,
   NoydbEventMap,
@@ -1621,7 +1622,7 @@ export class Noydb {
 
   /** The default store this instance was opened with (#948). */
   get store(): NoydbStore {
-    return this.options.store
+    return unguardedStore(this.options.store) // family#133 — raw, not the guard proxy; see that module
   }
 
   /**
@@ -2451,7 +2452,9 @@ export async function createNoydb(options: NoydbOptions): Promise<Noydb> {
   // kernel/capsule-requirements.ts.
   assertServicesSupported(options as unknown as Record<string, unknown>, capabilities())
 
-  if (!options.store) options = { ...options, store: memoryStore() }
+  // family#133 second half — the default store, then ONE central segment check
+  // around whatever is mounted. Reasoning: kernel/store-segment-guard.ts.
+  options = { ...options, store: guardStoreSegments(options.store ?? memoryStore()) }
 
   validateSecretModeOptions(options)
 
