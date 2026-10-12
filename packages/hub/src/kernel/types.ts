@@ -1529,6 +1529,23 @@ export interface ExportStreamOptions {
    */
   readonly withLedgerHead?: boolean
   /**
+   * When `true`, every chunk carries {@link ExportChunk.envelopeMeta} — the
+   * store-level `_v` and `_ts` of each exported record, positionally aligned
+   * with `records` (family#166).
+   *
+   * ⚠️ OPT-IN BECAUSE THE COST IS ASYMMETRIC, and the asymmetry is the whole
+   * reason this is a flag rather than always-on. An unscoped export already
+   * holds every envelope — `resolveExportSource` does ONE `loadAll` — so the
+   * metadata is free. A SCOPED export deliberately enumerates with `list` and
+   * never pulls the envelopes (core#45b: that avoidance is what makes
+   * "scoping" a property rather than a word), so it costs one `get` per
+   * exported record. Default `false` keeps a scoped export's read as narrow as
+   * core#45b made it.
+   *
+   * Default: `false`.
+   */
+  readonly withEnvelopeMeta?: boolean
+  /**
    * Export locale (BCP 47, e.g. `'th'`). When set, records are read at this
    * locale through the **`export` layer**: `i18nText` fields collapse to
    * the locale string (honoring each field's `export`-layer `onMissing` policy)
@@ -1632,6 +1649,35 @@ export interface ExportChunk<T = unknown> {
     readonly index: number
     readonly ts: string
   }
+
+  /**
+   * Store-level version and write timestamp of each exported record
+   * (family#166). Present only when `exportStream({ withEnvelopeMeta: true })`
+   * was called.
+   *
+   * ⛔ POSITIONALLY ALIGNED WITH `records`, NOT KEYED BY ID, and that is
+   * deliberate. A record need not carry an `id` field at all — hub's id is the
+   * store key, not a property of the plaintext — so a `{ [id]: meta }` map
+   * would silently drop every id-less record and quietly mis-key any record
+   * whose own `id` field disagrees with its store key. That is family#151's
+   * defect in `diffVault` exactly, and repeating it here would put it on a
+   * PUBLISHED type.
+   *
+   * ⚠️ So `envelopeMeta[i]` describes `records[i]`, and the two always have the
+   * same length. A record the caller cannot read is skipped from BOTH, which is
+   * the alignment hazard this shape has to get right: `records` already drops a
+   * null `get()`, so the metadata must be appended in that same branch and
+   * never in a second loop over `ids`.
+   *
+   * `version` is the envelope's `_v` — monotonic per record, what a CAS
+   * `expectedVersion` compares against. `ts` is its `_ts`, the store-visible
+   * write time, which is NOT the same as any business timestamp inside the
+   * record.
+   */
+  readonly envelopeMeta?: ReadonlyArray<{
+    readonly version: number
+    readonly ts: string
+  }>
 }
 
 // ─── Sync ──────────────────────────────────────────────────────────────
