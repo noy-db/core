@@ -102,8 +102,12 @@ export function memoryStore(options: MemoryStoreOptions = {}): NoydbStore {
     async put(vault, collection, id, envelope, expectedVersion) {
       const c = coll(vault, collection)
       const existing = c.get(id)
-      if (expectedVersion !== undefined && existing && existing._v !== expectedVersion) {
-        throw new ConflictError(existing._v, `Version conflict: expected ${expectedVersion}, found ${existing._v}`)
+      // family#147 — `?? 0`, NOT `&& existing`. An absent id is at version 0, so
+      // `expectedVersion: 0` still creates (core#134) while a nonzero expectation
+      // against nothing is the conflict it always was and used to upsert through.
+      const current = existing?._v ?? 0
+      if (expectedVersion !== undefined && current !== expectedVersion) {
+        throw new ConflictError(current, `Version conflict: expected ${expectedVersion}, found ${current}`)
       }
       c.set(id, envelope)
     },

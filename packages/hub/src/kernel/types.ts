@@ -743,13 +743,23 @@ export interface NoydbStore {
   get(vault: string, collection: string, id: string): Promise<EncryptedEnvelope | null>
 
   /**
-   * Put a record. Throws ConflictError if `expectedVersion` doesn't match an
-   * EXISTING record's `_v`.
+   * Put a record. Throws ConflictError if `expectedVersion` doesn't match the
+   * record's current `_v`, **where an absent id counts as version 0** — so the
+   * comparison always happens and the two halves fall out of one rule:
    *
-   * ⚠️ **Against an ABSENT id the comparison does not happen and the write
-   * lands.** That is not an implementation detail of the reference store — it is
-   * the contract, asserted by `@noy-db/ports/to` (core#134, core#138) and run
-   * green across all 19 `to-*` adapters.
+   *   - `expectedVersion: 0` against an absent id → `0 === 0`, the write lands;
+   *   - `expectedVersion: N > 0` against an absent id → mismatch, and the
+   *     `ConflictError` carries `version: 0` (family#147).
+   *
+   * ⚠️ The second half is a TIGHTENING, ruled on family#147. The natural
+   * read-then-compare shape guarded the comparison with `&& existing`, so a
+   * writer saying "I expect version 5" against nothing silently UPSERTED. Absence
+   * satisfies "I expect no record" and contradicts "I expect the record I read",
+   * which is why the halves differ. Both are asserted by `@noy-db/ports/to`
+   * (core#134, core#138, family#147).
+   *
+   * ⛔ Implement it as `(existing?._v ?? 0) !== expectedVersion`, never
+   * `existing && existing._v !== expectedVersion`.
    *
    * ⭐ **So `expectedVersion: 0` is an exact "write only if absent."** hub never
    * stores a version below 1, so the first create is let through and every
@@ -782,7 +792,30 @@ export interface NoydbStore {
   /** Load all records for a vault (initial hydration). */
   loadAll(vault: string): Promise<VaultSnapshot>
 
-  /** Save all records for a vault (bulk write / restore). */
+  /**
+   * Save all records for a vault (bulk write / restore).
+   *
+   * ⭐ **This REPLACES, it does not merge** (family#147). Every non-underscore
+   * collection in the vault is dropped and the snapshot written over the top, so
+   * a collection absent from `data` is GONE afterwards, and a collection present
+   * with an EMPTY record set is EMPTIED. `saveAll` is the restore half of
+   * `loadAll`, and a merging restore cannot express "this collection is gone" —
+   * omitting a key and passing `{}` would mean the same thing, so a backup would
+   * silently resurrect what the snapshot was taken to exclude.
+   *
+   * ⚠️ **Reserved (`_`-prefixed) collections are asymmetric, deliberately.** They
+   * are never DROPPED — a partial snapshot must not strand `_keyring` and leave
+   * the vault unopenable — but they ARE overwritten when `data` carries them,
+   * which is what makes a full restore possible.
+   *
+   * ⛔ The consequence worth stating rather than leaving to be discovered: a
+   * snapshot carrying `_keyring` **replaces the live keyring without passing
+   * through any keyring code path** — no epoch check, no roster validation, no
+   * grant. Treat a `saveAll` payload as exactly as trusted as the vault itself.
+   *
+   * Note `loadAll` SKIPS reserved collections, so `loadAll` → `saveAll` does not
+   * round-trip them; a restore that needs the keyring must carry it explicitly.
+   */
   saveAll(vault: string, data: VaultSnapshot): Promise<void>
 
   /** Optional connectivity check for sync engine. */

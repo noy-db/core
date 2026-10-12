@@ -154,6 +154,95 @@ export function runStoreConformanceTests(
           adapter.put('comp1', 'coll1', 'absent-1', makeEnvelope(1), 0),
         ).rejects.toThrow(ConflictError)
       })
+
+      /**
+       * The OTHER half of the absent case, ruled on family#147 — and it is a
+       * TIGHTENING, not a restatement.
+       *
+       * core#134 (the case above) settled `expectedVersion: 0` as "write only if
+       * absent", which every read-then-compare store already satisfied. It left
+       * `expectedVersion > 0` against an absent id unspecified, and the natural
+       * read-then-compare shape — `if (expectedVersion !== undefined && existing
+       * && existing._v !== expectedVersion) throw` — UPSERTS there, because the
+       * `&& existing` guard short-circuits. So a writer saying "I expect version
+       * 5" against nothing silently created version 5's replacement.
+       *
+       * ⭐ The two halves are not symmetric and that is deliberate. `0` means "I
+       * expect no record", which absence SATISFIES. `5` means "I expect the
+       * record I read at version 5", which absence CONTRADICTS — the record was
+       * deleted, or was never on this store, and either way the writer's premise
+       * is stale. That is a conflict, and the version it carries is `0`, the
+       * version the id is actually at.
+       *
+       * ⚠️ Adapter authors: this reddens the `&& existing` shape. Drop the
+       * existence conjunct and compare `existing?._v ?? 0` instead, which gives
+       * both halves at once — `0 === 0` creates, `5 !== 0` conflicts.
+       */
+      it('put with expectedVersion > 0 against an ABSENT id conflicts at version 0 (family#147)', async () => {
+        await expect(
+          adapter.put('comp1', 'coll1', 'never-written', makeEnvelope(6), 5),
+        ).rejects.toThrow(ConflictError)
+
+        // The carried version is the id's ACTUAL version, so a caller can retry
+        // against it without a second read.
+        await adapter
+          .put('comp1', 'coll1', 'never-written-2', makeEnvelope(6), 5)
+          .then(
+            () => { throw new Error('expected a ConflictError') },
+            (e: unknown) => { expect((e as ConflictError).version).toBe(0) },
+          )
+
+        // Not vacuous: the refusal wrote nothing.
+        expect(await adapter.get('comp1', 'coll1', 'never-written')).toBeNull()
+      })
+
+      /**
+       * Two writers creating the SAME id at once (family#147). The reason this is
+       * worth a case rather than a line in the doc: the create race is the only
+       * thing `expectedVersion: 0` exists for, and nothing asserted that a loser
+       * loses in a RECOGNISABLE way.
+       *
+       * ⚠️ Split deliberately into a universal half and a gated half, because
+       * "exactly one wins" is NOT true of every correct store. to-file's `put` is
+       * `fileExists` → `readFile` → write with awaits between, so two creates can
+       * both observe absence and both land — which is why it declares
+       * `casAtomic: false`. Requiring atomicity of it would be requiring a
+       * different product, not catching a bug.
+       *
+       * So: EVERY store must fail a loser with `ConflictError` and no other error
+       * shape, and must leave the id holding one of the two envelopes actually
+       * written — never a merge, never nothing. Only a store DECLARING
+       * `casAtomic` must additionally produce exactly one winner.
+       */
+      it('two concurrent creates: a loser gets ConflictError, and one of the two writes survives (family#147)', async () => {
+        const first = makeEnvelope(1, 'writer-a')
+        const second = makeEnvelope(1, 'writer-b')
+        const results = await Promise.allSettled([
+          adapter.put('comp-race', 'coll1', 'contested', first, 0),
+          adapter.put('comp-race', 'coll1', 'contested', second, 0),
+        ])
+
+        for (const r of results) {
+          if (r.status === 'rejected') {
+            // A loser must be identifiable as a conflict, not a generic failure —
+            // a caller's whole retry decision hangs on telling them apart.
+            expect(r.reason, 'a losing create must reject with ConflictError').toBeInstanceOf(ConflictError)
+          }
+        }
+
+        // Whoever won, the record is one of the two written envelopes.
+        const landed = await adapter.get('comp-race', 'coll1', 'contested')
+        expect([first._data, second._data]).toContain(landed?._data)
+
+        if (adapter.capabilities?.casAtomic === true) {
+          // Declaring casAtomic is a claim that the read and the write cannot
+          // interleave, so a second create CANNOT also have succeeded.
+          expect(
+            results.filter((r) => r.status === 'fulfilled').length,
+            'casAtomic store let both concurrent creates succeed',
+          ).toBe(1)
+        }
+      })
     })
 
     // ─── Bulk Operations ───────────────────────────────────────────
@@ -201,6 +290,78 @@ export function runStoreConformanceTests(
         await adapter.saveAll('rt-comp', data)
         const loaded = await adapter.loadAll('rt-comp')
         expect(loaded).toEqual(data)
+      })
+
+      /**
+       * `saveAll` REPLACES, it does not merge — ruled on family#147 after the two
+       * cases above were found to say nothing about it. They write into an empty
+       * vault, so an additive implementation and a replacing one both pass, and
+       * the family's stores split: hub's own `memoryStore` deletes every
+       * non-underscore collection first, `to-file` only wrote.
+       *
+       * ⭐ Why replacement is the ruling: `saveAll` is the RESTORE half of
+       * `loadAll`, and a restore that merges cannot express "this collection is
+       * gone". The pair has to round-trip, or a backup silently resurrects
+       * records the snapshot was taken to exclude.
+       */
+      it('saveAll REPLACES: a collection absent from the snapshot is gone (family#147)', async () => {
+        await adapter.saveAll('comp-replace', {
+          keep: { 'k1': makeEnvelope(1, 'keep') },
+          drop: { 'd1': makeEnvelope(1, 'drop') },
+        })
+        expect(await adapter.get('comp-replace', 'drop', 'd1')).not.toBeNull()
+
+        await adapter.saveAll('comp-replace', { keep: { 'k1': makeEnvelope(2, 'keep-v2') } })
+
+        expect(await adapter.get('comp-replace', 'drop', 'd1')).toBeNull()
+        expect((await adapter.get('comp-replace', 'keep', 'k1'))?._v).toBe(2)
+      })
+
+      /**
+       * The edge the ruling had to pick, and the one an implementation decides by
+       * accident: an EMPTY record set. "Delete the collections absent from the
+       * snapshot" and "delete every collection, then write the snapshot" agree on
+       * every input except this one — under the first, `{ invoices: {} }` leaves
+       * the old records alone; under the second they are gone.
+       *
+       * ⭐ Ruled as emptying, because the alternative leaves a restore unable to
+       * express an empty collection AT ALL — the one thing a caller cannot work
+       * around, since omitting the key means the same thing.
+       */
+      it('saveAll with an EMPTY record set empties that collection (family#147)', async () => {
+        await adapter.saveAll('comp-empty', { invoices: { 'i1': makeEnvelope(1, 'old') } })
+        await adapter.saveAll('comp-empty', { invoices: {} })
+
+        expect(await adapter.get('comp-empty', 'invoices', 'i1')).toBeNull()
+        expect(await adapter.list('comp-empty', 'invoices')).toEqual([])
+      })
+
+      /**
+       * The asymmetry, stated as a case because it is the half a reader would not
+       * guess (family#147): an underscore collection is NEVER deleted by
+       * `saveAll`, but IS overwritten when the snapshot carries one.
+       *
+       * ⚠️ That is what makes a restore possible — `_keyring` must travel with a
+       * backup or the restored vault cannot be opened — and it means `saveAll` can
+       * replace a keyring without passing through any keyring code path. Deliberate,
+       * and stated on `NoydbStore.saveAll` for the same reason.
+       *
+       * ⛔ Probed with `get`, never a `loadAll` round-trip: `loadAll` is specified
+       * to skip reserved collections, so a round-trip would red a correct store.
+       */
+      it('saveAll never deletes an underscore collection, but does overwrite one it carries (family#147)', async () => {
+        await adapter.put('comp-usc', '_keyring', 'alice', makeEnvelope(1, 'original'))
+        await adapter.put('comp-usc', 'invoices', 'i1', makeEnvelope(1, 'inv'))
+
+        // A snapshot that does not mention `_keyring` must leave it standing.
+        await adapter.saveAll('comp-usc', { invoices: { 'i1': makeEnvelope(2, 'inv-v2') } })
+        expect((await adapter.get('comp-usc', '_keyring', 'alice'))?._data)
+          .toBe(makeEnvelope(1, 'original')._data)
+
+        // A snapshot that DOES carry it replaces it.
+        await adapter.saveAll('comp-usc', { _keyring: { 'alice': makeEnvelope(3, 'restored') } })
+        expect((await adapter.get('comp-usc', '_keyring', 'alice'))?._data)
+          .toBe(makeEnvelope(3, 'restored')._data)
       })
     })
 

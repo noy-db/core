@@ -711,6 +711,32 @@ export class SyncEngine {
       } catch (err) {
         if (isConflictError(err)) {
           const remoteEnvelope = await this.remote.get(this.vault, entry.collection, entry.id)
+          if (!remoteEnvelope) {
+            // family#147 — the CAS refused and the remote holds NOTHING. Reachable
+            // whenever the target lost a record the local still has above `_v 1`:
+            // a `replaceRemote` restore dropped it, or the push is aimed at a fresh
+            // target. The dirty entry's premise ("the remote is at `_v - 1`") is
+            // simply wrong, and absence is not a conflict to resolve — there is no
+            // remote side to resolve against.
+            //
+            // ⚠️ Before family#147 this never surfaced: a store UPSERTED on
+            // `expectedVersion` against an absent id, so the first CAS silently
+            // created the record and the catch was never entered. Tightening that
+            // (an absent id is version 0, so a nonzero expectation conflicts) turned
+            // the accident into a visible state — and with no branch here the entry
+            // stayed dirty forever, conflicting on every subsequent push.
+            //
+            // ⛔ This does NOT resurrect what a restore deliberately removed. Stale
+            // post-restore edits are PARKED before they ever reach the dirty queue
+            // (`restore-epoch`), so they never arrive here; what does arrive is an
+            // edit the user re-made locally, which is a create as far as the target
+            // is concerned.
+            await this.remote.put(this.vault, entry.collection, entry.id, envelope, 0)
+            acc.completed.push(i)
+            acc.pushed++
+            acc.bytes += envelopeBodySize(envelope)
+            return // per-entry callback, so `return` is this loop's `continue`
+          }
           if (remoteEnvelope) {
             if (remoteEnvelope._v === envelope._v && envelopeBodyForHash(remoteEnvelope) === envelopeBodyForHash(envelope)) {
               // core#71 (pilot-1's restore run) — the target already holds THIS
