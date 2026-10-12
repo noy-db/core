@@ -108,6 +108,39 @@ export function serviceGroupRequirements(
     .map(([key, group]) => [group, `createNoydb({ ${key} })`] as const)
 }
 
+/**
+ * The POSTURE groups an encrypted vault needs, and the third refusal point
+ * (family#156, ruled 2026-10-12).
+ *
+ * ⭐ IT IS THE KEYRING, NOT A FIELD OR A SERVICE, and that is what the earlier
+ * measurement found: `deriveKey` (secret → KEK) is `authenticate` and
+ * `wrapKey`/`unwrapKey` (KEK wraps DEK) are `seal`, called only from the
+ * keyring's unlock chain. So nothing in {@link SERVICE_GROUPS} or
+ * {@link fieldGroupRequirements} can imply them — what implies them is opening
+ * a vault that HAS a keyring.
+ *
+ * ⛔ A PLAINTEXT VAULT MUST STILL OPEN, and the gate for that is STRUCTURAL
+ * rather than a condition written here. `createNoydb({ encrypt: false })`
+ * short-circuits in `_getKeyringInternal` to `createPlaintextKeyring()` and
+ * never reaches `loadKeyring`/`createOwnerKeyring` — so calling this at those
+ * two entries means it cannot fire for a vault that has no keyring. An
+ * `encrypted` parameter would have been a condition I maintain and that can
+ * drift; an unreachable path cannot. Refusing unconditionally would make
+ * `exclave-plain` unable to open any vault at all, which is its entire purpose.
+ *
+ * ⚠️ Called at the KEYRING ENTRY rather than in `openVault`: the ruling says
+ * "before any keyring is read or written", and the entry is literally that. It
+ * also covers the creation paths `openVault` does not go through — `grant`,
+ * `rotateSecret`, recovery — which a guard at the open call site would miss.
+ */
+export function assertVaultPostureSupported(
+  caps: ReadonlySet<CapsuleGroup>,
+  requirer: string,
+): void {
+  assertCapsuleSupports(caps, 'authenticate', requirer)
+  assertCapsuleSupports(caps, 'seal', requirer)
+}
+
 /** Refuse at `createNoydb()` — one assertion per enabled service. */
 export function assertServicesSupported(
   options: Readonly<Record<string, unknown>>,

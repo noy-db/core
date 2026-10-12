@@ -18,9 +18,24 @@ import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('../src/capsule/index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/capsule/index.js')>()
-  // What the shipped exclave declares. Frozen like the real one, so a caller
-  // cannot widen it to make its own assertion pass.
-  const set = Object.freeze(new Set(['cipher', 'digest', 'sign', 'codec']))
+  // ⛔ THE EXCLAVE'S FOUR GROUPS PLUS THE TWO POSTURE GROUPS, and the two
+  // extras are load-bearing. This stub was exactly the shipped exclave's set
+  // until the third refusal point landed — at which point every case here that
+  // opens an ENCRYPTED vault started failing, because a capsule declaring
+  // neither `authenticate` nor `seal` cannot hold a keyring and `openVault`
+  // refuses before any collection is declared. The suite caught it; the
+  // interaction is real.
+  //
+  // ⭐ So the stub now ISOLATES THE GROUP UNDER TEST instead of impersonating
+  // one capsule. That is the better shape regardless: these cases assert a
+  // per-group property, and borrowing a real capsule's whole set coupled them
+  // to facts about that capsule which have nothing to do with field forms.
+  // Frozen like the real one, so a caller cannot widen it to pass its own
+  // assertion.
+  const set = Object.freeze(new Set([
+    'cipher', 'digest', 'sign', 'codec',
+    'authenticate', 'seal', // posture — present so a keyring can exist at all
+  ]))
   return { ...actual, capabilities: () => set }
 })
 
