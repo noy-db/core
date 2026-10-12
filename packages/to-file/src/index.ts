@@ -152,8 +152,21 @@ export function toFile(options: JsonFileOptions): NoydbStore {
   }
 
   function assertId(id: string): void {
-    if (id.includes('\\') || id.includes('\0')) {
-      throw new ValidationError(`to-file: record id must not contain a backslash or NUL, got ${JSON.stringify(id)}`)
+    // ⛔ NUL IS NO LONGER REFUSED (family#174). Hub EMITS it:
+    // `resolveSequenceKey`/`resolvePeriodKey` join a partition as
+    // `${name}\x00${parts}`, chosen because a NUL cannot occur in a plain
+    // series name, so a partitioned key can never collide with an
+    // unpartitioned one. Refusing the byte meant a partitioned sequence or
+    // period could not be stored here at all — and it never could, since the
+    // OS rejects NUL in a path whatever this adapter does. It is now ENCODED
+    // (see `encodeIdComponent`), which is why the check below dropped it.
+    //
+    // ⚠️ A backslash is still refused. Hub never writes one; `listIds` joins
+    // entry NAMES with `/` so a backslash in an id would be indistinguishable
+    // from a win32 separator on the way back. The store contract explicitly
+    // allows a store to reject outright, and this is one.
+    if (id.includes('\\')) {
+      throw new ValidationError(`to-file: record id must not contain a backslash, got ${JSON.stringify(id)}`)
     }
     for (const part of id.split('/')) {
       if (part === '' || part === '.' || part === '..') {
@@ -162,10 +175,63 @@ export function toFile(options: JsonFileOptions): NoydbStore {
     }
   }
 
+  /**
+   * Reversible per-component encoding for a record id (family#174).
+   *
+   * ⛔ `%` MUST BE ESCAPED FIRST OR THE ENCODING IS NOT A BIJECTION, and the
+   * failure is data loss rather than a cosmetic one: without it the literal id
+   * `a%00b` and the id `a\x00b` both map to `a%00b.json` — two distinct records,
+   * one file. That is why the ruling names `%` alongside NUL.
+   *
+   * ⚠️ SCOPE IS DELIBERATELY `%` AND NUL, not every character some platform
+   * refuses. Each additional character widens the set of EXISTING on-disk names
+   * that move: an id containing `:` is storable on POSIX today, so encoding it
+   * would relocate live records for a portability benefit nobody asked for.
+   * NUL is the one character that cannot be stored today, so encoding it breaks
+   * nothing; `%` is the one the encoding itself needs. Widening to the win32
+   * reserved set is a separate decision with a wider legacy corner.
+   *
+   * ⚠️ Applied PER `/`-SEPARATED COMPONENT, never to the whole id: `/` maps to a
+   * directory here (hub writes `_idx/<field>/<recordId>`), so encoding it would
+   * flatten the nesting that `listIds` walks.
+   */
+  function encodeIdComponent(part: string): string {
+    return part.replace(/%/g, '%25').replace(/\0/g, '%00')
+  }
+
+  /** Exact inverse of {@link encodeIdComponent}. ⚠️ ONE PASS, because a
+   *  sequential `%00`-then-`%25` replace would turn the literal `%2500` into a
+   *  NUL instead of back into `%00`. */
+  function decodeIdComponent(part: string): string {
+    return part.replace(/%(25|00)/g, (_m, code: string) => (code === '25' ? '%' : '\0'))
+  }
+
+  const encodeId = (id: string): string => id.split('/').map(encodeIdComponent).join('/')
+  const decodeId = (id: string): string => id.split('/').map(decodeIdComponent).join('/')
+
   function recordPath(vault: string, collection: string, id: string): string {
     assertName(vault, 'vault')
     assertName(collection, 'collection')
     assertId(id)
+    const encoded = encodeId(id)
+    return contained(join(dir, vault, collection, `${encoded}.json`), `record "${id}"`)
+  }
+
+  /**
+   * The pre-family#174 path for an id, for READS only.
+   *
+   * ⚠️ A backstop against a break the family's closed-format-break rule would
+   * otherwise charge to holders of live data. Encoding `%` moves the on-disk
+   * name of every existing id that contains one, so a read tries the encoded
+   * path and then the legacy raw one. ⛔ It does NOT make `list` lossless for
+   * such an id: a legacy `a%3Ab.json` decodes to `a:b`, which still RESOLVES
+   * (`get('a:b')` re-encodes to the same file) but is reported under the wrong
+   * name. That residual corner is the known price; it is narrow, it is
+   * read-only, and nothing becomes unreadable.
+   */
+  function legacyRecordPath(vault: string, collection: string, id: string): string | null {
+    const encoded = encodeId(id)
+    if (encoded === id) return null // nothing moved for this id
     return contained(join(dir, vault, collection, `${id}.json`), `record "${id}"`)
   }
 
@@ -202,7 +268,10 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       for (const entry of entries) {
         const next = rel ? `${rel}/${entry.name}` : entry.name
         if (entry.isDirectory()) { await walk(next); continue }
-        if (entry.name.endsWith('.json')) ids.push(next.slice(0, -5))
+        // family#174 — DECODE on the way out. An encoding with no matching
+        // decode makes `list` report an id that no `get` resolves, so
+        // `loadAll`, sync enumeration and export all see a phantom key.
+        if (entry.name.endsWith('.json')) ids.push(decodeId(next.slice(0, -5)))
       }
     }
     await walk('')
@@ -246,7 +315,16 @@ export function toFile(options: JsonFileOptions): NoydbStore {
         const content = await readFile(path, 'utf-8')
         return JSON.parse(content) as EncryptedEnvelope
       } catch {
-        return null
+        // family#174 — fall back to the pre-encoding name. See
+        // `legacyRecordPath`: this is what keeps a live record whose id contains
+        // a `%` readable across the encoding change.
+        const legacy = legacyRecordPath(vault, collection, id)
+        if (legacy === null) return null
+        try {
+          return JSON.parse(await readFile(legacy, 'utf-8')) as EncryptedEnvelope
+        } catch {
+          return null
+        }
       }
     },
 
