@@ -577,7 +577,7 @@ export class Noydb {
     name: string,
     opts?: { locale?: string; create?: boolean; meta?: VaultMeta },
   ): Promise<Vault> {
-    const keyring = await this._getKeyringInternal(name, { create: opts?.create !== false })
+    const keyring = await this._getKeyringInternal(name, { create: opts?.create !== false, requireManagedRecovery: true })
     // Tier-1 unlock — secret / getKeyring callbacks both yield the
     // most-privileged tier. Tier-2 / tier-3 unlocks install
     // a lower tier here when they land.
@@ -2350,7 +2350,7 @@ export class Noydb {
    */
   private async _getKeyringInternal(
     vault: string,
-    opts: { create: boolean } = { create: true },
+    opts: { create: boolean; requireManagedRecovery?: boolean } = { create: true },
   ): Promise<UnlockedKeyring> {
     if (this.options.encrypt === false) {
       return createPlaintextKeyring(this.options.user, this.options.debugPlaintext === true)
@@ -2377,6 +2377,12 @@ export class Noydb {
     // writes nothing. encrypt:false returned a plaintext keyring above, so we're
     // always on the encrypted path here. Logic lives in team/keyring.ts.
     await assertKeyringOpenAllowed(this.options.store, vault, this.options.user, opts.create)
+
+    // family#95 — after the pre-gate (a principal with NO access must not learn whether
+    // someone else's vault has recovery: #313 asserts NoAccessError wins) and before the
+    // first write. ⛔ openVault only: enrollRecovery and the member paths reach the keyring
+    // through here too, and the documented two-step bootstrap REQUIRES that they still can.
+    if (opts.requireManagedRecovery === true && this.options.secretMode === 'managed' && !this._skipNextManagedRecoveryCheck && !(await hasStrongRecoveryEnrolled(this.options.store, vault))) throw new ManagedRecoveryNotEnrolledError(vault)
 
     // Per-mode secret resolution (standard / managed / echo) lives in
     // ./secret-mode.ts.
