@@ -3,16 +3,18 @@
  * needs a missing one fails at `createNoydb()` with a typed error naming both
  * the group and what required it.
  *
- * ⚠️ THE NEGATIVE CASE CANNOT BE TESTED WITH A REAL CAPSULE YET, and saying so
- * is the honest state of this task. `enclave-aes` supports everything, and the
- * first capsule that refuses anything is `exclave-plain` in Stage C. So the
- * refusal is asserted against a STUB capability set.
+ * ⚠️ THE NEGATIVE CASE STILL CANNOT BE TESTED WITH A REAL CAPSULE, and that is
+ * permanent rather than pending: `enclave-aes` supports everything, and the
+ * only capsule that refuses anything lives in another repo. So the refusal is
+ * asserted here against a STUB capability set.
  *
- * What that buys: the helper refuses correctly, with the right error type and
- * a message a reader can act on. What it does NOT buy: proof that any service
- * actually calls it. Per-service wiring lands in Stage C, where it can be
- * exercised by a capsule that genuinely lacks a group — wiring it now would be
- * unreachable code guarded by an untestable branch.
+ * What that buys: the helper refuses correctly, with the right error type and a
+ * message a reader can act on. What it does NOT buy: proof that any service
+ * actually calls it. ⭐ THAT HALF IS NOW COVERED ELSEWHERE (family#156):
+ * `__tests__/capsule-requirements-wiring.test.ts` mocks `capabilities()` down
+ * to the exclave's four groups and asserts the two real call sites refuse. The
+ * sentence that used to sit here — "per-service wiring lands in Stage C" — was
+ * the honest state when written and is now simply the pointer to that file.
  */
 import { describe, it, expect } from 'vitest'
 import { capabilities } from '../src/capsule/index.js'

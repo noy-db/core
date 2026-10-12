@@ -1908,7 +1908,16 @@ const KERNEL_SURFACE_BUDGET = {
   // them would have broken the readers they exist for. These lines are the two blocks saying so.
   // ⭐ Net effect of #128 on this file is SMALLER surface, not larger: two accessors lost their
   // public names to `_`, and the kernel-api golden shrank by 8.
-  'packages/hub/src/kernel/noydb.ts': 2480,  // see the #1121 note above
+  // Bumped 2480→2486 (family#156): `createNoydb()` now refuses an enabled
+  // service whose group the bound capsule does not declare — one import line
+  // and a three-line guarded call. ⛔ It cannot move to a service, which is
+  // what this ceiling normally asks for: it GATES the services, and it must run
+  // before any default is resolved so a refused vault is never half-built. The
+  // reasoning lives in `kernel/capsule-requirements.ts`, deliberately, so the
+  // call site stays four lines; raising this by six was the alternative to
+  // deleting the explanation, and an unexplained guard is the more expensive of
+  // the two.
+  'packages/hub/src/kernel/noydb.ts': 2486,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

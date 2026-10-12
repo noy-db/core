@@ -17,9 +17,10 @@ import { putDerivedOutput, ledgerAuditHook, selfWriteFieldEqual, resolveRollupDe
 import type { ComputedFields } from '../with-formula/computed/index.js'
 import { type RecordIdentity,
   isTombstone, isDeleteMarker, buildTombstone, buildDeleteMarker,
-  resolveStableCek, findByDet, queryByDet, RecordCodec,
+  resolveStableCek, findByDet, queryByDet, RecordCodec, capabilities,
   type DeterministicContext, type EnclaveKey, type SealedShredSlot,
 } from '../capsule/index.js'
+import { assertFieldsSupported } from './capsule-requirements.js'
 import { countLiveEnvelopes } from './lazy-count.js'
 import { findMatchingIdsByPairs } from './match-pairs.js'
 import { liveRecordIsElevated, assertTierWritable } from './tier-visibility.js'
@@ -682,6 +683,18 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     this.deterministicFields = cfg.deterministicFields
     this.sensitiveFields = cfg.sensitiveFields
     this.perRecordCek = cfg.perRecordCek
+    // family#156 — refusal point 2. A DECLARATION, not a strategy: the codec's
+    // `vdigFields`/sealing paths come straight from these options, so a
+    // collection declaring a field form the bound capsule cannot honour must be
+    // refused here. `createNoydb()` cannot cover it — `classifiedFields` writes
+    // `_vdig` with no `classifiedStrategy` at all, the strategy being the read
+    // side only.
+    assertFieldsSupported(this.name, {
+      sensitiveFields: cfg.sensitiveFields,
+      deterministicFields: cfg.deterministicFields,
+      perRecordKeys: cfg.perRecordCek === true,
+      classifiedByField: cfg.classified?.byField ?? null,
+    }, capabilities())
     this.cekCache = cfg.cekCache
     this.provenance = cfg.provenance
 

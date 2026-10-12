@@ -27,10 +27,23 @@ export type CapsuleKeyPair = CryptoKeyPair
  * The groups a capsule may support. A capsule declares its set via
  * `capabilities()`; a service needing a group asserts at `createNoydb()`.
  *
- * `authenticate` and `seal` are what an `enclave-*` MUST support and an
- * `exclave-*` MUST refuse. That prefix rule is asserted by the conformance
- * suite from the package name, which is what makes the prefix a trust posture
- * rather than a naming convention.
+ * ⭐ `authenticate` AND `seal` ARE POSTURE GROUPS (family#156/#168). They say
+ * whether a capsule holds secrets at all — `authenticate` is `deriveKey`
+ * (secret → KEK) and `seal` is `wrapKey`/`unwrapKey` (KEK wraps DEK), the
+ * keyring's unlock chain. {@link PRIMITIVE_GROUPS} tags no primitive with
+ * either, so no field form and no service implies them: what implies them is
+ * opening a vault with a secret. An `enclave-*` MUST support both and an
+ * `exclave-*` MUST refuse both, and that rule is asserted by the conformance
+ * suite FROM THE PACKAGE NAME — which is what makes the prefix a trust posture
+ * rather than a naming convention, and why a primitive-completeness check names
+ * these two as exempt instead of reporting a green it cannot earn.
+ *
+ * ⛔ THE SHIPPED EXCLAVE DECLARES FOUR AND REFUSES SIX, and the old wording
+ * here named two. `exclave-plain`'s `capabilities()` is exactly `cipher`,
+ * `digest`, `sign`, `codec` — so beyond the two posture groups it also refuses
+ * `per-record-keys`, `deterministic`, `sealing` and `classify`. Reading "an
+ * exclave refuses authenticate and seal" as the whole story is how a consumer
+ * concludes a plaintext capsule can still seal a field.
  */
 export type CapsuleGroup =
   | 'authenticate'
@@ -149,21 +162,31 @@ export const PRIMITIVES_NOT_ON_THE_DOOR = ['mintVdigSlot', 'openVdigPayload', 's
  * Refuse at CONSTRUCTION when a service needs a capsule group the bound
  * capsule lacks.
  *
- * ⛔ At startup or not at all. A capability discovered on first write is a
- * half-built vault: some records sealed, a service silently inert, and a
- * consumer who cannot tell a missing capability from a bug. `capabilities()`
- * is a set, so this is a membership test — never a try/catch probe against the
- * primitive itself, which would make "unsupported" and "broken" the same
- * observation.
+ * ⛔ At startup or not at all, and "startup" is TWO POINTS since family#156:
+ * `createNoydb()` for an enabled SERVICE, and `vault.collection()` for a
+ * declared FIELD. Both are needed — a `classifiedFields` declaration writes
+ * `_vdig` with no `classifiedStrategy` at all, so a single check at
+ * `createNoydb()` would leave every write-side requirement unenforced while
+ * looking complete. See `kernel/capsule-requirements.ts`.
+ *
+ * A capability discovered on first write is a half-built vault: some records
+ * sealed, a service silently inert, and a consumer who cannot tell a missing
+ * capability from a bug. `capabilities()` is a set, so this is a membership
+ * test — never a try/catch probe against the primitive itself, which would make
+ * "unsupported" and "broken" the same observation.
  *
  * Lives on the CONTRACT, not in the kernel: it depends on nothing but the
  * declared set, and every capsule's consumers need the same assertion.
  *
- * ⚠️ Per-service wiring is deliberately NOT done yet. `enclave-aes` supports
- * every group, so every call site would be unreachable code behind an
- * untestable branch. It lands in Stage C with `exclave-plain`, which is the
- * first capsule that refuses anything. Until then this is exercised against a
- * stub set — see `__tests__/capsule-capabilities.test.ts`.
+ * ⚠️ WIRED SINCE family#156, and the reason it waited still shapes how it is
+ * tested: `enclave-aes` supports every group, so NO integration path in this
+ * repo can reach a refusal, and a test that opens a real vault proves nothing
+ * about whether the assertion exists. So the requirement tables are pure
+ * functions tested against stub sets
+ * (`__tests__/capsule-requirements.test.ts`) and a separate file mocks
+ * `capabilities()` down to the exclave's four groups to prove the call sites
+ * actually call them (`__tests__/capsule-requirements-wiring.test.ts`). A
+ * predicate with no wiring test is the family#172 defect by construction.
  */
 export function assertCapsuleSupports(
   caps: ReadonlySet<CapsuleGroup>,
@@ -189,8 +212,11 @@ export class CapsuleNotSupportedError extends NoydbError {
     super(
       'CAPSULE_NOT_SUPPORTED',
       `Capsule does not support the "${group}" group, which "${requirer}" requires. ` +
-      `An exclave capsule refuses "authenticate" and "seal" by design — services ` +
-      `that need them cannot be used with it. Check capabilities().`,
+      `A capsule declares its groups at build time: "authenticate" and "seal" are the ` +
+      `POSTURE groups an exclave refuses by design, and the shipped exclave also refuses ` +
+      `"per-record-keys", "deterministic", "sealing" and "classify" — six in all, declaring ` +
+      `only cipher/digest/sign/codec. Check capabilities(), and either drop what needs this ` +
+      `group or bind a capsule that has it.`,
     )
     this.name = 'CapsuleNotSupportedError'
   }
