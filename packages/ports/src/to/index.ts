@@ -183,13 +183,26 @@ export function runStoreConformanceTests(
           adapter.put('comp1', 'coll1', 'never-written', makeEnvelope(6), 5),
         ).rejects.toThrow(ConflictError)
 
-        // The carried version is the id's ACTUAL version, so a caller can retry
-        // against it without a second read.
+        // The carried version lets a caller retry without a second read. ⚠️ `0` is
+        // the local answer; a REMOTE store may legitimately not know it. `in-rest`
+        // omits the version from a 409 body on purpose (a disclosure removal), so
+        // `to-rest` has nothing to parse and surfaces a non-finite version. Both
+        // discharge this: the error TYPE is what a caller branches on, and a store
+        // that cannot name the version must not be forced to invent one.
+        // ⛔ What is NOT relaxed is the ConflictError itself — a generic failure
+        // here would make "stale premise" indistinguishable from "store broken".
         await adapter
           .put('comp1', 'coll1', 'never-written-2', makeEnvelope(6), 5)
           .then(
             () => { throw new Error('expected a ConflictError') },
-            (e: unknown) => { expect((e as ConflictError).version).toBe(0) },
+            (e: unknown) => {
+              expect(e, 'a nonzero expectation against an absent id must reject with ConflictError').toBeInstanceOf(ConflictError)
+              const v = (e as ConflictError).version
+              expect(
+                v === 0 || !Number.isFinite(v),
+                `ConflictError.version must be 0 (an absent id's version) or non-finite for a store that does not disclose it, got ${String(v)}`,
+              ).toBe(true)
+            },
           )
 
         // Not vacuous: the refusal wrote nothing.
