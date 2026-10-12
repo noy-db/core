@@ -1,6 +1,6 @@
 /**
- * `enclave-aes` as a {@link CapsulePrimitives} — the 13 functions the shared
- * plumbing binds to.
+ * `enclave-aes` as a {@link CapsulePrimitives} — the functions the shared
+ * plumbing binds to. (No count: see the note on `CapsulePrimitives` itself.)
  *
  * ⭐ THE ASSIGNMENT BELOW IS A TEST, and it is the reason this file exists as
  * a file rather than an inline object at the `makeCapsule()` call. Declaring
@@ -31,6 +31,8 @@ import { bufferToBase64 } from '../plumbing/digest.js'
 import { mintVdigSlot } from './classify/write.js'
 import { mintBidxTag } from './classify/bidx.js'
 import { openVdigPayload, sealVdigPayload } from './classify/vdig.js'
+import { pbkdf2VerifyDigest } from './classify/digest.js'
+import { blindedEqual } from './classify/compare.js'
 
 export const aesPrimitives: CapsulePrimitives = {
   encrypt,
@@ -49,4 +51,8 @@ export const aesPrimitives: CapsulePrimitives = {
   mintBidxTag,
   openVdigPayload,
   sealVdigPayload,
+  // family#168 — the two the verify engines need, so the engines can live in
+  // the plumbing instead of in here.
+  pbkdf2VerifyDigest,
+  blindedEqual,
 }

@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { generateDEK, encrypt, deriveSealedFieldKeyFromCek } from '../../src/capsule/enclave-aes/index.js'
-import { mintVdigSlot } from '../../src/capsule/enclave-aes/classify/write.js'
 import {
-  verifyDigestField, verifyTextField, matchGroupFields, type VerifyEngineCtx,
-} from '../../src/capsule/enclave-aes/classify/verify.js'
+  generateDEK, encrypt, deriveSealedFieldKeyFromCek,
+  // family#168 — the engines are plumbing now, bound to `aesPrimitives` by
+  // `makeCapsule()` and taken off the assembled capsule here. Importing them
+  // through the barrel rather than from the plumbing module is deliberate: it
+  // exercises the BINDING (and the lazy thunk that defers the module) as well
+  // as the protocol, which the old deep import could not — the engines used to
+  // close over the AES cipher by sitting next to it.
+  verifyDigestField, verifyTextField, matchGroupFields,
+} from '../../src/capsule/enclave-aes/index.js'
+import { mintVdigSlot } from '../../src/capsule/enclave-aes/classify/write.js'
+import type { VerifyEngineCtx } from '../../src/capsule/plumbing/classify-verify.js'
 import type { EncryptedEnvelope, VdigFieldPolicy } from '../../src/kernel/types.js'
 import { ClassifiedConfigError, ClassifiedVerifyError } from '../../src/kernel/errors.js'
 

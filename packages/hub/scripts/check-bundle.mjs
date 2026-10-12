@@ -365,9 +365,25 @@ const SCENARIOS = [
       export { createNoydb, classifiedStrategy }
     `,
     leakCanaries: [],
+    // Baseline moved 1,098 -> 1,082 gz on family#168, and it is the ONE scenario
+    // that went DOWN while every other grew ~16 bytes: `makeCapsule()`'s four
+    // eager thunks cost every build 16 gz, and this is the only build that
+    // redeems them — the engines left `active.ts`'s four separate dynamic-import
+    // call sites for one pair of plumbing chunks. Both halves were measured by
+    // building `main` and this branch; the ±1% drift the other rows show against
+    // the old manifest predates the change and was confirmed on `main` first.
+    //
+    // ⚠️ family#168 MOVED WHERE THE LAZINESS LIVES, and these three comments
+    // said the wrong thing for one arc. The reveal/verify engines are no longer
+    // "enclave-side", and they no longer stay lazy because `active.ts` defers
+    // them: they are `capsule/plumbing/classify-{verify,reveal}.ts`, bound by
+    // `makeCapsule()` through a thunk that `import()`s the module on first call.
+    // So the deferral is the CAPSULE's now, and a static door import at a call
+    // site is what would break it — which is why `collection.ts`'s eager-kernel
+    // call site still uses `import()` even though it imports the door.
     eagerImports: [
-      'revealSealedField', // reveal engine (enclave-side since stage 2)
-      'verifyDigestField', // verify oracle — MUST stay behind active.ts's dynamic import
+      'revealSealedField', // reveal engine (plumbing, behind makeCapsule()'s thunk)
+      'verifyDigestField', // verify oracle — the thunk is what keeps the PBKDF2 oracle out
       'matchGroupFields',
       'mintVdigSlot',      // write-side digest engine (codec-internal, never eager via the strategy)
       'computeBidxTarget', // findByDigest target/find engine — MUST stay behind active.ts's dynamic import (slice-2b)

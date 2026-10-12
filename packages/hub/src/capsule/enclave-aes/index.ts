@@ -196,13 +196,32 @@ export const {
 // ─── reserved envelopes (ViaCryptoCtx.reservedEnvelopes capability) ──
 
 // ─── classify (stage-2 verify oracle primitives) ────────────────────
-// ADDITIVE per Enclave Contract v1. A fork must provide these four; the
+// ADDITIVE per Enclave Contract v1.
+//
+// ⭐ family#168 CORRECTED THE SENTENCE THAT USED TO BE HERE. It read: "the
 // verify/matchGroup orchestration (classify/verify.ts) sits behind the
-// with-shape dynamic-import seam and is not part of the fork contract.
+// with-shape dynamic-import seam and is not part of the fork contract." The
+// first half was true and the second half was the defect — the orchestration
+// WAS reached by a dynamic import, but that import named THIS capsule's path,
+// so a build bound to another capsule loaded the reference verify oracle and
+// the swap did not reach it. Being "behind a dynamic-import seam" is not the
+// same as being out of the contract.
+//
+// It is now plumbing (`capsule/plumbing/classify-{verify,reveal}.ts`), bound
+// through `makeCapsule()` like every other capsule-bound export and still
+// lazily loaded on first call. What a fork provides is the two PRIMITIVES the
+// engines need — `pbkdf2VerifyDigest` and `blindedEqual` — not the protocol.
 export { deriveVdigSlotKey } from './classify/vdig.js'
 export { pbkdf2VerifyDigest } from './classify/digest.js'
+export { blindedEqual } from './classify/compare.js'
 export { ctEqualTags } from '../plumbing/ct-equal.js'
 export { evaluateKofN } from '../plumbing/kofn.js'
+export const {
+  revealSealedField,
+  verifyDigestField,
+  verifyTextField,
+  matchGroupFields,
+} = aesCapsule
 
 // ─── classify (slice-2b equatable blind index) ──────────────────────
 // ADDITIVE per Enclave Contract v1. A fork must provide these four; the

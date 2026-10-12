@@ -119,8 +119,12 @@ export class CapsuleNotSupportedError extends NoydbError {
 export { TamperedError } from '../kernel/errors.js'
 
 /**
- * The 13 cipher primitives the shared plumbing needs — the ENTIRE surface a
+ * The cipher primitives the shared plumbing needs — the ENTIRE surface a
  * capsule must actually implement.
+ *
+ * ⛔ NO COUNT IS STATED HERE, deliberately. This docstring said "the 13 cipher
+ * primitives" while the interface had 16 members, and family#168 added two
+ * more; nothing fails when a number in prose goes stale. Count the members.
  *
  * ⭐ This is the measurement that shaped Stage C. `enclave-aes` is ~4,200
  * lines, but only ~1,200 of them touch `crypto.subtle`; the other ~3,000 are
@@ -187,6 +191,39 @@ export interface CapsulePrimitives<K = CapsuleKey> {
     field: string,
   ) => Promise<string>
   mintBidxTag: (normalized: string, dek: K, collection: string, field: string) => Promise<string>
+  /**
+   * PBKDF2-SHA256 → a fixed 32-byte verify digest over a PRE-NORMALIZED
+   * candidate. Promoted to a primitive by family#168.
+   *
+   * ⭐ It was already a door export and already implemented by both shipped
+   * capsules (`enclave-aes` for real, `exclave-plain` as a `refuse('classify')`
+   * throw) — but it was not a primitive, so the plumbing could not call it, so
+   * the verify oracle that needs it had to live INSIDE the reference capsule
+   * and be reached by a dynamic import past the barrel. The missing declaration
+   * was the whole reason for `DYNAMIC_ENCLAVE_BYPASS`.
+   *
+   * ⚠️ `iterations` is a PARAMETER, not a constant read from the capsule: a
+   * stored `_vdig` payload carries its own authenticated `iter`, and a verify
+   * must digest at the value the payload declares or it cannot compare against
+   * a record written before an iteration bump.
+   */
+  pbkdf2VerifyDigest: (value: string, salt: Uint8Array, iterations: number) => Promise<Uint8Array>
+  /**
+   * Blinded equality of two arbitrary-length byte strings — the ONE comparison
+   * construction the classify engines use (capsule seam spec §3 rule 2).
+   * Promoted by family#168 alongside `pbkdf2VerifyDigest`.
+   *
+   * ⛔ It is a CAPSULE primitive, not plumbing, although the comparison itself
+   * is cipher-free: the reference construction reduces both comparands to
+   * 32-byte tags under a fresh ephemeral HMAC key, which is WebCrypto, and
+   * `capsule/plumbing/**` may not call `crypto.subtle` (Check 10b). A capsule
+   * with no MAC of its own answers the whole `classify` group with a throw.
+   *
+   * ⚠️ The constant-time tag compare it ends in (`ctEqualTags`) IS plumbing and
+   * stays shared — a capsule choosing the blinding must not also get to choose
+   * whether the final compare is constant-time.
+   */
+  blindedEqual: (a: Uint8Array, b: Uint8Array) => Promise<boolean>
   /** The vdig payload is sealed under a capsule-derived slot key, so open/seal
    *  are the capsule's, not the plumbing's. `rotateRecordCek` needs both to
    *  carry a classified slot across a key rotation. */
@@ -200,6 +237,25 @@ export interface VdigDigestEntry {
   readonly salt: string
   readonly hash: string
 }
+
+/**
+ * The family's verify-digest iteration count (600K) — the value a NEW `_vdig`
+ * slot is written at, and the default cost of the verify engines' C4 timing pad.
+ *
+ * ⚠️ A STORED payload's `iter` wins over this constant everywhere. This is the
+ * write-side default only; a record written before an iteration bump must still
+ * verify, which is why {@link CapsulePrimitives.pbkdf2VerifyDigest} takes
+ * `iterations` as an argument.
+ *
+ * ⭐ It lives on the SEAM, next to the payload type that declares `iter`, for a
+ * mechanical reason found in family#168: the verify engines moved into
+ * `capsule/plumbing/` and must stay behind a lazy `import()` (they carry a
+ * PBKDF2 oracle no consumer should pay for), while the enclave's WRITE side
+ * needs the same constant eagerly. Importing it from the engine module would
+ * have made the engine eager and silently undone the laziness — and the only
+ * trace would have been a bundle-baseline number.
+ */
+export const VDIG_ITERATIONS = 600_000
 
 export interface VdigPayload {
   readonly v: 1

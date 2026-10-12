@@ -6,8 +6,10 @@
  */
 const subtle = globalThis.crypto.subtle
 
-/** Family KDF constant — matches crypto.ts PBKDF2_ITERATIONS (600K). */
-export const VDIG_ITERATIONS = 600_000
+/** Family KDF constant — matches crypto.ts PBKDF2_ITERATIONS (600K). Owned by
+ *  the seam (`contract.ts`) since family#168 and re-exported here, so the write
+ *  side and the plumbing verify engines cannot drift to two numbers. */
+export { VDIG_ITERATIONS } from '../../contract.js'
 
 /**
  * Digest a (pre-normalized) candidate/value to exactly 32 bytes.

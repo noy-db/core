@@ -2893,15 +2893,20 @@ function* dynamicImportSpecs(code) {
 // capsule even in an exclave build. A capsule that refuses the `classify` group
 // would still see classify work here — which is the half-built-vault outcome a
 // typed refusal exists to prevent (family#156).
-const DYNAMIC_ENCLAVE_BYPASS = new Map([
-  ['packages/hub/src/via/classified/active.ts', [
-    '../../capsule/enclave-aes/classify/reveal.js',
-    '../../capsule/enclave-aes/classify/verify.js',
-  ]],
-  ['packages/hub/src/kernel/collection.ts', [
-    '../capsule/enclave-aes/classify/verify.js',
-  ]],
-])
+// ⭐ THE GRANDFATHER MAP IS GONE (family#168, one arc after family#169 created
+// it with five rows). Every one of them was `via/classified/active.ts` or
+// `kernel/collection.ts` lazily loading the classify verify/reveal engines out
+// of `capsule/enclave-aes/classify/`. They could not be routed at the time for
+// a real reason: the engines were not capsule-bound exports, and routing them
+// meant either widening the fork-swap contract with four non-primitive
+// functions or promoting `pbkdf2VerifyDigest`/`blindedEqual` to primitives and
+// moving the orchestration into `capsule/plumbing/`. The user ruled the second.
+//
+// ⛔ DO NOT REINTRODUCE A MAP — the same ruling Check 10b carries. The landing
+// place for an orchestrator that needs capsule-bound functions is a thunk in
+// `makeCapsule()` (see the classify engines there: plumbing module, lazy
+// `import()`, primitives closed over), NOT a row here. A map row buys the
+// laziness and silently keeps the REFERENCE capsule; the thunk buys both.
 
 /** Path of a resolved import, relative to `hub/src`, POSIX-separated. */
 function importTargetRelToHubSrc(fromFile, spec, hubSrc) {
@@ -2985,10 +2990,11 @@ function checkPortLayering() {
 // Only hub/src is scanned — tests aren't architecture-bound, though they
 // were migrated to the barrel too for consistency.
 //
-// ⭐ SINCE #169 a dynamic `import('…')` with a LITERAL specifier is checked too,
-// against `DYNAMIC_ENCLAVE_BYPASS`. The old carve-out said dynamic imports were
-// "not statically analyzable here" — true only of a COMPUTED specifier, and six
-// literal ones had reached past the barrel with this check green.
+// ⭐ SINCE #169 a dynamic `import('…')` with a LITERAL specifier is checked too.
+// The old carve-out said dynamic imports were "not statically analyzable here" —
+// true only of a COMPUTED specifier, and six literal ones had reached past the
+// barrel with this check green. #169 grandfathered five of them; family#168
+// routed all five and the map is gone (see the note at the dynamic clause).
 //
 // The reverse direction (C3 — self-contained folder, Enclave Contract v1):
 // a file INSIDE capsule/enclave-aes/** may import only spine types (kernel/**,
@@ -3048,28 +3054,14 @@ function checkEnclaveBarrelOnly() {
     // #169 — the same rule for a dynamic `import('…')` with a literal specifier.
     // A lazy import is still a reach past the barrel: it binds the REFERENCE
     // capsule, which ships inside hub no matter what `#capsule` resolves to.
-    const allowed = DYNAMIC_ENCLAVE_BYPASS.get(rel) ?? []
-    const seen = new Set()
     for (const spec of dynamicImportSpecs(code)) {
       if (!spec.startsWith('.')) continue
       const target = importTargetRelToHubSrc(file, spec, hubSrc)
       if (insideEnclave) continue
       if (!target.startsWith('capsule/enclave-aes/') || target === 'capsule/enclave-aes/index.js') continue
-      seen.add(spec)
-      if (allowed.includes(spec)) continue
       fail(
         'capsule-door-only',
-        `${rel} dynamically imports "${spec}" — reaches past the enclave barrel. A lazy import is not an exemption: enclave-aes ships inside hub whatever "#capsule" is bound to, so this loads the REFERENCE capsule even in a build bound to another one. Import the door (capsule/index.js), or add a grandfathered entry to DYNAMIC_ENCLAVE_BYPASS with the reason.`,
-        file,
-      )
-    }
-    // ⭐ A listed specifier that no longer exists fails too — otherwise the map
-    // decays into a permanent exemption and the ratchet stops ratcheting.
-    for (const spec of allowed) {
-      if (seen.has(spec)) continue
-      fail(
-        'capsule-door-only',
-        `${rel} no longer dynamically imports "${spec}", but DYNAMIC_ENCLAVE_BYPASS still grandfathers it. Delete that entry — the map is a ratchet, and a stale row is an exemption nobody re-reads.`,
+        `${rel} dynamically imports "${spec}" — reaches past the enclave barrel. A lazy import is not an exemption: enclave-aes ships inside hub whatever "#capsule" is bound to, so this loads the REFERENCE capsule even in a build bound to another one. Import the door (capsule/index.js). If the thing you need is not a capsule export, bind it in makeCapsule() — a lazy thunk there keeps BOTH the laziness and the swap (family#168).`,
         file,
       )
     }
