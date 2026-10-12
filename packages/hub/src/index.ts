@@ -1188,6 +1188,11 @@ export type {
   VaultDiff,
   VaultDiffEntry,
   VaultDiffModifiedEntry,
+  // family#151 — published alongside `VaultDiff`, because `diff.skipped[0]` is
+  // a value a consumer reads and therefore a type it needs to name. knip is
+  // what pointed it out: an export reaching no published entry point is the
+  // reachability class this repo has shipped twice.
+  VaultDiffSkipped,
   DiffOptions,
   DiffCandidate,
 } from './with-cargo/vault-diff.js'

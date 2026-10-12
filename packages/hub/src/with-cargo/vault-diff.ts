@@ -94,7 +94,16 @@ export interface VaultDiff<T = unknown> {
     readonly modify: number
     readonly delete: number
     readonly total: number
+    /** family#151 — `skipped.length`, so a caller reading only the summary sees it. */
+    readonly skipped: number
   }
+  /**
+   * Records this diff could not key, and therefore says nothing about
+   * (family#151). Empty for a vault-to-vault diff. ⚠️ A non-empty value means
+   * the diff is INCOMPLETE — an importer walking only the buckets will not
+   * write these rows, which used to happen silently.
+   */
+  readonly skipped: readonly VaultDiffSkipped[]
   /**
    * Format the diff as a human-readable string.
    *
@@ -133,6 +142,26 @@ export interface DiffOptions {
  *   - A `VaultDump` (output of `vault.dump()`) — a JSON string carrying the
  *     full vault state. Parsed and reduced to the map shape above.
  */
+/**
+ * A record neither side could key, and therefore one this diff does NOT report
+ * on (family#151).
+ *
+ * ⛔ IT EXISTS BECAUSE THE SKIP WAS SILENT. A record with no `idKey` field was
+ * dropped from the map on both sides, so it appeared in no bucket — and
+ * `@noy-db/hub/as`'s `plan().apply()` walks only `added`/`modified`/`deleted`.
+ * An import therefore did not write it, with no error and no count. A diff that
+ * omits a record is reporting a difference it did not find.
+ *
+ * ⚠️ Only reachable on the object/string candidate path. A vault-to-vault diff
+ * keys both sides by the hub id, which every record has.
+ */
+export interface VaultDiffSkipped {
+  readonly collection: string
+  readonly side: 'vault' | 'candidate'
+  /** Position within that side's record list for the collection. */
+  readonly index: number
+}
+
 export type DiffCandidate<T = unknown> =
   | Vault
   | Record<string, readonly T[]>
@@ -169,19 +198,38 @@ export async function diffVault<T = unknown>(
   // — diffVault is the type-erasure boundary; the caller asserts the
   // record shape via the function's `<T>` generic.
   const live = new Map<string, Map<string, T>>()
+  const skipped: VaultDiffSkipped[] = []
+  // ⭐ family#151 — key by the HUB ID when the candidate can supply one too.
+  // A record need not carry an `id` field: hub's id is the store key, not a
+  // property of the plaintext. Keying both sides on a FIELD meant every id-less
+  // record was dropped from BOTH maps by the `continue` below — so it landed in
+  // no bucket, and `as`'s `apply()` walks only the buckets. An import silently
+  // did not write it: no error, no count, nothing.
+  //
+  // ⛔ ONLY WHEN BOTH SIDES CAN. A `Record<collection, records[]>` or a
+  // `dump()` string carries no hub ids at all, so keying the live side by hub
+  // id against a field-keyed candidate would mismatch EVERY record and report
+  // the whole vault added-and-deleted. That asymmetry is the real blocker for
+  // round-tripping an id-less record through `/as`, and it is a format question
+  // (`exportVaultJSON` emits `records: [...]`, dropping the id), not one
+  // `diffVault` can answer. Reported, not papered over.
+  const byHubId = isVaultCandidate(candidate)
   for await (const chunk of vault.exportStream({ granularity: 'collection' })) {
     if (filter && !filter.has(chunk.collection)) continue
     const collection = live.get(chunk.collection) ?? new Map<string, T>()
-    for (const record of chunk.records) {
-      const id = readIdField(record, idKey)
-      if (!id) continue
+    chunk.records.forEach((record, i) => {
+      const id = byHubId ? (chunk.ids?.[i] ?? '') : readIdField(record, idKey)
+      if (!id) {
+        skipped.push({ collection: chunk.collection, side: 'vault', index: i })
+        return
+      }
       collection.set(id, record as T)
-    }
+    })
     live.set(chunk.collection, collection)
   }
 
   // Side B — normalise the candidate into the same shape.
-  const cand = await normaliseCandidate<T>(candidate, idKey, filter)
+  const cand = await normaliseCandidate<T>(candidate, idKey, filter, byHubId, skipped)
 
   // Walk every (collection, id) on either side and bucket.
   const added: VaultDiffEntry<T>[] = []
@@ -237,6 +285,7 @@ export async function diffVault<T = unknown>(
     modify: modified.length,
     delete: deleted.length,
     total: added.length + modified.length + deleted.length,
+    skipped: skipped.length,
   }
 
   return {
@@ -244,6 +293,7 @@ export async function diffVault<T = unknown>(
     modified,
     deleted,
     unchanged,
+    skipped,
     summary,
     format(opts) {
       return formatDiff(opts?.detail ?? 'full', { added, modified, deleted, summary })
@@ -253,30 +303,43 @@ export async function diffVault<T = unknown>(
 
 // ─── Internals ─────────────────────────────────────────────────────────
 
+/**
+ * Is the candidate a live `Vault`? Duck-typed via `exportStream` — matching
+ * vault.ts's structural shape without an `instanceof` that would import the
+ * class and risk a circular dep.
+ *
+ * ⚠️ Hoisted out of `normaliseCandidate` by family#151 because the ANSWER
+ * decides how the LIVE side is keyed, which is computed before the candidate is
+ * normalised. The two sides must agree or every record mismatches.
+ */
+function isVaultCandidate(candidate: unknown): boolean {
+  return typeof candidate === 'object'
+    && candidate !== null
+    && 'exportStream' in candidate
+    && typeof (candidate as Vault).exportStream === 'function'
+}
+
 async function normaliseCandidate<T>(
   candidate: DiffCandidate<T>,
   idKey: string,
   filter: Set<string> | null,
+  byHubId: boolean,
+  skipped: VaultDiffSkipped[],
 ): Promise<Map<string, Map<string, T>>> {
   const out = new Map<string, Map<string, T>>()
 
-  // Vault instance — duck-type via the exportStream method (matches
-  // vault.ts's structural shape without forcing a runtime instanceof check
-  // that would import the class and risk circular deps).
-  if (
-    typeof candidate === 'object' &&
-    candidate !== null &&
-    'exportStream' in candidate &&
-    typeof (candidate as Vault).exportStream === 'function'
-  ) {
+  if (byHubId) {
     for await (const chunk of (candidate as Vault).exportStream({ granularity: 'collection' })) {
       if (filter && !filter.has(chunk.collection)) continue
       const collection = out.get(chunk.collection) ?? new Map<string, T>()
-      for (const record of chunk.records) {
-        const id = readIdField(record, idKey)
-        if (!id) continue
+      chunk.records.forEach((record, i) => {
+        const id = chunk.ids?.[i] ?? ''
+        if (!id) {
+          skipped.push({ collection: chunk.collection, side: 'candidate', index: i })
+          return
+        }
         collection.set(id, record as T)
-      }
+      })
       out.set(chunk.collection, collection)
     }
     return out
@@ -292,17 +355,18 @@ async function normaliseCandidate<T>(
         `diffVault: candidate string is not valid JSON (${(err as Error).message})`,
       )
     }
-    return collectionsFromObject<T>(parsed, idKey, filter)
+    return collectionsFromObject<T>(parsed, idKey, filter, skipped)
   }
 
   // Plain object — `Record<collection, records[]>` (same shape as-json.toObject() returns).
-  return collectionsFromObject<T>(candidate, idKey, filter)
+  return collectionsFromObject<T>(candidate, idKey, filter, skipped)
 }
 
 function collectionsFromObject<T>(
   raw: unknown,
   idKey: string,
   filter: Set<string> | null,
+  skipped: VaultDiffSkipped[],
 ): Map<string, Map<string, T>> {
   const out = new Map<string, Map<string, T>>()
   if (raw === null || typeof raw !== 'object') {
@@ -315,12 +379,23 @@ function collectionsFromObject<T>(
     if (filter && !filter.has(key)) continue
     if (!Array.isArray(value)) continue
     const collection = new Map<string, T>()
-    for (const record of value as readonly T[]) {
-      if (record === null || typeof record !== 'object') continue
+    ;(value as readonly T[]).forEach((record, i) => {
+      // family#151 — RECORDED, not dropped. A candidate row with no `idKey`
+      // field lands in no bucket, and `as`'s `apply()` walks only the buckets,
+      // so the row was silently never imported. This path cannot key by hub id
+      // (a plain object carries none), so the honest fix is to make the skip
+      // observable instead of pretending the row did not exist.
+      if (record === null || typeof record !== 'object') {
+        skipped.push({ collection: key, side: 'candidate', index: i })
+        return
+      }
       const id = readIdField(record, idKey)
-      if (!id) continue
+      if (!id) {
+        skipped.push({ collection: key, side: 'candidate', index: i })
+        return
+      }
       collection.set(id, record)
-    }
+    })
     out.set(key, collection)
   }
   return out
@@ -363,9 +438,14 @@ function formatDiff<T>(
   detail: 'count' | 'one-line' | 'full',
   b: FormatBuckets<T>,
 ): string {
-  const head = `${b.summary.add} added · ${b.summary.modify} modified · ${b.summary.delete} deleted`
+  // family#151 — a skip is in EVERY detail level, including 'count'. The whole
+  // defect was that these rows were invisible, and `format()` is what a human
+  // reads before approving an import; "0 added" with rows quietly unimportable
+  // is the sentence this is meant to stop being printable.
+  const skipNote = b.summary.skipped > 0 ? ` · ${b.summary.skipped} SKIPPED (unkeyable)` : ''
+  const head = `${b.summary.add} added · ${b.summary.modify} modified · ${b.summary.delete} deleted${skipNote}`
   if (detail === 'count') return head
-  if (b.summary.total === 0) return head + '\n(no changes)'
+  if (b.summary.total === 0) return head + (b.summary.skipped > 0 ? '' : '\n(no changes)')
   if (detail === 'one-line') return head
 
   const rows: string[] = [head, '']

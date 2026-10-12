@@ -1684,6 +1684,27 @@ export interface ExportChunk<T = unknown> {
     readonly version: number
     readonly ts: string
   }>
+
+  /**
+   * The HUB ID of each exported record, positionally aligned with `records`
+   * (family#151).
+   *
+   * ⭐ ALWAYS POPULATED BY `exportStream`, and not behind a flag. Unlike
+   * {@link ExportChunk.envelopeMeta} it costs nothing — both yield paths
+   * already iterate the id list — and a flag is a way to forget it. The id is
+   * NOT derivable from a record: hub's id is the store key, and a record need
+   * not carry an `id` field at all, which is why `diffVault` keyed by a FIELD
+   * and silently dropped every record that had none.
+   *
+   * ⚠️ Optional in the TYPE so a consumer constructing an `ExportChunk` — an
+   * `as-*` format fixture, say — stays valid. Hub never omits it.
+   *
+   * ⛔ Positionally aligned, like `envelopeMeta`, and for the same reason: a
+   * `{ [id]: record }` map cannot represent a record whose own `id` field
+   * disagrees with its store key, and that disagreement is the bug this field
+   * exists to make visible.
+   */
+  readonly ids?: readonly string[]
 }
 
 // ─── Sync ──────────────────────────────────────────────────────────────

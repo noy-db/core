@@ -75,7 +75,7 @@ describe('diffVault — plain object candidate', () => {
 
     const plan = await diffVault<Invoice>(vault, candidate)
 
-    expect(plan.summary).toEqual({ add: 1, modify: 1, delete: 1, total: 3 })
+    expect(plan.summary).toEqual({ add: 1, modify: 1, delete: 1, total: 3, skipped: 0 })
     expect(plan.added.map((e) => e.id)).toEqual(['d'])
     expect(plan.deleted.map((e) => e.id)).toEqual(['c'])
     expect(plan.modified).toHaveLength(1)
@@ -98,7 +98,7 @@ describe('diffVault — plain object candidate', () => {
       ],
     }
     const plan = await diffVault<Invoice>(vault, candidate)
-    expect(plan.summary).toEqual({ add: 0, modify: 0, delete: 0, total: 0 })
+    expect(plan.summary).toEqual({ add: 0, modify: 0, delete: 0, total: 0, skipped: 0 })
     db.close()
   })
 })
@@ -141,7 +141,7 @@ describe('diffVault — collections filter', () => {
     expect(all.summary.delete).toBe(1)
 
     const scoped = await diffVault(vault, candidate, { collections: ['invoices'] })
-    expect(scoped.summary).toEqual({ add: 0, modify: 0, delete: 0, total: 0 })
+    expect(scoped.summary).toEqual({ add: 0, modify: 0, delete: 0, total: 0, skipped: 0 })
 
     db.close()
   })
@@ -206,5 +206,81 @@ describe('diffVault — includeUnchanged', () => {
     expect(on.unchanged).toHaveLength(3)
     expect(on.unchanged!.map((e) => e.id).sort()).toEqual(['a', 'b', 'c'])
     db.close()
+  })
+})
+
+/**
+ * family#151 — an id-less record was silently invisible to the diff.
+ *
+ * ⛔ THE CONSEQUENCE WAS SILENT DATA LOSS ON IMPORT, not a cosmetic gap.
+ * `diffVault` keyed BOTH sides on a record FIELD (`options.idKey`, default
+ * `'id'`) and `continue`d on a record that had none — so such a record landed
+ * in no bucket, and `@noy-db/hub/as`'s `plan().apply()` walks only
+ * `added`/`modified`/`deleted`. The row was never written: no error, no count,
+ * nothing. Hub's id is the STORE KEY, not a property of the plaintext, so a
+ * record genuinely need not carry one.
+ *
+ * ⚠️ Two different fixes, because the two candidate kinds differ in what they
+ * CAN be keyed by. A Vault candidate has hub ids on both sides, so both are
+ * keyed by them and nothing is skippable. A plain object or a `dump()` string
+ * carries no hub ids at all — keying the live side by hub id against a
+ * field-keyed candidate would mismatch every record and report the whole vault
+ * added-and-deleted — so that path still keys by field and REPORTS the skip
+ * instead of hiding it.
+ */
+/** An EMPTY vault on its own store — the #151 cases seed their own rows. */
+async function freshVault(name: string): Promise<{ db: Awaited<ReturnType<typeof createNoydb>>; vault: Awaited<ReturnType<Awaited<ReturnType<typeof createNoydb>>['openVault']>> }> {
+  const db = await createNoydb({ store: toMemory(), user: 'alice', secret: 'pw-2026' })
+  return { db, vault: await db.openVault(name) }
+}
+
+describe('family#151 — records with no id field', () => {
+  it('⭐ a vault-to-vault diff reports an id-less record as deleted', async () => {
+    // The case the old keying could not see at all: present in the live vault,
+    // absent from the candidate, no `id` field on either. Before this fix the
+    // diff reported nothing.
+    const a = await freshVault('v151a')
+    const b = await freshVault('v151b')
+    await a.vault.collection('rows').put('r1', { label: 'no id field here' } as never)
+
+    const diff = await diffVault(a.vault, b.vault)
+    expect(diff.summary.delete, 'an id-less record was invisible to the diff').toBe(1)
+    expect(diff.deleted[0]?.id).toBe('r1') // the HUB id, not a field
+    expect(diff.skipped).toEqual([])
+    await a.db.close(); await b.db.close()
+  })
+
+  it('⭐ a vault-to-vault diff matches an id-less record present on both sides', async () => {
+    // The control. Without it, a fix that reported EVERY record as deleted
+    // would pass the case above.
+    const a = await freshVault('v151c')
+    const b = await freshVault('v151d')
+    await a.vault.collection('rows').put('r1', { label: 'same' } as never)
+    await b.vault.collection('rows').put('r1', { label: 'same' } as never)
+
+    const diff = await diffVault(a.vault, b.vault)
+    expect(diff.summary).toEqual({ add: 0, modify: 0, delete: 0, total: 0, skipped: 0 })
+    await a.db.close(); await b.db.close()
+  })
+
+  it('⛔ an object candidate row with no id field is REPORTED, not dropped', async () => {
+    const a = await freshVault('v151e')
+    await a.vault.collection('rows').put('r1', { id: 'r1', n: 1 } as never)
+
+    const diff = await diffVault(a.vault, { rows: [{ id: 'r1', n: 1 }, { n: 2 }] } as never)
+    expect(diff.summary.skipped, 'the unkeyable row vanished from the diff').toBe(1)
+    expect(diff.skipped[0]).toMatchObject({ collection: 'rows', side: 'candidate', index: 1 })
+    await a.db.close()
+  })
+
+  it('a skip appears in format() at EVERY detail level, including count', async () => {
+    // `format()` is what a human reads before approving an import. "0 added"
+    // with rows quietly unimportable is the sentence this makes unprintable.
+    const a = await freshVault('v151f')
+    const diff = await diffVault(a.vault, { rows: [{ n: 1 }] } as never)
+    for (const detail of ['count', 'one-line', 'full'] as const) {
+      expect(diff.format({ detail }), `detail: ${detail}`).toMatch(/SKIPPED/)
+    }
+    await a.db.close()
   })
 })

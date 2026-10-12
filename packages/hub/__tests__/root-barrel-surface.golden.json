@@ -981,6 +981,7 @@
     "VaultDiff",
     "VaultDiffEntry",
     "VaultDiffModifiedEntry",
+    "VaultDiffSkipped",
     "VaultEngine",
     "VaultMeta",
     "VaultPolicy",
