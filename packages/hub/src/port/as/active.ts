@@ -159,6 +159,37 @@ export function withFormats(): FormatsStrategy {
       for await (const chunk of ctx.chunks(options.collections)) {
         chunks.push(redactChunk(chunk, ctx, options.redact))
       }
+
+      // family#151 — THE AUDIT ENTRY BELONGS HERE, not in each `as-*` package.
+      // Every format goes through this one method, so a per-package write is a
+      // duty each author can forget silently: a vault's ledger would then record
+      // some plaintext exports and not others, which is worse than recording
+      // none, because the gap is invisible.
+      //
+      // ⚠️ APPENDED AFTER THE DECRYPT AND BEFORE `encode`, deliberately. The
+      // chunks above are plaintext; that is the disclosure the entry exists to
+      // record, and a format whose `encode` throws has not un-disclosed it. The
+      // nearest analogue, `exportAccessibleData`, appends after its bytes are
+      // built and would under-record the same way — reported, not changed here.
+      //
+      // ⛔ `_getLedgerOrNull()`, so this is a NO-OP without a history strategy.
+      // Minting a `_ledger` DEK as a side effect of an export would create the
+      // audit trail the caller never opted into, on their first export.
+      //
+      // The reason carries the TIER as well as the format id: `plaintext-` is
+      // the privacy-relevant one, and `assertCanExport` above already treats
+      // the two as different grants.
+      const { keyring } = vault._introspectState()
+      await vault._getLedgerOrNull()?.append({
+        op: 'lifecycle',
+        collection: '',
+        id: '',
+        version: 0,
+        actor: keyring.userId,
+        payloadHash: '',
+        reason: `${format.tier ?? 'plaintext'}-export:${format.id}`,
+      })
+
       return format.encode(chunks)
     },
 
