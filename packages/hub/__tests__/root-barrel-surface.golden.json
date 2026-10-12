@@ -891,6 +891,7 @@
     "SchemaManifestEntry",
     "SchemaUpdateStrategy",
     "ScriptWarning",
+    "SealContext",
     "Sealed",
     "SealedView",
     "SearchEntry",

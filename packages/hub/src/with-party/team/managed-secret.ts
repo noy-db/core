@@ -95,15 +95,53 @@ export interface NoydbSealer {
    */
   readonly id: string
 
-  /** Seal raw secret bytes. Output bytes are opaque to hub. */
-  seal(secret: Uint8Array): Promise<Uint8Array>
+  /**
+   * Seal raw secret bytes. Output bytes are opaque to hub.
+   *
+   * `ctx` is ADDITIVE and OPTIONAL (family#157): hub passes it where the bytes
+   * belong to one vault, so a provider can scope its key material — a KMS
+   * encryption context, a per-vault keychain account, a key-id suffix. An
+   * existing provider that ignores the second argument keeps working unchanged.
+   *
+   * ⛔ A provider MUST stay functional when `ctx` is ABSENT, and must not treat
+   * absence as an error. Hub omits it deliberately where sealed bytes have to
+   * TRAVEL — see {@link SealContext}.
+   */
+  seal(secret: Uint8Array, ctx?: SealContext): Promise<Uint8Array>
 
   /**
    * Reverse {@link seal}. MUST throw on tamper, wrong-provider, or
    * any other failure — hub treats a thrown error as "this provider
    * cannot unlock this vault" and surfaces it to the caller.
+   *
+   * ⚠️ Hub passes the SAME `ctx` it sealed under at every paired call site, so a
+   * provider that binds key material to `ctx.vault` can unseal its own output.
+   * It is not passed where it was not available at seal time.
    */
-  unseal(sealed: Uint8Array): Promise<Uint8Array>
+  unseal(sealed: Uint8Array, ctx?: SealContext): Promise<Uint8Array>
+}
+
+/**
+ * What hub knows about the bytes it is asking a {@link NoydbSealer} to seal
+ * (family#157). Deliberately one field — anything a provider needs beyond the
+ * vault name belongs in its own construction, not in a per-call argument.
+ *
+ * ⛔ **Hub does NOT pass this on every call, and the exception is load-bearing.**
+ * A pod's auto-unlock credentials (`with-pod/pod.ts`) are sealed WITHOUT a
+ * context, because a pod is a PORTABLE bundle: `ReadPodOptions` carries no
+ * vault, and the pod may be read into a differently-named vault or merely
+ * inspected with no vault at all. A provider that bound those bytes to a vault
+ * name would produce a credential only the originating vault could open, which
+ * defeats the entire point of the format.
+ *
+ * ⭐ So the rule for a provider author is the asymmetry itself: `ctx` present
+ * means "these bytes stay in this vault" and `ctx` absent means "these bytes
+ * are meant to travel". Scoping to `ctx.vault` when it IS given is safe for
+ * exactly that reason.
+ */
+export interface SealContext {
+  /** The vault whose secret is being sealed or unsealed. */
+  readonly vault: string
 }
 
 /**
@@ -547,14 +585,14 @@ export async function resolveManagedSecret(
         + '`_meta/sealed-secret` first.',
       )
     }
-    const plaintext = await provider.unseal(existing.sealed)
+    const plaintext = await provider.unseal(existing.sealed, { vault })
     return bytesToBase64(plaintext)
   }
 
   // First open: mint a 256-bit random, seal, persist.
   const random = new Uint8Array(32)
   globalThis.crypto.getRandomValues(random)
-  const sealed = await provider.seal(random)
+  const sealed = await provider.seal(random, { vault })
   await saveSealedSecret(store, vault, { providerId: provider.id, sealed })
   return bytesToBase64(random)
 }

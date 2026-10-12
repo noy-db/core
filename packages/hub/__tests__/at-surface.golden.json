@@ -9,6 +9,7 @@
     "NoydbSealer",
     "RecipientHint",
     "RecipientSealer",
+    "SealContext",
     "SealedEnvelope",
     "SealedSecret"
   ]
