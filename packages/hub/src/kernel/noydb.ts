@@ -3,7 +3,8 @@ import { wireEngine, type EngineWiringHost } from './sync-wiring.js'
 import type { OnDirtyCallback } from './collection.js'
 import { resolveStrategies, type StrategyBag } from '../port/with/strategies.js'
 import type { RotateResult, RevokeResult, RosterVerifyResult, QuarantineResult } from '../with-party/team/keyring.js'
-import type { EnclaveKey } from '../capsule/index.js'
+import { capabilities, type EnclaveKey } from '../capsule/index.js'
+import { assertServicesSupported } from './capsule-requirements.js'
 import type {
   NoydbOptions,
   NoydbEventMap,
@@ -2445,6 +2446,11 @@ export class Noydb {
 
 /** Create a new NOYDB instance. */
 export async function createNoydb(options: NoydbOptions): Promise<Noydb> {
+  // family#156 refusal point 1 — BEFORE any default is resolved, so a refused
+  // vault is never half-built. Why here and why also at vault.collection():
+  // kernel/capsule-requirements.ts.
+  assertServicesSupported(options as unknown as Record<string, unknown>, capabilities())
+
   if (!options.store) options = { ...options, store: memoryStore() }
 
   validateSecretModeOptions(options)
