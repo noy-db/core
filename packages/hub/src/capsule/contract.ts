@@ -100,6 +100,25 @@ export class CapsuleNotSupportedError extends NoydbError {
 }
 
 /**
+ * Re-exported at the capsule seam (family#156), because a capsule author binding
+ * `@noy-db/hub/capsule` could not previously catch — or construct — the error
+ * their own capsule is expected to THROW.
+ *
+ * ⛔ The asymmetry was the defect: `classify/vdig.ts` raises `TamperedError` on
+ * any AAD or auth-tag mismatch, and `record-codec.ts` converts a subtle
+ * `OperationError` into one, so it is part of the contract a capsule implements.
+ * It shipped only on hub's ROOT barrel, so a capsule package — which must not
+ * import hub's root, that being the whole point of a narrow seam — had to
+ * either re-declare it (two classes, `instanceof` false across the door) or
+ * throw something hub does not recognise.
+ *
+ * ⚠️ Only the base error belongs here. `KeyringTamperedError` is raised by the
+ * keyring, which lives in the kernel on hub's side of the seam — a capsule never
+ * throws it and does not need to name it.
+ */
+export { TamperedError } from '../kernel/errors.js'
+
+/**
  * The 13 cipher primitives the shared plumbing needs — the ENTIRE surface a
  * capsule must actually implement.
  *
