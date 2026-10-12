@@ -93,11 +93,21 @@ async function expectRefused(suite: string, because: RegExp, cases = 1): Promise
 }
 
 describe('the adapter conformance kit, run against stores broken in one way each', () => {
-  // TWO cases, both of them `expectedVersion` assertions: the wrong-version
-  // case above and the absent-id create race added by core#134. One defect,
-  // two detectors — the attribution still holds, it is just no longer 1:1.
+  // FOUR cases now, every one of them an `expectedVersion` assertion: the
+  // wrong-version case, the absent-id create race (core#134), the nonzero
+  // expectation against an absent id (family#147), and the concurrent-create
+  // case whose casAtomic half catches both writers succeeding. One defect, four
+  // detectors — the attribution still holds, it is just no longer 1:1, and the
+  // count is what says so.
   it('⛔ FAILS a store that accepts any expectedVersion', async () => {
-    await expectRefused('broken-ignores-expected-version', /put with wrong expectedVersion throws ConflictError/, 2)
+    await expectRefused('broken-ignores-expected-version', /put with wrong expectedVersion throws ConflictError/, 4)
+  }, 120_000)
+
+  // family#147 — a MERGING `saveAll`, which every bulk case passed before this
+  // ruling: the pre-existing cases write into an empty vault, where additive and
+  // replacing are indistinguishable. Count is measured, not predicted.
+  it('⛔ FAILS a store whose saveAll merges instead of replacing (family#147)', async () => {
+    await expectRefused('broken-merges-saveall', /a collection absent from the snapshot is gone/, 2)
   }, 120_000)
 
   it('⛔ FAILS a store that strips the _del delete marker (#589)', async () => {

@@ -57,7 +57,7 @@
  * @packageDocumentation
  */
 
-import { readFile, mkdir, readdir, unlink, stat } from 'node:fs/promises'
+import { readFile, mkdir, readdir, rm, unlink, stat } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { atomicWrite } from './atomic-write.js'
 import type {
@@ -251,10 +251,17 @@ export function toFile(options: JsonFileOptions): NoydbStore {
     async put(vault, collection, id, envelope, expectedVersion) {
       const path = recordPath(vault, collection, id)
 
-      if (expectedVersion !== undefined && await fileExists(path)) {
-        const existing = JSON.parse(await readFile(path, 'utf-8')) as EncryptedEnvelope
-        if (existing._v !== expectedVersion) {
-          throw new ConflictError(existing._v, `Version conflict: expected ${expectedVersion}, found ${existing._v}`)
+      if (expectedVersion !== undefined) {
+        // family#147 — an absent record is at version 0, so the comparison runs
+        // whether or not the file exists: `0 === 0` creates (core#134), and a
+        // NONZERO expectation against nothing conflicts instead of upserting.
+        // ⚠️ Still advisory, not atomic — `capabilities.casAtomic` is false here
+        // because this read and the write below can interleave with another writer.
+        const current = await fileExists(path)
+          ? (JSON.parse(await readFile(path, 'utf-8')) as EncryptedEnvelope)._v
+          : 0
+        if (current !== expectedVersion) {
+          throw new ConflictError(current, `Version conflict: expected ${expectedVersion}, found ${current}`)
         }
       }
 
@@ -306,9 +313,26 @@ export function toFile(options: JsonFileOptions): NoydbStore {
     },
 
     async saveAll(vault, data) {
+      // family#147 — `saveAll` REPLACES: it is the restore half of `loadAll`, and a
+      // merge cannot express "this collection is gone", so anything the snapshot
+      // omits goes. An EMPTY record set therefore empties its collection.
+      //
+      // ⛔ WRITE FIRST, PRUNE SECOND — the order is the crash contract, not style.
+      // Deleting first and writing after passes every conformance case and loses
+      // data: `atomic-write.test.ts` case 5 tears the write mid-call, and a
+      // delete-then-write `saveAll` leaves the record GONE where the additive one
+      // left the previous version standing. Writing first means a torn call leaves
+      // STALE EXTRA records — recoverable by re-running the restore — instead of a
+      // hole. ⚠️ This is why the kit asserts the OUTCOME and not the mechanism:
+      // hub's `memoryStore` can delete first because nothing can crash between two
+      // synchronous Map operations, and to-browser-idb does both inside ONE
+      // readwrite transaction. On a filesystem neither is available.
+      //
+      // Reserved (`_`-prefixed) collections are never pruned — a partial snapshot
+      // must not strand `_keyring` — but ARE overwritten when the snapshot carries
+      // them, which is what makes a full restore possible.
       for (const [collName, records] of Object.entries(data)) {
-        const collDir = collectionDir(vault, collName)
-        await ensureDir(collDir)
+        await ensureDir(collectionDir(vault, collName))
         for (const [id, envelope] of Object.entries(records)) {
           // family#133 — a nested id needs its own parent, not just the collection
           // directory; `saveAll` had `put`'s ENOENT bug for the same reason.
@@ -316,6 +340,22 @@ export function toFile(options: JsonFileOptions): NoydbStore {
           await ensureDir(dirname(path))
           await atomicWrite(path, serialize(envelope))
         }
+      }
+
+      try {
+        for (const entry of await readdir(join(dir, vault), { withFileTypes: true })) {
+          if (!entry.isDirectory() || entry.name.startsWith('_')) continue
+          const records = data[entry.name]
+          if (records === undefined) {
+            await rm(collectionDir(vault, entry.name), { recursive: true, force: true })
+            continue
+          }
+          for (const id of await listIds(vault, entry.name)) {
+            if (!(id in records)) await unlink(recordPath(vault, entry.name, id))
+          }
+        }
+      } catch {
+        // No vault directory — an empty snapshot into a vault that does not exist.
       }
     },
 

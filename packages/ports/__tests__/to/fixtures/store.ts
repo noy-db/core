@@ -102,3 +102,30 @@ export function escapesNamespace(): NoydbStore {
     async delete(vault, collection, id) { return await inner.delete(...resolveTriple(vault, collection, id)) },
   }
 }
+
+/**
+ * ⛔ A CONTROL for family#147's `saveAll` half: a store whose `saveAll` MERGES
+ * instead of replacing.
+ *
+ * ⭐ This is the shape every existing bulk case passed, which is why the control
+ * exists at all — `saveAll writes all collections` and the `loadAll` round-trip
+ * both write into an empty vault, so additive and replacing implementations are
+ * indistinguishable to them. to-file really was additive until family#147.
+ *
+ * The defect is ONE thing: nothing is dropped first. An ordinary snapshot into an
+ * empty vault still behaves identically, so the cases that are not about
+ * replacement stay green and the failing count stays the attribution.
+ */
+export function mergesOnSaveAll(): NoydbStore {
+  const inner = memoryStore()
+  return {
+    ...inner,
+    async saveAll(vault, data) {
+      for (const [collection, records] of Object.entries(data)) {
+        for (const [id, envelope] of Object.entries(records)) {
+          await inner.put(vault, collection, id, envelope)
+        }
+      }
+    },
+  }
+}

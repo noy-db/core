@@ -199,12 +199,16 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
 
       const { store, complete } = await tx('readwrite')
       if (expectedVersion !== undefined) {
+        // family#147 — an absent record is at version 0, so the comparison runs even
+        // when nothing is stored: `0 === 0` creates (core#134), while a nonzero
+        // expectation against nothing conflicts instead of upserting. The `if
+        // (existing)` guard used to skip the check entirely in that case.
         const existing = await idbRequest(store.get(k))
-        if (existing) {
-          const env = obfuscate && '_e' in (existing as StoredValue) ? (existing as StoredValue)._e : existing as EncryptedEnvelope
-          if (env._v !== expectedVersion) {
-            throw new ConflictError(env._v, `Version conflict: expected ${expectedVersion}, found ${env._v}`)
-          }
+        const current = existing
+          ? (obfuscate && '_e' in (existing as StoredValue) ? (existing as StoredValue)._e : existing as EncryptedEnvelope)._v
+          : 0
+        if (current !== expectedVersion) {
+          throw new ConflictError(current, `Version conflict: expected ${expectedVersion}, found ${current}`)
         }
       }
 
@@ -282,6 +286,32 @@ function createIndexedDBAdapter(prefix: string, obfuscate: boolean, obfKey: stri
 
     async saveAll(vault, data) {
       const { store, complete } = await tx('readwrite')
+
+      // family#147 — `saveAll` REPLACES, so every non-underscore record in this
+      // vault goes first and the snapshot is written over the top; an empty record
+      // set therefore empties its collection. Underscore collections are left
+      // standing (a partial snapshot must not strand `_keyring`) but are overwritten
+      // when the snapshot carries them.
+      // ⛔ The deletes share the SAME readwrite transaction as the writes below, so a
+      // reader never observes the vault mid-replace. Doing it in a second
+      // transaction would open exactly that window.
+      const pfx = `${hashComponent(vault, obfuscate)}:`
+      for (const k of await idbRequest(store.getAllKeys()) as string[]) {
+        if (typeof k !== 'string' || !k.startsWith(pfx)) continue
+        let collection: string
+        if (obfuscate) {
+          const raw = await idbRequest(store.get(k))
+          if (!raw || typeof raw !== 'object' || !('_oc' in (raw as StoredValue))) continue
+          collection = xorDecode((raw as StoredValue)._oc, obfKey)
+        } else {
+          const colonIdx = k.slice(pfx.length).indexOf(':')
+          if (colonIdx < 0) continue
+          collection = k.slice(pfx.length, pfx.length + colonIdx)
+        }
+        if (collection.startsWith('_')) continue
+        store.delete(k)
+      }
+
       for (const [collection, records] of Object.entries(data)) {
         for (const [id, envelope] of Object.entries(records)) {
           const value = obfuscate ? { _oi: xorEncode(id, obfKey), _oc: xorEncode(collection, obfKey), _e: envelope } : envelope
