@@ -64,7 +64,7 @@ import { TabCoordinator, defaultLockManager, defaultChannel, type TabCoordinatio
 import { CrossTabWriteRelay } from '../with-sync/tab-write-relay.js'
 import {
   loadKeyring,
-  createOwnerKeyring,
+  createOwnerKeyringOrLoad, // family#164 — never the bare create; see that function
   assertKeyringOpenAllowed,
   changeSecret as keyringChangeSecret,
   listUsers as keyringListUsers,
@@ -2400,14 +2400,14 @@ export class Noydb {
     } catch (err) {
       if (err instanceof NoAccessError) {
         // No keyring on disk — first boot or cleared store.
-        keyring = await createOwnerKeyring(this.options.store, vault, ownerKeyringOptions(this.options, effectiveSecret))
+        keyring = await createOwnerKeyringOrLoad(this.options.store, vault, ownerKeyringOptions(this.options, effectiveSecret)) // family#164
       } else if (err instanceof InvalidKeyError && this.options.onInvalidKey === 'reset') {
         // Stale keyring: exists in the store but the current credentials can't
         // decrypt it (e.g. the data records were cleared while the _keyring row
         // survived, or a WebAuthn credential was rotated between sessions).
         // The caller opted into reset — delete the stale row and start fresh.
         await this.options.store.delete(vault, '_keyring', this.options.user)
-        keyring = await createOwnerKeyring(this.options.store, vault, ownerKeyringOptions(this.options, effectiveSecret))
+        keyring = await createOwnerKeyringOrLoad(this.options.store, vault, ownerKeyringOptions(this.options, effectiveSecret)) // family#164
       } else {
         throw err
       }
