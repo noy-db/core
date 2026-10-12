@@ -32,7 +32,9 @@ import {
   importRecipientKeyPair,
   recipientWrap,
   recipientUnwrap,
+  capabilities,
 } from '../../capsule/index.js'
+import { assertVaultPostureSupported } from '../../kernel/capsule-requirements.js'
 import { isConflictError, NoAccessError, PermissionDeniedError, PrivilegeEscalationError, MemberInboxMissingError, KeyringExpiredError, KeyringCorruptError, KeyringTamperedError, TamperedError, InvalidKeyError, ValidationError, DirectoryDisabledError, EchoCeremonyRequiredError } from '../../kernel/errors.js'
 import type { KeyringTamperedReason } from '../../kernel/errors.js'
 import { mintRosterTag, assertRosterAuthenticated, assertRosterTagValid } from './roster-tag.js'
@@ -370,6 +372,11 @@ export async function loadKeyring(
   opts: LoadKeyringOptions,
 ): Promise<UnlockedKeyring> {
   const { userId, secret } = opts
+  // family#156 point 3 — before the read. An encrypted vault derives a KEK from
+  // the secret (`authenticate`) and wraps its DEKs under it (`seal`); a capsule
+  // declaring neither cannot hold a keyring, and a plaintext vault never
+  // reaches here (`_getKeyringInternal` short-circuits to a plaintext keyring).
+  assertVaultPostureSupported(capabilities(), `loadKeyring("${vault}")`)
   const found = await readKeyringFile(store, vault, userId)
 
   if (!found) {
@@ -617,6 +624,8 @@ export async function createOwnerKeyring(
   opts: CreateOwnerKeyringOptions,
 ): Promise<UnlockedKeyring> {
   const { userId, secret } = opts
+  // family#156 point 3 — before the write, for the same reason as loadKeyring.
+  assertVaultPostureSupported(capabilities(), `createOwnerKeyring("${vault}")`)
   if (opts.validate && !opts.allowWeakSecret) {
     // `buildEchoBlock` only type-validates the 3-part secret via the
     // `encodeEchoParts` chokepoint — the STRENGTH gate for it still has to
