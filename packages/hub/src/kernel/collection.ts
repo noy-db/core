@@ -1166,12 +1166,17 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     // 4. Single sweep consent op — after the scan, before confirm (Oracle #5).
     await this.onAccess?.('find', '*')
 
-    // 5. Confirm-by-verify on the IN-HAND envelope (C-B) — the enclave verify
-    //    door via a dynamic import (the kernel spine reaches the enclave only
-    //    through import(), never a static deep import). NOT strategy.verify —
-    //    that re-fetches via ctx.getEnvelope AND emits a per-id 'verify' op.
+    // 5. Confirm-by-verify on the IN-HAND envelope (C-B) — through the capsule
+    //    DOOR via a dynamic import. Dynamic because this is eager kernel: a
+    //    static door import here would name `verifyDigestField` in every
+    //    consumer's entry prologue and pull the PBKDF2 oracle into the floor
+    //    bundle. family#168 changed the specifier, not the laziness — it used
+    //    to reach `capsule/enclave-aes/classify/verify.js` directly, so a build
+    //    bound to another capsule ran the REFERENCE oracle here.
+    //    NOT strategy.verify — that re-fetches via ctx.getEnvelope AND emits a
+    //    per-id 'verify' op.
     if (hits.length === 0) return []
-    const { verifyDigestField } = await import('../capsule/enclave-aes/classify/verify.js')
+    const { verifyDigestField } = await import('../capsule/index.js')
     const policy: VdigFieldPolicy = {
       normalize: spec.verifyNormalize ?? 'password',
       notLastN: spec.notLastN ?? 0,

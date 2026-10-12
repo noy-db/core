@@ -131,6 +131,10 @@ export interface EnclaveModule<K = unknown> {
   decryptBytesWithAAD(iv: string, data: string, dek: K, aad: Uint8Array): Promise<Uint8Array>
   deriveVdigSlotKey(cek: K, collectionName: string, field: string): Promise<K>
   pbkdf2VerifyDigest(value: string, salt: Uint8Array, iterations: number): Promise<Uint8Array>
+  /** family#168 — promoted to a capsule primitive alongside `pbkdf2VerifyDigest`
+   *  when the verify engines moved into hub's shared plumbing. A capsule that
+   *  refuses `classify` must refuse this one too, or the group is MIXED. */
+  blindedEqual(a: Uint8Array, b: Uint8Array): Promise<boolean>
   ctEqualTags(a: Uint8Array, b: Uint8Array): boolean
   evaluateKofN(results: readonly boolean[], min: number): boolean
   deriveClassifyIndexKey(dek: K, collection: string, field: string): Promise<K>
@@ -217,6 +221,11 @@ export async function assertGroupRefuses<K>(
     classify: [
       ['deriveVdigSlotKey', () => enclave.deriveVdigSlotKey(cek, 'c', 'f')],
       ['pbkdf2VerifyDigest', () => enclave.pbkdf2VerifyDigest('v', new Uint8Array(32), 1_000)],
+      // family#168. ⚠️ Listed here and not only on the type: the group-
+      // consistency guarantee is what this map buys, and a new group member
+      // that nothing calls is exactly how a MIXED group passes — one function
+      // silently working while its siblings refuse.
+      ['blindedEqual', () => enclave.blindedEqual(new Uint8Array(32), new Uint8Array(32))],
       ['deriveClassifyIndexKey', () => enclave.deriveClassifyIndexKey(dek, 'c', 'f')],
       ['deriveClassifyIndexSalt', () => enclave.deriveClassifyIndexSalt(dek, 'c', 'f')],
       ['mintBidxTag', () => enclave.mintBidxTag('v', dek, 'c', 'f')],

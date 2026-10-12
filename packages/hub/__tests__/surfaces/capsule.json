@@ -5,6 +5,7 @@
     "CapsuleNotSupportedError",
     "KEY_BITS",
     "TamperedError",
+    "VDIG_ITERATIONS",
     "assertCapsuleSupports",
     "base64ToBuffer",
     "bufferToBase64",

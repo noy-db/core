@@ -25,6 +25,10 @@
  * capsule surface stays one import for consumers.
  */
 import type { CapsulePrimitives } from '../contract.js'
+import type { ClassifyVerifyDeps, VerifyEngineCtx } from './classify-verify.js'
+import type { RevealEngineCtx } from './classify-reveal.js'
+import type { VerifyNormalizeMode } from './normalize.js'
+import type { VdigFieldPolicy, ClassifiedVerdict } from '../../kernel/types.js'
 import { makeEnvelopeBody } from './envelope-body.js'
 import { makeSealedSlot } from './sealed-slot.js'
 import { makeSealedSlots } from './sealed-slots.js'
@@ -51,6 +55,12 @@ export {
   buildDeleteMarker,
 } from './tombstone.js'
 export { normalizeForVerify } from './normalize.js'
+// ⚠️ The ENGINE CTX types only. `ClassifyVerifyDeps`/`ClassifyRevealDeps` stay
+// unexported from here on purpose: they are what `makeCapsule()` assembles out
+// of a capsule's primitives, so a capsule author never names them, and knip is
+// right to call a re-export of them dead.
+export type { VerifyEngineCtx } from './classify-verify.js'
+export type { RevealEngineCtx } from './classify-reveal.js'
 export { parseSealedSlot } from './sealed-slot.js'
 export {
   requireSealedBody,
@@ -74,7 +84,52 @@ export function makeCapsule(p: CapsulePrimitives) {
   const sealedSlots = makeSealedSlots(p, sealedSlot)
   const codec = makeRecordCodec(p, sealedSlots)
 
+  // ─── the classify engines, bound LAZILY (family#168) ────────────────
+  //
+  // ⛔ THE `import()` BELOW IS THE WHOLE DESIGN, not a style choice. The four
+  // orchestrators are hub's verify PROTOCOL — the C4 timing pad, the R6
+  // refusal, the k-of-n denominator — so they belong in the shared plumbing,
+  // and family#168 moved them here. But they are also a PBKDF2 oracle that a
+  // consumer who never calls `reveal`/`verify` must not pay for, and
+  // `makeCapsule()` is called at module scope by every capsule: spreading the
+  // engines in eagerly would put them in the floor bundle of every build.
+  //
+  // So the capsule's surface gains four thunks and the engine modules stay
+  // separate chunks, loaded on the first call. The laziness that used to live
+  // at `via/classified/active.ts`'s dynamic import now lives HERE — which is
+  // why the call sites can finally go through the door.
+  //
+  // ⚠️ Binding is per-call, like the rest of this function: the deps object
+  // closes over THIS capsule's primitives, so two capsules in one process get
+  // two engines over two ciphers. A module-level `let` here would give the
+  // second capsule the first one's oracle and both suites would still pass.
+  const classify: ClassifyVerifyDeps = {
+    pbkdf2VerifyDigest: p.pbkdf2VerifyDigest,
+    blindedEqual: p.blindedEqual,
+    openVdigPayload: p.openVdigPayload,
+    dualReadSealedSlot: sealedSlot.dualReadSealedSlot,
+  }
+
   return {
+    revealSealedField: (ctx: RevealEngineCtx, id: string, field: string): Promise<unknown> =>
+      import('./classify-reveal.js').then((m) => m.revealSealedField(classify, ctx, id, field)),
+    verifyDigestField: (
+      ctx: VerifyEngineCtx, id: string, field: string, candidate: string, policy: VdigFieldPolicy,
+    ): Promise<ClassifiedVerdict> =>
+      import('./classify-verify.js').then((m) => m.verifyDigestField(classify, ctx, id, field, candidate, policy)),
+    verifyTextField: (
+      ctx: VerifyEngineCtx, id: string, field: string, candidate: string, normalize: VerifyNormalizeMode,
+    ): Promise<ClassifiedVerdict> =>
+      import('./classify-verify.js').then((m) => m.verifyTextField(classify, ctx, id, field, candidate, normalize)),
+    matchGroupFields: (
+      ctx: VerifyEngineCtx,
+      id: string,
+      answers: Record<string, string>,
+      members: ReadonlyArray<{ readonly field: string; readonly policy: VdigFieldPolicy }>,
+      opts: { readonly min: number },
+    ): Promise<{ readonly passed: boolean }> =>
+      import('./classify-verify.js').then((m) => m.matchGroupFields(classify, ctx, id, answers, members, opts)),
+
     ...envelopeBody,
     ...sealedSlot,
     ...sealedSlots,

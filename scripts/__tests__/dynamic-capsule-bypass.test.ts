@@ -1,6 +1,7 @@
 /**
- * family#169 — `check-architecture`'s `capsule-door-only` rule now covers a
- * DYNAMIC `import('…')`, not just a static clause.
+ * family#169 — `check-architecture`'s `capsule-door-only` rule covers a
+ * DYNAMIC `import('…')`, not just a static clause. family#168 then emptied the
+ * grandfather map it shipped with, so the last case asserts the map's ABSENCE.
  *
  * ⛔ Why it was needed: the check carried a carve-out saying a dynamic import
  * "is not statically analyzable here". That is true of a COMPUTED specifier and
@@ -81,21 +82,39 @@ describe('check-architecture — capsule-door-only covers dynamic imports', () =
   })
 
   /**
-   * ⭐ The ratchet half. A grandfathered entry that no longer matches the tree
-   * must FAIL, or the map decays into a permanent exemption nobody re-reads —
-   * which is how the original carve-out survived long enough to hide six sites.
+   * ⭐ family#168 — the grandfather map is GONE, and this case is what stops it
+   * coming back. #169 created it with five rows and said they were waiting on a
+   * contract decision; the decision promoted two primitives and moved the four
+   * classify orchestrators into `capsule/plumbing/`, which routed all five.
+   *
+   * ⛔ A map here is not a smaller version of the fix, it is a different
+   * outcome: a row buys the laziness and silently keeps the REFERENCE capsule,
+   * while a `makeCapsule()` thunk buys both. So the absence is asserted, and
+   * the failure message must point at the thunk — otherwise the next author
+   * reads "import the door" as impossible for a lazy call site and adds a row.
    */
-  it('the grandfather map is a closed set with a stale-entry guard', () => {
+  it('has no grandfather map, and says where an unroutable orchestrator goes', () => {
     const src = readFileSync(SCRIPT, 'utf8')
-    expect(src).toMatch(/DYNAMIC_ENCLAVE_BYPASS\s*=\s*new Map\(/)
-    expect(src).toMatch(/no longer dynamically imports/)
-    // Exactly the five sites measured on family#169 — two specifiers in
-    // via/classified/active.ts and one in kernel/collection.ts. If this count
-    // changes, the map changed, and that is a decision to make deliberately.
-    // ⚠️ Slice the LITERAL, not from the identifier: the comment above the map
-    // names those paths too, and counting them conflated prose with rows.
-    const start = src.indexOf('DYNAMIC_ENCLAVE_BYPASS = new Map(')
-    const map = src.slice(start, src.indexOf('])', start))
-    expect(map.match(/'[^']*capsule\/enclave-aes\/[^']*'/g)?.length).toBe(3)
+    expect(src).not.toMatch(/DYNAMIC_ENCLAVE_BYPASS\s*=\s*new Map\(/)
+    // No leftover stale-row machinery either — a guard with nothing to guard
+    // reads as a map that merely happens to be empty right now.
+    expect(src).not.toMatch(/no longer dynamically imports/)
+    expect(src).toMatch(/bind it in makeCapsule\(\)/)
+  })
+
+  /**
+   * The routing is only real if the classify engines actually left the capsule.
+   * A door-shaped `import()` at the call site with the engines still inside
+   * `enclave-aes/classify/` would pass every case above.
+   */
+  it('the classify orchestrators live in the plumbing, not in enclave-aes', () => {
+    const plumbing = REPO_ROOT + 'packages/hub/src/capsule/plumbing/'
+    for (const f of ['classify-verify.ts', 'classify-reveal.ts']) {
+      expect(existsSync(plumbing + f), `${f} must be plumbing — identical for every capsule`).toBe(true)
+    }
+    const enclave = REPO_ROOT + 'packages/hub/src/capsule/enclave-aes/classify/'
+    for (const f of ['verify.ts', 'reveal.ts']) {
+      expect(existsSync(enclave + f), `${f} moved to the plumbing; a copy here is the drift`).toBe(false)
+    }
   })
 })
