@@ -4,12 +4,12 @@
  * tests nothing. Every check runs without a secret.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { applyFixes, doctor, formatReport, type DoctorReport } from '../src/commands/doctor.js'
+import { applyFixes, doctor, formatReport, runDoctor, type DoctorReport } from '../src/commands/doctor.js'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'noy-db-doctor-')) })
@@ -126,6 +126,67 @@ describe('doctor — recovery (NOY-R), read from the store without a secret', ()
     const mod = await storeModule({ acme: {} })
     const c = await project({ config: `import { store } from '${mod}'\nexport default { user: 'alice', store }` })
     expect(ids(await run(c)).filter((i) => i.startsWith('NOY-R'))).toEqual([])
+  })
+})
+
+/** An installed satellite under `root/node_modules`. `exportsField` is verbatim so a test can
+ *  ship a CJS-only `.` condition — the shape D006 exists for. */
+async function satellite(name: string, opts: { exportsField?: unknown; entry?: string } = {}) {
+  const dir = join(root, 'node_modules', '@noy-db', name)
+  await mkdir(dir, { recursive: true })
+  const pkg: Record<string, unknown> = { name: `@noy-db/${name}`, version: '0.0.0' }
+  pkg['exports'] = opts.exportsField ?? { '.': { import: './index.mjs' } }
+  await writeFile(join(dir, 'package.json'), JSON.stringify(pkg))
+  if (opts.entry !== undefined) await writeFile(join(dir, 'index.mjs'), opts.entry)
+  return `@noy-db/${name}`
+}
+
+describe('doctor — satellite registration (family#123)', () => {
+  const withSat = (name: string) => project({ manifest: { name: 'p', dependencies: { '@noy-db/hub': '0.0.0', [name]: '0.0.0' } } })
+
+  it('D006 fires on a CJS-only root entry; control: an ESM entry is scanned silently', async () => {
+    const cjs = await satellite('to-cjs', { exportsField: { '.': { require: './index.cjs' } }, entry: '' })
+    const r = await run(await withSat(cjs), { noSatellites: false })
+    expect(r.findings.find((x) => x.id === 'NOY-D006')?.message).toContain(cjs)
+    expect(r.findings.find((x) => x.id === 'NOY-D006')?.level).toBe('info')
+
+    const esm = await satellite('to-esm', { entry: 'export const noydbDoctorChecks = []\n' })
+    expect(has(await run(await withSat(esm), { noSatellites: false }), 'NOY-D006')).toBe(false)
+  })
+
+  it('D006 stays silent for a subpath-only package — @noy-db/ports has no `.` export by design', async () => {
+    // Measured on 0.10.0-pre.1: of core's ten published packages, `ports` is the
+    // one whose exports map carries no `.`. It is not broken and its author has
+    // nothing to fix, so a finding here would be a mis-diagnosis in every
+    // project that installs it — and would newly exit 1 under --fail-level=info.
+    const subpathOnly = await satellite('ports-like', { exportsField: { './to': { import: './to.mjs' } } })
+    expect(has(await run(await withSat(subpathOnly), { noSatellites: false }), 'NOY-D006')).toBe(false)
+  })
+
+  it('D007 fires on an entry that is not a check; control: a well-formed check is collected and RUNS', async () => {
+    const bad = await satellite('to-bad', { entry: 'export const noydbDoctorChecks = [{ id: "X001" }]\n' })
+    const r = await run(await withSat(bad), { noSatellites: false })
+    expect(r.findings.find((x) => x.id === 'NOY-D007')?.message).toContain(bad)
+
+    // The control is what keeps D007's absence from being vacuous: it proves the
+    // collection path reaches a satellite check at all, so "no D007" means
+    // "accepted", not "never looked".
+    const good = await satellite('to-good', {
+      entry: 'export const noydbDoctorChecks = [{ id: "X002", run: () => [{ id: "X002", level: "warn", message: "from the satellite", fix: "none" }] }]\n',
+    })
+    const r2 = await run(await withSat(good), { noSatellites: false })
+    expect(has(r2, 'NOY-D007')).toBe(false)
+    expect(r2.findings.find((x) => x.id === 'X002')?.message).toBe('from the satellite')
+  })
+
+  it('--no-satellites is named in the help, beside the fact that doctor imports node_modules code', async () => {
+    const out: string[] = []
+    const w = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((c: string) => { out.push(String(c)); return true }) as typeof process.stdout.write
+    try { await runDoctor(['--help']) } finally { process.stdout.write = w }
+    const help = out.join('')
+    expect(help).toContain('--no-satellites')
+    expect(help).toMatch(/imports every installed .*@noy-db\/\*.* dependency except hub/)
   })
 })
 
