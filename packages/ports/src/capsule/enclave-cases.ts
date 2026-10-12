@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { EnclaveNotSupportedError } from '@noy-db/hub'
 import type { EncryptedEnvelope } from '@noy-db/hub'
 import {
+  PRIMITIVE_GROUPS,
+  GROUPS_WITHOUT_PRIMITIVES,
+  PRIMITIVES_NOT_ON_THE_DOOR,
+} from '@noy-db/hub/capsule'
+import {
   ALL_VECTORS,
   VECTOR_1_PLAIN,
   VECTOR_2_PER_RECORD_KEY,
@@ -121,6 +126,13 @@ export interface EnclaveModule<K = unknown> {
   // ─── optional group: deterministic ─────────────────────────────────
   encryptDeterministic(plaintext: string, dek: K, context: string): Promise<{ iv: string; data: string }>
   decryptDeterministic(iv: string, data: string, dek: K): Promise<string>
+  /** ⭐ FOUND BY `assertPrimitiveTagsCovered` ON ITS FIRST RUN (family#168).
+   *  A real `deterministic` primitive that this suite never called: a capsule
+   *  could refuse `encryptDeterministic` while this one silently worked, and the
+   *  group-consistency guarantee reported a clean refusal. The gap was invisible
+   *  because the hand-written call table listed `decryptDeterministic` — a door
+   *  export, not a primitive — and the two names read alike. */
+  deriveDeterministicKey(dek: K): Promise<K>
 
   // ─── optional group: per-record keys ───────────────────────────────
   wrapCek(cek: K, dek: K): Promise<string>
@@ -159,7 +171,26 @@ export interface EnclaveConformanceOptions {
   }
 }
 
-/** The stable code every `EnclaveNotSupportedError` (or fork subclass) carries. */
+/**
+ * The codes a group refusal may carry.
+ *
+ * ⛔ TWO, AND THAT IS THE WHOLE POINT (family#168). This was a single code —
+ * `EnclaveNotSupportedError`'s `ENCLAVE_NOT_SUPPORTED` — while the shipped
+ * `exclave-plain` threw `CapsuleNotSupportedError`'s `CAPSULE_NOT_SUPPORTED`.
+ * So every one of that capsule's correct refusals was reported here as "refused,
+ * but not via EnclaveNotSupportedError", i.e. as a contract violation. Nothing
+ * caught it because the reference capsule supports every group and never takes
+ * the refusal branch — the kit's refusal half is exercised only by a synthetic
+ * stub, which was built against the class the kit already matched.
+ *
+ * `CAPSULE_NOT_SUPPORTED` is canonical; the enclave code is accepted so a fork
+ * already throwing the deprecated class keeps passing.
+ */
+const NOT_SUPPORTED_CODES: readonly string[] = [
+  'CAPSULE_NOT_SUPPORTED',
+  new EnclaveNotSupportedError('sealing').code,
+]
+/** Kept for the single-code assertion at the one `toThrowError` site below. */
 const NOT_SUPPORTED_CODE = new EnclaveNotSupportedError('sealing').code
 
 /**
@@ -180,10 +211,14 @@ export type ConformanceGroup = 'sealing' | 'deterministic' | 'per-record-keys' |
  *
  * ⚠️ Matches on the CODE, not `instanceof`. A fork's capsule may throw its own
  * error subclass, and those are exactly the implementations this suite exists
- * to validate — an `instanceof` check would reject them for being forks.
+ * to validate — an `instanceof` check would reject them for being forks. It is
+ * also why the two-code defect above was survivable: matching by class would
+ * have failed loudly for every fork instead of quietly for one.
  */
 function isNotSupportedRefusal(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === NOT_SUPPORTED_CODE
+  if (typeof err !== 'object' || err === null) return false
+  const code = (err as { code?: unknown }).code
+  return typeof code === 'string' && NOT_SUPPORTED_CODES.includes(code)
 }
 
 /**
@@ -199,13 +234,21 @@ function isNotSupportedRefusal(err: unknown): boolean {
  * self-test proves a MIXED group (one function silently works while its
  * sibling refuses) is actually caught, not just the fully-consistent cases.
  */
-export async function assertGroupRefuses<K>(
+/**
+ * The per-group call table, hoisted out of {@link assertGroupRefuses} so the
+ * coverage check below can read its NAMES without running anything.
+ *
+ * ⚠️ The thunks capture `enclave`/`dek`/`cek` but never run at construction, so
+ * reading the names with placeholder arguments is safe — and it is what lets
+ * `assertPrimitiveTagsCovered` compare this table against hub's published
+ * `PRIMITIVE_GROUPS` instead of a reader comparing them by eye.
+ */
+function groupChecks<K>(
   enclave: EnclaveModule<K>,
-  group: ConformanceGroup,
-): Promise<string[]> {
-  const dek = await enclave.generateDEK()
-  const cek = await enclave.generateDEK()
-  const checks: Record<ConformanceGroup, ReadonlyArray<readonly [string, () => Promise<unknown>]>> = {
+  dek: K,
+  cek: K,
+): Record<ConformanceGroup, ReadonlyArray<readonly [string, () => Promise<unknown>]>> {
+  return {
     sealing: [
       ['deriveSealedFieldKey', () => enclave.deriveSealedFieldKey(dek, 'c', 'f')],
       ['deriveSealedFieldKeyFromCek', () => enclave.deriveSealedFieldKeyFromCek(dek, 'c', 'f')],
@@ -213,6 +256,7 @@ export async function assertGroupRefuses<K>(
     deterministic: [
       ['encryptDeterministic', () => enclave.encryptDeterministic('v', dek, 'c/f')],
       ['decryptDeterministic', () => enclave.decryptDeterministic('iv', 'data', dek)],
+      ['deriveDeterministicKey', () => enclave.deriveDeterministicKey(dek)],
     ],
     'per-record-keys': [
       ['wrapCek', () => enclave.wrapCek(cek, dek)],
@@ -232,6 +276,59 @@ export async function assertGroupRefuses<K>(
       ['computeBidxTarget', () => enclave.computeBidxTarget('v', 'password', dek, 'c', 'f')],
     ],
   }
+}
+
+/**
+ * Assert that every PRIMITIVE hub tags with this group is actually exercised
+ * above — the cannot-drift half of family#168's tag table.
+ *
+ * ⭐ WHY IT EXISTS. The table above is hand-written, and a group member nothing
+ * calls is exactly how a MIXED group passes the consistency guarantee: one
+ * function silently works while its siblings refuse, and the kit reports a
+ * clean refusal. That is not hypothetical — `blindedEqual` became a `classify`
+ * primitive and had to be added here by hand in the same arc, with nothing but
+ * a reviewer between the omission and a false green.
+ *
+ * ⚠️ IT REACHES 15 OF 18 PRIMITIVES, and says so rather than claiming all of
+ * them. `mintVdigSlot`, `openVdigPayload` and `sealVdigPayload`
+ * (`PRIMITIVES_NOT_ON_THE_DOOR`) are codec-internal: the record codec calls
+ * them, nothing outside `capsule/` does, and putting them on the door would
+ * publish the `_vdig` payload format as consumer-facing API. A check that
+ * iterated 15 and reported "every primitive" would be asserting a conjunction
+ * it never evaluated.
+ *
+ * Returns the tagged-but-unexercised primitive names (empty = covered).
+ */
+export function assertPrimitiveTagsCovered(group: ConformanceGroup): string[] {
+  // Names only — nothing is invoked, so the placeholder module is never touched.
+  const stub = new Proxy({}, { get: () => () => Promise.resolve() }) as EnclaveModule<unknown>
+  const exercised = new Set(groupChecks(stub, undefined, undefined)[group].map(([name]) => name))
+  const unreachable = new Set<string>(PRIMITIVES_NOT_ON_THE_DOOR)
+  return Object.entries(PRIMITIVE_GROUPS)
+    .filter(([name, g]) => g === group && !unreachable.has(name) && !exercised.has(name))
+    .map(([name]) => name)
+}
+
+/**
+ * Why a group has no primitives, or `undefined` if it has some.
+ *
+ * ⛔ A completeness check MUST distinguish "no unimplemented primitive" from
+ * "no primitive to check" — the same green, different facts. `authenticate` and
+ * `seal` are posture groups asserted from the `enclave-`/`exclave-` package
+ * name; `digest` and `sign` are shared plumbing. Reporting a vacuous pass for
+ * the two the prefix rule hangs on is worse than reporting nothing.
+ */
+export function groupWithoutPrimitives(group: string): string | undefined {
+  return (GROUPS_WITHOUT_PRIMITIVES as Record<string, string | undefined>)[group]
+}
+
+export async function assertGroupRefuses<K>(
+  enclave: EnclaveModule<K>,
+  group: ConformanceGroup,
+): Promise<string[]> {
+  const dek = await enclave.generateDEK()
+  const cek = await enclave.generateDEK()
+  const checks = groupChecks(enclave, dek, cek)
 
   const didNotRefuse: string[] = []
   for (const [name, fn] of checks[group]) {
@@ -239,7 +336,7 @@ export async function assertGroupRefuses<K>(
       await fn()
       didNotRefuse.push(name) // resolved — did not refuse at all
     } catch (err) {
-      if (!isNotSupportedRefusal(err)) didNotRefuse.push(name) // refused, but not via EnclaveNotSupportedError
+      if (!isNotSupportedRefusal(err)) didNotRefuse.push(name) // refused, but not with a not-supported code
     }
   }
   return didNotRefuse
@@ -264,6 +361,40 @@ const HEADER_REF = { ...REF, tier: HEADER_FIXTURE._tier, by: HEADER_FIXTURE._by 
  */
 export function runEnclaveConformance<K>(enclave: EnclaveModule<K>, opts: EnclaveConformanceOptions): void {
   describe('Enclave Conformance', () => {
+    // family#168 — the tag table and this suite must agree, and nothing but a
+    // reviewer checked that before. Runs for EVERY capsule, supported groups
+    // included: an uncovered primitive is a defect in the kit, not in the
+    // capsule under test, so it must not hide behind `supports`.
+    describe('primitive tag coverage (family#168)', () => {
+      for (const group of ['sealing', 'deterministic', 'per-record-keys', 'classify'] as const) {
+        it(`exercises every primitive hub tags "${group}"`, () => {
+          expect(
+            assertPrimitiveTagsCovered(group),
+            `hub tags these primitives "${group}" and this kit never calls them — a group ` +
+            `member nothing calls is how a MIXED group passes. Add them to groupChecks().`,
+          ).toEqual([])
+        })
+      }
+      it('names the groups it cannot speak for, instead of passing vacuously', () => {
+        // ⛔ The assertion is on the EXEMPTION LIST, not on a skipped test. A
+        // group with no primitives silently producing a green is the thing
+        // this case exists to make impossible to read as coverage.
+        expect(Object.keys(GROUPS_WITHOUT_PRIMITIVES).sort()).toEqual(
+          ['authenticate', 'digest', 'seal', 'sign'],
+        )
+        for (const [group, why] of Object.entries(GROUPS_WITHOUT_PRIMITIVES)) {
+          expect(why, `${group} must say WHY it has no primitive`).toMatch(/posture|plumbing/)
+        }
+      })
+      it('reaches 15 of 18 primitives, and the other 3 are codec-internal', () => {
+        expect(Object.keys(PRIMITIVE_GROUPS)).toHaveLength(18)
+        expect([...PRIMITIVES_NOT_ON_THE_DOOR].sort())
+          .toEqual(['mintVdigSlot', 'openVdigPayload', 'sealVdigPayload'])
+        for (const name of PRIMITIVES_NOT_ON_THE_DOOR) {
+          expect(PRIMITIVE_GROUPS[name], `${name} must still carry a group tag`).toBe('classify')
+        }
+      })
+    })
     describe('envelope body round-trip', () => {
       it('encrypted body: write -> open recovers identical JSON; header fields untouched', async () => {
         const dek = await enclave.generateDEK()

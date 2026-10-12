@@ -3,7 +3,10 @@
   "entry": "./dist/capsule/contract.js",
   "values": [
     "CapsuleNotSupportedError",
+    "GROUPS_WITHOUT_PRIMITIVES",
     "KEY_BITS",
+    "PRIMITIVES_NOT_ON_THE_DOOR",
+    "PRIMITIVE_GROUPS",
     "TamperedError",
     "VDIG_ITERATIONS",
     "assertCapsuleSupports",
