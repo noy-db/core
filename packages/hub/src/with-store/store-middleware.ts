@@ -28,17 +28,85 @@ import type { NoydbStore, EncryptedEnvelope } from '../kernel/types.js'
  * compose left-to-right via `wrapStore()`: the first argument is outermost
  * (first to intercept requests, last to process responses).
  *
+ * ⛔ **Do not write `{ ...next, get() {…} }`** — this example used to, and it
+ * taught the defect family#173 fixed. A spread copies own enumerable properties
+ * only, so a store implemented as a class loses every prototype method the
+ * middleware does not redeclare (`listPage`, `tx`, `getStoreTime`, …) and hub
+ * silently takes its fallback paths. Build the wrapper over `next` instead:
+ *
  * ```ts
- * const mw: StoreMiddleware = (next) => ({
- *   ...next,
- *   async get(vault, collection, id) {
+ * const mw: StoreMiddleware = (next) => {
+ *   const log = async (vault: string, collection: string, id: string) => {
  *     console.log('get', id)
  *     return next.get(vault, collection, id)
- *   },
- * })
+ *   }
+ *   return new Proxy(next, {
+ *     get: (t, p) => (p === 'get' ? log : Reflect.get(t, p, t)),
+ *   })
+ * }
  * ```
+ *
+ * ⚠️ The snippet above is the shape, simplified: the real `overlay()` in this
+ * module also binds forwarded methods to the wrapped store (so a class store's
+ * `#private` fields keep working) and caches them (so a method reference is
+ * stable). A middleware doing this by hand should do both.
  */
 export type StoreMiddleware = (next: NoydbStore) => NoydbStore
+
+/**
+ * Compose `overrides` over `next` without a spread (family#173).
+ *
+ * ⛔ `{ ...next, get() {…} }` WAS THE SHAPE OF ALL SIX MIDDLEWARES AND IT IS A
+ * DEFECT, not a style choice. A spread copies OWN ENUMERABLE properties only,
+ * so wrapping a store implemented as a CLASS dropped every prototype method the
+ * middleware did not itself redeclare — `listPage`, `tx`, `getStoreTime`,
+ * `listSince`, `ping`, `presignUrl`, `estimateUsage`. Hub reads those by
+ * `typeof store.x === 'function'` to decide whether to delegate, so the
+ * capability silently became absent and hub took its fallback path. Nothing
+ * failed; a paging store simply stopped paging.
+ *
+ * ⚠️ NO STORE IN core, to OR in IS CLASS-BASED TODAY, so the exposure is
+ * third-party only — which is precisely why it survived: every suite here
+ * passes either way, and the bug lives in the one consumer no test in this repo
+ * can have.
+ *
+ * ⚠️ `Reflect.apply(fn, target, args)` binds `this` to the WRAPPED STORE, not
+ * the proxy. Load-bearing for a class store with `#private` fields: called with
+ * the proxy as receiver, a method touching `#field` throws "Cannot read private
+ * member" — a failure that looks nothing like a middleware bug.
+ *
+ * ⚠️ Same shape as `kernel/store-segment-guard.ts`'s guard, kept separate on
+ * purpose: that one VALIDATES before forwarding and this one SUBSTITUTES. If a
+ * third appears, extract one helper then — two uses is not yet a pattern, and a
+ * premature shared abstraction would have to carry both behaviours.
+ */
+function overlay(next: NoydbStore, overrides: Partial<NoydbStore>): NoydbStore {
+  const bound = new WeakMap<object, unknown>()
+  return new Proxy(next, {
+    get(target, prop) {
+      // An override wins, including a deliberately `undefined` one — that is
+      // how `{ ...next, listPage: undefined }` used to read, and hub's
+      // `typeof === 'function'` check treats it as absent either way.
+      if (Object.prototype.hasOwnProperty.call(overrides, prop)) {
+        return (overrides as Record<string | symbol, unknown>)[prop]
+      }
+      const value = Reflect.get(target, prop, target)
+      if (typeof value !== 'function') return value
+      const cached = bound.get(value as object)
+      if (cached !== undefined) return cached
+      // Cached so `store.listPage === store.listPage`. A fresh closure per
+      // access is observable, and a consumer caching a method reference would
+      // get a different function every time.
+      const forward = (...args: unknown[]): unknown =>
+        Reflect.apply(value as (...a: unknown[]) => unknown, target, args)
+      bound.set(value as object, forward)
+      return forward
+    },
+    has(target, prop) {
+      return Object.prototype.hasOwnProperty.call(overrides, prop) || Reflect.has(target, prop)
+    },
+  })
+}
 
 /**
  * Wrap a store with one or more middlewares. Middlewares compose left-to-right.
@@ -103,8 +171,7 @@ export function withRetry(opts: RetryOptions = {}): StoreMiddleware {
     throw lastError
   }
 
-  return (next) => ({
-    ...next,
+  return (next) => overlay(next, {
     name: next.name ? `retry(${next.name})` : 'retry',
     get: (v, c, id) => retryable(() => next.get(v, c, id)),
     put: (v, c, id, env, ev) => retryable(() => next.put(v, c, id, env, ev)),
@@ -168,8 +235,7 @@ export function withLogging(opts: LoggingOptions = {}): StoreMiddleware {
     )
   }
 
-  return (next) => ({
-    ...next,
+  return (next) => overlay(next, {
     name: next.name ? `log(${next.name})` : 'log',
     get: (v, c, id) => timed('get', { vault: v, collection: c, id }, () => next.get(v, c, id)),
     put: (v, c, id, env, ev) => timed('put', {
@@ -244,8 +310,7 @@ export function withMetrics(opts: MetricsOptions): StoreMiddleware {
     )
   }
 
-  return (next) => ({
-    ...next,
+  return (next) => overlay(next, {
     name: next.name ? `metrics(${next.name})` : 'metrics',
     get: (v, c, id) => tracked('get', v, () => next.get(v, c, id), c, id),
     put: (v, c, id, env, ev) => tracked('put', v, () => next.put(v, c, id, env, ev), c, id),
@@ -340,8 +405,7 @@ export function withCircuitBreaker(opts: CircuitBreakerOptions = {}): StoreMiddl
     }
   }
 
-  return (next) => ({
-    ...next,
+  return (next) => overlay(next, {
     name: next.name ? `cb(${next.name})` : 'cb',
     get: (v, c, id) => guarded(() => next.get(v, c, id), null),
     put: (v, c, id, env, ev) => guarded(() => next.put(v, c, id, env, ev), undefined),
@@ -422,8 +486,7 @@ export function withCache(opts: StoreCacheOptions = {}): StoreMiddleware {
     cache.delete(key)
   }
 
-  return (next) => ({
-    ...next,
+  return (next) => overlay(next, {
     name: next.name ? `cache(${next.name})` : 'cache',
 
     async get(vault, collection, id) {
@@ -522,8 +585,7 @@ export function withHealthCheck(opts: HealthCheckOptions = {}): StoreMiddleware 
     // Start checking
     setInterval(() => { void doCheck() }, intervalMs)
 
-    const wrapped: NoydbStore = {
-      ...next,
+    const wrapped: NoydbStore = overlay(next, {
       name: next.name ? `health(${next.name})` : 'health',
 
       async get(v, c, id) { return isSuspended ? null : next.get(v, c, id) },
@@ -532,7 +594,7 @@ export function withHealthCheck(opts: HealthCheckOptions = {}): StoreMiddleware 
       async list(v, c) { return isSuspended ? [] : next.list(v, c) },
       async loadAll(v) { return isSuspended ? {} : next.loadAll(v) },
       async saveAll(v, d) { if (!isSuspended) await next.saveAll(v, d) },
-    }
+    })
 
     return wrapped
   }
