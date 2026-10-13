@@ -1908,7 +1908,8 @@ export type ConflictStrategy =
  * Overrides the db-level `conflict` option for the specific collection.
  *
  * - `'last-writer-wins'` — higher `_ts` wins (timestamp LWW).
- * - `'first-writer-wins'` — lower `_v` wins (earlier version is preserved).
+ * - `'first-writer-wins'` — lower `_v` wins (earlier version is preserved); on a
+ *   tie the copy already on the remote wins, since it reached the remote first.
  * - `'manual'` — emits `sync:conflict` with a `resolve` callback. Call
  *   `resolve(winner)` synchronously to commit or `resolve(null)` to defer.
  * - Custom fn — synchronous `(local: T, remote: T) => T`. Must be pure.

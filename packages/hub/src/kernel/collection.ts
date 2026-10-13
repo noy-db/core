@@ -789,7 +789,7 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
       if (policy === 'last-writer-wins') {
         resolver = async (_id, local, remote) => (local._ts >= remote._ts ? local : remote)
       } else if (policy === 'first-writer-wins') {
-        resolver = async (_id, local, remote) => (local._v <= remote._v ? local : remote)
+        resolver = async (_id, local, remote) => (local._v < remote._v ? local : remote)
       } else if (policy === 'manual') {
         resolver = (id, local, remote) =>
           new Promise<EncryptedEnvelope | null>(resolvePromise => {
