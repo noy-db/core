@@ -109,7 +109,7 @@
 
 import type { LedgerStore } from '../../with-commit/history/ledger/store.js'
 import { envelopePayloadHash } from '../../with-commit/history/ledger/hash.js'
-import type { NoydbStore } from '../../kernel/types.js'
+import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
 import { ManifestConflictError } from '../../kernel/errors.js'
 import { deriveSchemaManifest, type LookupDEK } from './derive.js'
 import { loadSchemaManifestEntry, type GetManifestDEK } from './storage.js'
@@ -171,14 +171,32 @@ export async function syncSchemaManifest(
     }
 
     const expectedVersion = existing?.version ?? 0
-    try {
-      await writeSchemaManifest(store, vault, derived, expectedVersion, deps.getDEK)
-    } catch (err) {
-      if (err instanceof ManifestConflictError) continue // another writer moved it first — re-derive + retry
-      throw err
-    }
-
-    await auditManifestWrite(store, vault, deps, derived, expectedVersion)
+    // family#197 — ONE critical section per vault: the manifest write and its
+    // ledger append cannot be split. The append records `payloadHash` for
+    // `version: expectedVersion + 1`, and `verifyBackupIntegrity` recomputes
+    // the LATEST entry's hash against the CURRENT envelope — so if a sibling
+    // sync commits the next version in between, the entry claims our version
+    // with someone else's hash, or lands after theirs carrying a stale one.
+    // Either way restore reports tampering on data nobody tampered with.
+    const written = await withManifestLock(store, vault, async () => {
+      let envelope: EncryptedEnvelope
+      try {
+        envelope = await writeSchemaManifest(store, vault, derived, expectedVersion, deps.getDEK)
+      } catch (err) {
+        if (err instanceof ManifestConflictError) return false // another writer moved it first — re-derive + retry
+        throw err
+      }
+      // ⛔ The envelope WE wrote, never a re-read. A re-read is the defect's
+      // other half and the lock alone does NOT close it: a second PROCESS is
+      // held off the write by CAS, but nothing stops its newer envelope being
+      // what a re-read hashes. Passing the envelope REMOVES the window rather
+      // than narrowing it. Covered by the lying-store case in
+      // `__tests__/manifest/sync-ledger-hash.test.ts`, which is the only one of
+      // the four that can tell the two implementations apart.
+      await auditManifestWrite(deps, derived, expectedVersion, envelope)
+      return true
+    })
+    if (!written) continue
 
     // A sibling's `_schemas` write can land while WE were deriving/writing
     // (#941 flake fix — see module doc). Re-derive once more: if the truth
@@ -205,12 +223,44 @@ export async function syncSchemaManifest(
   )
 }
 
+/**
+ * family#197 — serialize a manifest write with its ledger append, per
+ * (store, vault).
+ *
+ * ⚠️ IN-PROCESS ONLY, and that is a real limit rather than an oversight. It
+ * orders every vault handle sharing this store object in this process. A second
+ * PROCESS is held off the write by strict CAS, but CAS does not order the two
+ * appends — so cross-process interleaving can still leave the latest ledger
+ * entry describing a version that is no longer current. Passing the written
+ * envelope removes the wrong-hash half outright; the ordering half cannot be
+ * fixed from inside one process, and is reported rather than papered over.
+ */
+const manifestLocks = new WeakMap<NoydbStore, Map<string, Promise<void>>>()
+
+async function withManifestLock<T>(store: NoydbStore, vault: string, fn: () => Promise<T>): Promise<T> {
+  let byVault = manifestLocks.get(store)
+  if (!byVault) {
+    byVault = new Map()
+    manifestLocks.set(store, byVault)
+  }
+  const run = (byVault.get(vault) ?? Promise.resolve()).then(fn)
+  // ⚠️ The chain TAIL must never reject: a rejected tail propagates into every
+  // later waiter, failing a sync that did nothing wrong.
+  const tail = run.then(() => {}, () => {})
+  byVault.set(vault, tail)
+  try {
+    return await run
+  } finally {
+    if (byVault.get(vault) === tail) byVault.delete(vault)
+  }
+}
+
 async function auditManifestWrite(
-  store: NoydbStore,
-  vault: string,
   deps: ManifestSyncDeps,
   derived: SchemaManifest,
   expectedVersion: number,
+  /** family#197 — the envelope just written, NOT a re-read of the record. */
+  envelope: EncryptedEnvelope,
 ): Promise<void> {
   const ledger = deps.getLedgerOrNull?.()
   if (!ledger) return
@@ -223,7 +273,6 @@ async function auditManifestWrite(
   // (ciphertext domain), NOT `derived.aggregateHash` (plaintext domain) —
   // using the wrong domain here trips a false-positive tamper failure on
   // restore.
-  const envelope = await store.get(vault, MANIFEST_COLLECTION, MANIFEST_SCHEMA_RECORD_ID)
   await ledger.append({
     op: 'migration',
     collection: MANIFEST_COLLECTION,
