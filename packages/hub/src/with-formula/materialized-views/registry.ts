@@ -208,6 +208,11 @@ export class MaterializedViewRegistry {
         // summary so predicate function or ctx changes (signalled by
         // bumping `hash` or supplying a different ctx) propagate into
         // `queryHash` and force refresh on next visit.
+        // ⚠️ "force refresh on next visit" was ASPIRATIONAL until family#204:
+        // nothing compared the stored hash. It is now compared once per cold
+        // session (stale.ts `markDriftedMVsStale`). ⛔ Still NOT covered:
+        // `rowKey`, which is not part of the hash at all — a changed row key
+        // is invisible to drift detection.
         const predicateRefs = extractPredicateRefs(qAny._plan())
         if (predicateRefs.length > 0) {
           queryPlanSummary = JSON.stringify({ plan: queryPlanSummary, predicates: predicateRefs })
