@@ -338,6 +338,16 @@ export class Vault {
 
   /** Lazily-built atomic-sequence store. See {@link sequence}. */
   private sequenceStore: SequenceStore | null = null
+  /**
+   * family#206 — the separate sequence store bound to the sync-peer's store,
+   * for `authority: 'remote'` series. Kept apart from {@link sequenceStore}
+   * because the two address DIFFERENT stores and must never be swapped by
+   * accident: one memoized store serving both authorities would hand a remote
+   * series the local adapter the moment the local one was built first.
+   */
+  private remoteSequenceStore: SequenceStore | null = null
+  /** family#206 — resolves the sync-peer target to issue remote sequences from. */
+  private getAuthorityStore: (() => { store: NoydbStore; label?: string } | null) | undefined
   /** Lazily-built deferred-numbering engine. See {@link runNumberingPass}. */
   private deferredNumbering: DeferredNumberingStore | null = null
   /** Registered deferred-numbering series, keyed by series name. */
@@ -463,6 +473,15 @@ export class Vault {
     /** #615 — push-only sync targets (backup/archive) this vault may target-purge. Default: none. */
     getPurgeableTargets?: () => readonly { store: NoydbStore; role: 'backup' | 'archive'; label?: string }[]
     /**
+     * family#206 — the SYNC-PEER target a remote-authority sequence issues
+     * from, or `null`. Deliberately not `syncAdapter`: that falls back to the
+     * first target of any role (`noydb.ts`'s `primaryTarget`), and a
+     * `backup`/`archive` target is push-only, so reading a counter back from
+     * it is not part of its contract. An authority must be a store both
+     * devices read AND write.
+     */
+    getAuthorityStore?: () => { store: NoydbStore; label?: string } | null
+    /**
      * tree-shake seam — strategy for optional blob storage.
      * Passed through to every `Collection` built by `vault.collection()`.
      * `undefined` => every `collection.blob(id)` throws with a pointer
@@ -498,6 +517,7 @@ export class Vault {
     this.onDirty = opts.onDirty
     this.onRegisterConflictResolver = opts.onRegisterConflictResolver
     this.syncAdapter = opts.syncAdapter
+    this.getAuthorityStore = opts.getAuthorityStore
     this.getPurgeableTargets = opts.getPurgeableTargets ?? (() => [])
     // #838 — 20 field assignments, each re-applying a `?? NO_*` default that
     // `createNoydb` had already resolved, are one shared reference.

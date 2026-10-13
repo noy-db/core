@@ -1565,6 +1565,43 @@ export class SequenceOfflineError extends NoydbError {
 }
 
 /**
+ * Thrown by `vault.sequence(name, { authority: 'remote' })` when this device
+ * cannot reach a single authority to issue from (family#206).
+ *
+ * ⛔ THE WHOLE POINT IS THAT THIS NEVER FALLS BACK. A remote-authority series
+ * exists because the local counter is per-device: two devices issuing from the
+ * same series name against their own stores produce the SAME numbers. Quietly
+ * degrading to the local counter when the authority is unreachable reproduces
+ * precisely that bug while looking like it worked — and for the series people
+ * ask this for (fiscal invoice numbers) a duplicate is worse than an outage.
+ * So every reason below is a refusal, and the caller retries or queues.
+ */
+export class SequenceAuthorityUnavailableError extends NoydbError {
+  /** Which precondition failed — stable, for callers that branch on it. */
+  readonly reason: 'no-target' | 'not-cas' | 'no-key'
+
+  constructor(series: string, reason: 'no-target' | 'not-cas' | 'no-key', detail?: string) {
+    super('SEQUENCE_AUTHORITY_UNAVAILABLE', MESSAGES[reason](series, detail))
+    this.name = 'SequenceAuthorityUnavailableError'
+    this.reason = reason
+  }
+}
+
+const MESSAGES: Record<'no-target' | 'not-cas' | 'no-key', (series: string, detail?: string) => string> = {
+  'no-target': (series) =>
+    `sequence("${series}", { authority: 'remote' }) requires an attached sync-peer target to issue from, and this vault has none. `
+    + `Attach one with attachSyncTarget(), or use the default local authority — but note a local counter is unique to THIS device.`,
+  'not-cas': (series, detail) =>
+    `sequence("${series}", { authority: 'remote' }): the sync-peer store${detail ? ` (${detail})` : ''} does not advertise `
+    + `capabilities.casAtomic, so it cannot serialize concurrent issuers. A filesystem target (@noy-db/to-file) is casAtomic: false `
+    + `by construction — rename/CAS on a plain directory is advisory — so it can hold a vault but cannot be a numbering authority.`,
+  'no-key': (series) =>
+    `sequence("${series}", { authority: 'remote' }): this device holds no "${'_sequences'}" key yet. Pull from the sync peer first. `
+    + `Minting one here would seal the shared counter under a key the peer cannot unwrap, which surfaces later as an UNREADABLE `
+    + `counter rather than a wrong number — so this refuses instead.`,
+}
+
+/**
  * Thrown by `vault.sequence()` when the atomic-sequence capability was not
  * opted into (the default `NO_SEQUENCE` stub). Sequence is an opt-in,
  * tree-shakeable capability: enable it with `sequenceStrategy: withSequence()`

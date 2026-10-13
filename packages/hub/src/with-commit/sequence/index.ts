@@ -29,7 +29,7 @@ import { isConflictError, SequenceContentionError, SequenceOfflineError, Validat
 // the sequenceStrategy, so it throws SequenceNotEnabledError unless opted in.
 export { withSequence } from './active.js'
 export { NO_SEQUENCE, type SequenceStrategy } from './strategy.js'
-export { SequenceNotEnabledError } from '../../kernel/errors.js'
+export { SequenceNotEnabledError, SequenceAuthorityUnavailableError } from '../../kernel/errors.js'
 
 /**
  * ⛔ **COUNTERS NEVER SYNC — A SEQUENCE IS UNIQUE PER DEVICE, NOT ACROSS A
@@ -87,6 +87,26 @@ export interface NextOptions {
 export interface SequenceOptions {
   /** Partition tuple. Each component is URI-encoded and `'/'`-joined. */
   readonly partition?: readonly (string | number)[]
+  /**
+   * Who issues the numbers (family#206). Default `'local'`.
+   *
+   * - `'local'` — CAS against THIS device's store. Unique per device, NOT
+   *   across a fleet: two devices on the same series name produce the same
+   *   numbers. Unchanged, and still the default.
+   * - `'remote'` — CAS against the attached **sync-peer** target's store, so
+   *   every device issues from one counter. Fails closed with
+   *   {@link SequenceAuthorityUnavailableError} when there is no sync-peer
+   *   target, when its store is not `casAtomic`, or when this device has not
+   *   yet pulled the `_sequences` key. It never falls back to the local
+   *   counter — see that error for why a fallback is the bug, not the mercy.
+   *
+   * ⭐ Deliberately NOT part of the storage key: `resolveSequenceKey` derives
+   * the key from `partition` only, so flipping a series between authorities
+   * cannot orphan a counter. The two authorities do address DIFFERENT stores,
+   * though, so the values are independent — `seedTo` the remote one when
+   * migrating a series that has already issued locally.
+   */
+  readonly authority?: 'local' | 'remote'
   /**
    * Render template for the serial string. When set, `vault.sequence`
    * returns a {@link FormattedSequenceHandle} whose `next()` resolves to
