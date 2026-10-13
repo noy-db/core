@@ -64,16 +64,6 @@ async function setupSourceVault() {
   return { db, vault }
 }
 
-/**
- * ⚠️ ONE CONSTANT FOR BOTH SIDES. family#177 gates `recipients[].secret` with
- * `assertStrongSecret`, so the weak literal here had to go — and in
- * `bundle-recipients.test.ts` a mechanical replacement updated the `secret:`
- * properties but not `restoreAs`'s positional argument, which surfaced as
- * "Invalid key — wrong secret" and reads as a crypto fault rather than a
- * fixture one. Naming it removes that failure mode.
- */
-const AUDITOR_SECRET = 'auditor river stone battery staple horse'
-
 async function restoreAs(
   bundleBytes: Uint8Array,
   recipientUserId: string,
@@ -114,6 +104,12 @@ async function restoreAs(
   })
   return { db }
 }
+
+/** ⚠️ ONE CONSTANT FOR BOTH SIDES — family#177's export bar forced this to
+ *  change, and in a sibling file a mechanical replacement updated the
+ *  `secret:` property but not `restoreAs`'s POSITIONAL argument, which
+ *  surfaced as "Invalid key — wrong secret" and reads as a crypto fault. */
+const AUDITOR_SECRET = 'auditor-export-2026'
 
 describe('writePod — recipient expiresAt', () => {
   it('past-cutoff slot refuses to open with KeyringExpiredError', async () => {

@@ -129,29 +129,23 @@ async function restoreAs(
   return { db }
 }
 
-/**
- * ⚠️ NAMED, because the write side and the read side are different call shapes
- * and they drifted. family#177's export-secret strength gate forced every weak
- * literal here to be replaced, and a mechanical pass updated `exportSecret:`
- * and `secret:` but not `restoreAs(bytes, id, secret)`'s positional argument —
- * so five cases failed with "Invalid key — wrong secret", which reads as a
- * crypto bug rather than a fixture one. A constant used on both sides cannot
- * have that failure.
- */
+/** ⚠️ NAMED, so the write side and the read side cannot drift — see
+ *  `bundle-recipient-expiry.test.ts` for what happened when they did. Each
+ *  clears family#177's 12-character export bar. */
 const SECRETS = {
-  export: 'recipient river stone battery staple horse',
-  alice: 'alice river stone battery staple horse',
-  bob: 'bob river stone battery staple horse',
-  restricted: 'river stone battery staple correct horse',
+  export: 'recipient-export-2026',
+  alice: 'alice-export-2026',
+  bob: 'bob-export-2026x',
+  restricted: 'restricted-export-2026',
 } as const
 
 describe('writePod — exportSecret shorthand', () => {
   it('single-recipient bundle unlocks with the new secret', async () => {
     const { db: src, vault } = await setupSourceVault()
-    const bytes = await writePod(vault, { exportSecret: SECRETS.export })
+    const bytes = await writePod(vault, { exportSecret: 'recipient-pw-2026' })
     src.close()
 
-    const { db } = await restoreAs(bytes, 'alice', SECRETS.export)
+    const { db } = await restoreAs(bytes, 'alice', 'recipient-pw-2026')
     const restored = await db.openVault('demo')
     const inv = await restored.collection<Invoice>('invoices').get('a')
     expect(inv).toEqual({ id: 'a', amount: 100 })
@@ -160,7 +154,7 @@ describe('writePod — exportSecret shorthand', () => {
 
   it('source secret no longer unlocks the re-keyed bundle', async () => {
     const { db: src, vault } = await setupSourceVault()
-    const bytes = await writePod(vault, { exportSecret: SECRETS.export })
+    const bytes = await writePod(vault, { exportSecret: 'recipient-pw-2026' })
     src.close()
 
     // Try opening with the SOURCE secret via restoreAs — must
@@ -224,7 +218,7 @@ describe('writePod — multi-recipient', () => {
     const { db: src, vault } = await setupSourceVault()
     await expect(
       writePod(vault, {
-        exportSecret: 'correct horse battery staple river stone',
+        exportSecret: 'pw',
         recipients: [{ id: 'r', secret: SECRETS.restricted }],
       }),
     ).rejects.toThrow(/either exportSecret or recipients, not both/)

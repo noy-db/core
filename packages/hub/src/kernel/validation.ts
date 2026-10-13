@@ -137,6 +137,66 @@ export class WeakSecretError extends NoydbError {
 const DEFAULT_MIN_WORDS = 6
 const DEFAULT_MIN_WORD_LENGTH = 3
 
+/** The floor, in characters. See {@link EXPORT_SECRET_POLICY}.
+ *  ⚠️ NOT exported from the package: knip is right that it reaches no published
+ *  entry point, and the number a consumer needs is already in the error message
+ *  (`WeakSecretError.suggestion`). Publishing it so a UI can validate ahead of
+ *  the call is one line, and worth doing when someone asks rather than on spec. */
+const EXPORT_SECRET_MIN_LENGTH = 12
+
+/** ⚠️ Carried on every verdict, because `resolveSuggestion` suppresses the
+ *  built-in advice whenever a `customValidator` owns the rules — and advice
+ *  quoting the six-word phrase rules would be the opposite of the truth here
+ *  (the exact misdirection #1430 fixed for the owner path). */
+const EXPORT_SECRET_ADVICE =
+  `An export secret must be at least ${EXPORT_SECRET_MIN_LENGTH} characters. Any characters are allowed — ` +
+  'a passphrase, a generated token, or a password-manager string all qualify. ' +
+  'It is not the owner phrase rule: uppercase, digits and punctuation are fine.'
+
+/**
+ * The bar an EXPORT secret must clear (family#177).
+ *
+ * ⭐ DELIBERATELY NOT THE OWNER BAR, and the difference is not laxity. The
+ * owner default is phrase-shaped — six lowercase words, each ≥3 characters,
+ * `/^[a-z]+( [a-z]+)*$/` — because it is a thing a human memorises and types
+ * daily, and because that is the shape the EFF generator emits. An export
+ * secret is typed once into a dialog or produced by a password manager, so the
+ * phrase rules refuse the strongest things a caller is likely to use:
+ * `8f3a9c2b1d4e7f0a` fails on `invalid-chars`, and `Tax-Returns-2026!` fails
+ * twice over.
+ *
+ * ⛔ SO THE BAR IS LENGTH, 12 CHARACTERS, AND NOTHING ELSE. Measured against
+ * the real secrets in this repo and the shapes a consumer actually passes:
+ *
+ *   BLOCKED  p · pw · pw1 · r-pw · aud-pw · bob-pw · new-pw · alice-pw · hunter2
+ *   ALLOWED  Tax-Returns-2026! · 8f3a9c2b1d4e7f0a · source-pw-2026 ·
+ *            client-takeaway · correct horse battery staple
+ *
+ * That is the whole claim: it refuses what a human picks when they are not
+ * thinking, and refuses nothing a human or a generator picks when they are.
+ *
+ * ⚠️ A single repeated character is refused too, because `aaaaaaaaaaaa` clears
+ * any length floor and clears no attacker's wordlist.
+ *
+ * ⚠️ 12 characters is a FLOOR, not a claim about entropy — roughly 40-50 bits
+ * for a human-chosen password, well under the owner phrase's ~77. It is sized
+ * to stop the hazard (a one-character export secret on a file built to travel)
+ * without blocking ordinary use, and the PBKDF2 600K derivation still sits
+ * underneath it. A consumer who wants more passes a longer secret.
+ */
+export const EXPORT_SECRET_POLICY: SecretPolicy = {
+  customValidator: (s: string): SecretValidationResult => {
+    if (s.length === 0) return { ok: false, reason: 'empty', suggestion: EXPORT_SECRET_ADVICE }
+    if (s.length < EXPORT_SECRET_MIN_LENGTH) {
+      return { ok: false, reason: 'too-few-words', suggestion: EXPORT_SECRET_ADVICE }
+    }
+    if (new Set(s).size === 1) {
+      return { ok: false, reason: 'repeated-adjacent', suggestion: EXPORT_SECRET_ADVICE }
+    }
+    return { ok: true, words: s.split(' ').filter(Boolean).length }
+  },
+}
+
 const SUGGESTIONS: Record<WeakSecretReason, string> = {
   empty: 'Provide a phrase of at least 6 lowercase words separated by single spaces.',
   'invalid-chars':

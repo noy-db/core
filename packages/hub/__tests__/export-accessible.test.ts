@@ -51,7 +51,7 @@ describe('#199 P1 — exportMyAccessibleData', () => {
     // Client opens + exports their accessible scope, re-keyed to a new secret.
     const client = await createNoydb({ teamStrategy: withTeam(), store, user: 'client1', secret: 'client-pw-long-enough', portabilityStrategy: withPortability() })
     const cv = await client.openVault('acme')
-    const bytes = await cv.user.exportMyAccessibleData({ reKey: { secret: 'new owner river stone battery staple' } })
+    const bytes = await cv.user.exportMyAccessibleData({ reKey: { secret: 'new-owner-pw' } })
 
     const { dumpJson } = await readPod(bytes)
     const cols = bundleCollections(dumpJson)

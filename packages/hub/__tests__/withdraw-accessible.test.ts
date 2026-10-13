@@ -50,24 +50,27 @@ async function setup(store: NoydbStore, role: 'operator' | 'client', mode: 'rw' 
   return { cv }
 }
 
+/** family#177 — clears the 12-character export bar. */
+const WITHDRAWAL_SECRET = 'withdrawal-export-2026'
+
 describe('#199 P2 — unilateralWithdrawal', () => {
   it('fails closed when the gate is disabled (default)', async () => {
     const { cv } = await setup(makeStore(), 'operator', 'rw') // no policy → gate fail-closed
     await expect(
-      cv.user.unilateralWithdrawal({ legalBasis: 'gdpr-art-17', reKey: { secret: 'new river stone battery staple horse' } }),
+      cv.user.unilateralWithdrawal({ legalBasis: 'gdpr-art-17', reKey: { secret: WITHDRAWAL_SECRET } }),
     ).rejects.toBeInstanceOf(PolicyDeniedError)
   })
 
   it('read-only role cannot self-serve a withdrawal (use requestWithdrawal)', async () => {
     const { cv } = await setup(makeStore(), 'client', 'ro', GATE_ON)
     await expect(
-      cv.user.unilateralWithdrawal({ legalBasis: 'gdpr-art-17', reKey: { secret: 'new river stone battery staple horse' } }),
+      cv.user.unilateralWithdrawal({ legalBasis: 'gdpr-art-17', reKey: { secret: WITHDRAWAL_SECRET } }),
     ).rejects.toThrow(/read-only|requestWithdrawal/)
   })
 
   it('delete disposition: exports the re-keyed copy + removes the live records', async () => {
     const { cv } = await setup(makeStore(), 'operator', 'rw', GATE_ON)
-    const res = await cv.user.unilateralWithdrawal({ disposition: 'delete', legalBasis: 'gdpr-art-17', reKey: { secret: 'new river stone battery staple horse' } })
+    const res = await cv.user.unilateralWithdrawal({ disposition: 'delete', legalBasis: 'gdpr-art-17', reKey: { secret: WITHDRAWAL_SECRET } })
     expect(res.snapshot).toBeUndefined()
     // portable copy contains invoices
     const dump = JSON.parse((await readPod(res.bundle)).dumpJson) as { collections?: Record<string, unknown> }
@@ -80,7 +83,7 @@ describe('#199 P2 — unilateralWithdrawal', () => {
   it('freeze disposition: retains a hash-pinned read-only snapshot + removes live records', async () => {
     const store = makeStore()
     const { cv } = await setup(store, 'operator', 'rw', GATE_ON)
-    const res = await cv.user.unilateralWithdrawal({ disposition: 'freeze', legalBasis: 'retention', reKey: { secret: 'new river stone battery staple horse' } })
+    const res = await cv.user.unilateralWithdrawal({ disposition: 'freeze', legalBasis: 'retention', reKey: { secret: WITHDRAWAL_SECRET } })
     expect(res.snapshot).toBeTruthy()
     expect(res.snapshot!.recordCount).toBe(2)
     expect(res.snapshot!.sha256).toMatch(/^[0-9a-f]{64}$/)
