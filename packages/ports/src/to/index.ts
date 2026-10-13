@@ -578,6 +578,81 @@ export function runStoreConformanceTests(
         expect(await adapter.get('comp1', 'coll1', '../../escaped')).toEqual(envelope)
       })
 
+      it('treats ids as CASE-DISTINCT — "Abc" and "abc" are two records (family#177)', async () => {
+        // ⛔ A REAL STORE FAILED THIS, and silently. On MySQL 8.4 the default
+        // collation is case- and accent-INSENSITIVE, so `to-mysql`'s write to
+        // `abc` OVERWROTE the row keyed `Abc`: one row survived, keeping the key
+        // `Abc` while holding the ciphertext written for `abc`. Nothing in the
+        // table shows it, and nothing in the kit asked.
+        //
+        // ⚠️ THE BODIES MUST DIFFER, not just the count. A store that collapsed
+        // the two keys and kept ONE row would still return two results from
+        // `list` if it echoed the ids it was given, and a count-only assertion
+        // would pass. Reading each back and comparing the body is what catches
+        // the collapse.
+        //
+        // ⛔ AND IT IS NOT ONLY MySQL. A case-INSENSITIVE FILESYSTEM collapses
+        // these ids identically, so `to-file` fails this case on macOS (APFS
+        // default) and on Windows (NTFS default). Reproduced outside noy-db
+        // entirely, which is what makes it the filesystem rather than the
+        // adapter:
+        //
+        //     printf 'UPPER' > Abc.json
+        //     printf 'lower' > abc.json
+        //     ls        # -> Abc.json          (one file)
+        //     cat Abc.json  # -> lower        (the OTHER id's body)
+        //
+        // Same shape as the collation defect: the survivor keeps the FIRST id's
+        // name and the SECOND id's content. A store on a case-folding substrate
+        // has to encode case into the key, exactly as family#174 made it encode
+        // NUL — and that is a storage-format decision, not a mechanical fix.
+        //
+        // ⭐ The vault side CAN detect this one, which is worth knowing when a
+        // store is suspected: `recordAadFor` binds the id into the AAD
+        // (`plumbing/record-aad.ts:156`), so reading `Abc` after such an
+        // overwrite fails its auth tag and surfaces as a TamperedError rather
+        // than as wrong plaintext. ⚠️ Only for a record with a sealed body —
+        // a tombstone, a delete marker, or a plaintext collection is vacuously
+        // authentic, so the collapse stays silent there.
+        // ⭐ A REFUSAL IS CONFORMANT, the same shape as the `..` case above. A
+        // store on a case-folding substrate cannot keep both keys apart without
+        // changing its on-disk format, so the contract asks it to REFUSE rather
+        // than silently collapse them — `to-file` detects a case-folding
+        // filesystem at open and rejects the second write. What is forbidden is
+        // accepting both writes and keeping one record.
+        const upper = makeEnvelope(1, 'UPPER-Abc')
+        const lower = makeEnvelope(1, 'lower-abc')
+        await adapter.put('comp-case', 'coll1', 'Abc', upper)
+
+        let refused = false
+        try {
+          await adapter.put('comp-case', 'coll1', 'abc', lower)
+        } catch {
+          refused = true
+        }
+
+        if (refused) {
+          // ⚠️ Not vacuous. A refusal must leave the FIRST record intact and
+          // must not have written the second — a store that refused by
+          // corrupting both would satisfy a bare `rejects` assertion.
+          expect(await adapter.get('comp-case', 'coll1', 'Abc')).toEqual(upper)
+          expect(await adapter.list('comp-case', 'coll1')).toEqual(['Abc'])
+          return
+        }
+
+        expect(await adapter.get('comp-case', 'coll1', 'Abc'), 'the "Abc" record was overwritten by "abc"').toEqual(upper)
+        expect(await adapter.get('comp-case', 'coll1', 'abc')).toEqual(lower)
+
+        const ids = await adapter.list('comp-case', 'coll1')
+        expect([...ids].sort(), 'both ids must survive as distinct keys').toEqual(['Abc', 'abc'].sort())
+
+        // And the collection-level read agrees with the per-id reads — a store
+        // whose `list` echoes back what it was told while `loadAll` sees one row
+        // is the same collapse wearing a different disguise.
+        const snapshot = await adapter.loadAll('comp-case')
+        expect(Object.keys(snapshot.coll1 ?? {}).sort()).toEqual(['Abc', 'abc'].sort())
+      })
+
       it('round-trips an id containing a NUL byte, through put, get AND list (family#174)', async () => {
         // ⛔ HUB EMITS THESE. `resolveSequenceKey` and `resolvePeriodKey` join a
         // partition as `${name}\x00${parts}`, chosen precisely because a NUL
