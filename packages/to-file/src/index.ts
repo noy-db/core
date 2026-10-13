@@ -320,9 +320,28 @@ export function toFile(options: JsonFileOptions): NoydbStore {
    * every write would make a cold store slower for no information.
    */
   let foldsCase: boolean | null = null
+
+  /**
+   * A tag unique to THIS store instance, so two stores probing one directory
+   * cannot touch each other's sentinel (family#217).
+   *
+   * ⛔ THE FIXED NAME WAS A RACE THAT FAILED CLOSED, PERMANENTLY. Both stores
+   * probed `.noydb-case-probe-Aa`: B's `mkdir(…, { recursive: true })`
+   * SUCCEEDS on the directory A had just created — that is what `recursive`
+   * means — and B's `finally` then removes it. If that lands between A's
+   * `mkdir` and A's `stat`, A sees no folded counterpart, concludes
+   * case-SENSITIVE, and caches it for the store's whole lifetime. Every later
+   * `assertNoCaseCollision` short-circuits, and the collapse this adapter
+   * exists to refuse goes through silently.
+   *
+   * ⚠️ Lowercase and digits only, and the SAME tag in both spellings. The two
+   * probe names must differ in nothing but the `Aa`/`aa`, or the stat is
+   * answering a different question.
+   */
+  const probeTag = `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 10)}`
   async function filesystemFoldsCase(): Promise<boolean> {
     if (foldsCase !== null) return foldsCase
-    const probe = join(root, '.noydb-case-probe-Aa')
+    const probe = join(root, `.noydb-case-probe-Aa-${probeTag}`)
     try {
       await mkdir(root, { recursive: true })
       // ⛔ A DIRECTORY, PROBED WITH `stat` — NO FILE WRITE AT ALL. Two earlier
@@ -336,7 +355,7 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       // A diagnostic that spends the caller's first write is a diagnostic that
       // changes the thing it is diagnosing. `mkdir` + `stat` touches neither.
       await mkdir(probe, { recursive: true })
-      foldsCase = await stat(join(root, '.noydb-case-probe-aa'))
+      foldsCase = await stat(join(root, `.noydb-case-probe-aa-${probeTag}`))
         .then(() => true)
         .catch(() => false)
     } catch {
@@ -368,27 +387,47 @@ export function toFile(options: JsonFileOptions): NoydbStore {
    */
   async function assertNoCaseCollision(vault: string, collection: string, id: string): Promise<void> {
     if (!await filesystemFoldsCase()) return
+    // ⛔ EVERY COMPONENT, NOT THE LEAF (family#217). `encodeId` maps `/` to `/`
+    // on purpose — a side-car id like `_idx/<field>/<recordId>` NESTS — so a
+    // folded DIRECTORY component collapses two distinct ids just as completely
+    // as a folded filename, one level up where a leaf-only check cannot see it.
+    // Measured: with `A/x` on disk, writing `a/x` found parent `…/a` (which the
+    // filesystem resolved to `…/A`), read `['x.json']`, compared it against its
+    // own leaf `x.json`, found them EQUAL, and returned clean — then wrote
+    // `a/x`'s body into `A/x`. The leaf check cannot fire here, because at the
+    // leaf there is nothing wrong.
     const encoded = encodeId(id)
-    const parent = dirname(join(dir, vault, collection, `${encoded}.json`))
-    const leaf = `${encoded.split('/').pop() ?? encoded}.json`
-    let entries: string[]
-    try {
-      entries = await readdir(parent)
-    } catch (err) {
-      if (isAbsence(err)) return // nothing to collide with yet
-      throw err
-    }
-    const folded = leaf.toLowerCase()
-    for (const entry of entries) {
-      if (entry !== leaf && entry.toLowerCase() === folded) {
+    const parts = encoded.split('/')
+    parts[parts.length - 1] = `${parts[parts.length - 1]}.json`
+    let current = join(dir, vault, collection)
+    for (const [index, part] of parts.entries()) {
+      const isLeaf = index === parts.length - 1
+      let entries: string[]
+      try {
+        entries = await readdir(current)
+      } catch (err) {
+        if (isAbsence(err)) return // nothing to collide with yet
+        throw err
+      }
+      const folded = part.toLowerCase()
+      for (const entry of entries) {
+        if (entry === part || entry.toLowerCase() !== folded) continue
+        // Name the thing the caller can act on: the record for a leaf, the
+        // folded path PREFIX for a directory. Decoding `entry` as an id only
+        // makes sense for a leaf — on a directory it would strip a `.json`
+        // that is not there.
+        const existing = isLeaf
+          ? JSON.stringify(decodeId([...parts.slice(0, index), entry.slice(0, -5)].join('/')))
+          : `${JSON.stringify(decodeId([...parts.slice(0, index), entry].join('/')))} (a directory component)`
         throw new ValidationError(
           `to-file: record id ${JSON.stringify(id)} case-folds onto the existing `
-          + `${JSON.stringify(decodeId(entry.slice(0, -5)))} on a case-insensitive filesystem, `
+          + `${existing} on a case-insensitive filesystem, `
           + `so writing it would REPLACE that record's body while keeping its name. `
           + `Refusing. Use ids that differ by more than case, or mount the store on a `
           + `case-sensitive filesystem.`,
         )
       }
+      current = join(current, part)
     }
   }
 
@@ -590,6 +629,28 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       // Reserved (`_`-prefixed) collections are never pruned — a partial snapshot
       // must not strand `_keyring` — but ARE overwritten when the snapshot carries
       // them, which is what makes a full restore possible.
+      // ⛔⛔ DATA LOSS, AND THE PRUNE WAS THE KNIFE (family#217). `saveAll` never
+      // ran the case-collision guard, so on a folding filesystem a snapshot
+      // carrying `abc` against an on-disk `Abc` wrote abc's body INTO
+      // `Abc.json`, and then the prune below asked `'Abc' in records` — false,
+      // because the snapshot says `abc` — and unlinked the very file it had
+      // just written. Measured on APFS against to-file@0.10.0-pre.2:
+      // `put('Abc')` then `saveAll({ c: { abc } })` leaves `list` EMPTY and
+      // `get('abc')` null. Both records gone, no error raised.
+      //
+      // ⭐ ASSERTED IN FULL BEFORE ANYTHING IS WRITTEN, deliberately. Checking
+      // inside the write loop would refuse correctly and leave a restore torn
+      // at whichever id tripped — earlier records written, later ones not. The
+      // write-first ordering below accepts a torn call (stale extras, which a
+      // re-run fixes) but a torn REFUSAL is not the same thing: it is a
+      // half-applied snapshot produced by a call that reported failure. One
+      // pre-pass costs a readdir per directory and makes a refusal total.
+      for (const [collName, records] of Object.entries(data)) {
+        for (const id of Object.keys(records)) {
+          await assertNoCaseCollision(vault, collName, id)
+        }
+      }
+
       for (const [collName, records] of Object.entries(data)) {
         await ensureDir(collectionDir(vault, collName))
         for (const [id, envelope] of Object.entries(records)) {
