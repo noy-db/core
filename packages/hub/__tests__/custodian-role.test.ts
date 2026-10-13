@@ -101,16 +101,16 @@ describe('custodian role', () => {
         secret: 'cust-pass',
       })
       // a separate user the custodian might try to revoke
-      await ownerDb.grant(COMP, { userId: 'viewer-01', displayName: 'V', role: 'viewer', secret: 'p' })
+      await ownerDb.grant(COMP, { userId: 'viewer-01', displayName: 'V', role: 'viewer', secret: 'correct horse battery staple river stone' })
       custodianDb = await createNoydb({ teamStrategy: withTeam(), cargoStrategy: withCargo(), store: adapter, user: 'cust-01', secret: 'cust-pass', tiersStrategy: withTiers() })
     })
 
     it('cannot grant any role', async () => {
       await expect(
-        custodianDb.grant(COMP, { userId: 'x', displayName: 'X', role: 'viewer', secret: 'p' }),
+        custodianDb.grant(COMP, { userId: 'x', displayName: 'X', role: 'viewer', secret: 'correct horse battery staple river stone' }),
       ).rejects.toThrow(PermissionDeniedError)
       await expect(
-        custodianDb.grant(COMP, { userId: 'y', displayName: 'Y', role: 'operator', secret: 'p', permissions: { invoices: 'rw' } }),
+        custodianDb.grant(COMP, { userId: 'y', displayName: 'Y', role: 'operator', secret: 'correct horse battery staple river stone', permissions: { invoices: 'rw' } }),
       ).rejects.toThrow(PermissionDeniedError)
     })
 
@@ -126,13 +126,13 @@ describe('custodian role', () => {
       await ownerDb.grant(COMP, { userId: 'admin-01', displayName: 'Admin', role: 'admin', secret: 'admin-pass' })
       const adminDb = await createNoydb({ teamStrategy: withTeam(), cargoStrategy: withCargo(), store: adapter, user: 'admin-01', secret: 'admin-pass' })
       await expect(
-        adminDb.grant(COMP, { userId: 'cust-from-admin', displayName: 'C', role: 'custodian', secret: 'p' }),
+        adminDb.grant(COMP, { userId: 'cust-from-admin', displayName: 'C', role: 'custodian', secret: 'correct horse battery staple river stone' }),
       ).rejects.toThrow(PermissionDeniedError)
     })
 
     it('owner → custodian succeeds (control)', async () => {
       await expect(
-        ownerDb.grant(COMP, { userId: 'cust-02', displayName: 'C', role: 'custodian', secret: 'p' }),
+        ownerDb.grant(COMP, { userId: 'cust-02', displayName: 'C', role: 'custodian', secret: 'correct horse battery staple river stone' }),
       ).resolves.not.toThrow()
     })
   })
@@ -203,7 +203,7 @@ describe('FR-6 Task 2 — custodian blocked from rotate / sever / extract', () =
   it('(b) custodian cannot destructively withdraw/sever — redirected to liberate (delete)', async () => {
     const comp = await custodianDb.openVault(COMP)
     const p = comp.user.unilateralWithdrawal({
-      disposition: 'delete', legalBasis: 'x', reKey: { secret: 'new-pw' },
+      disposition: 'delete', legalBasis: 'x', reKey: { secret: 'new river stone battery staple horse' },
     })
     await expect(p).rejects.toThrow(ReadOnlyError)
     await expect(p).rejects.toThrow(/liberate|custody/)
@@ -215,7 +215,7 @@ describe('FR-6 Task 2 — custodian blocked from rotate / sever / extract', () =
     const comp = await custodianDb.openVault(COMP)
     await expect(
       comp.user.unilateralWithdrawal({
-        disposition: 'freeze', legalBasis: 'x', reKey: { secret: 'new-pw' },
+        disposition: 'freeze', legalBasis: 'x', reKey: { secret: 'new river stone battery staple horse' },
       }),
     ).rejects.toThrow(/liberate|custody/)
   })

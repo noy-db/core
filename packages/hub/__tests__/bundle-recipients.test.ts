@@ -129,13 +129,29 @@ async function restoreAs(
   return { db }
 }
 
+/**
+ * ⚠️ NAMED, because the write side and the read side are different call shapes
+ * and they drifted. family#177's export-secret strength gate forced every weak
+ * literal here to be replaced, and a mechanical pass updated `exportSecret:`
+ * and `secret:` but not `restoreAs(bytes, id, secret)`'s positional argument —
+ * so five cases failed with "Invalid key — wrong secret", which reads as a
+ * crypto bug rather than a fixture one. A constant used on both sides cannot
+ * have that failure.
+ */
+const SECRETS = {
+  export: 'recipient river stone battery staple horse',
+  alice: 'alice river stone battery staple horse',
+  bob: 'bob river stone battery staple horse',
+  restricted: 'river stone battery staple correct horse',
+} as const
+
 describe('writePod — exportSecret shorthand', () => {
   it('single-recipient bundle unlocks with the new secret', async () => {
     const { db: src, vault } = await setupSourceVault()
-    const bytes = await writePod(vault, { exportSecret: 'recipient-pw-2026' })
+    const bytes = await writePod(vault, { exportSecret: SECRETS.export })
     src.close()
 
-    const { db } = await restoreAs(bytes, 'alice', 'recipient-pw-2026')
+    const { db } = await restoreAs(bytes, 'alice', SECRETS.export)
     const restored = await db.openVault('demo')
     const inv = await restored.collection<Invoice>('invoices').get('a')
     expect(inv).toEqual({ id: 'a', amount: 100 })
@@ -144,7 +160,7 @@ describe('writePod — exportSecret shorthand', () => {
 
   it('source secret no longer unlocks the re-keyed bundle', async () => {
     const { db: src, vault } = await setupSourceVault()
-    const bytes = await writePod(vault, { exportSecret: 'recipient-pw-2026' })
+    const bytes = await writePod(vault, { exportSecret: SECRETS.export })
     src.close()
 
     // Try opening with the SOURCE secret via restoreAs — must
@@ -160,19 +176,19 @@ describe('writePod — multi-recipient', () => {
   it('every recipient unlocks independently with their own secret', async () => {
     const { db: src, vault } = await setupSourceVault()
     const recipients: readonly PodRecipient[] = [
-      { id: 'alice-r', secret: 'alice-pw', role: 'viewer' },
-      { id: 'bob-r',   secret: 'bob-pw',   role: 'viewer' },
+      { id: 'alice-r', secret: SECRETS.alice, role: 'viewer' },
+      { id: 'bob-r',   secret: SECRETS.bob,   role: 'viewer' },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const aliceDb = await restoreAs(bytes, 'alice-r', 'alice-pw')
+    const aliceDb = await restoreAs(bytes, 'alice-r', SECRETS.alice)
     const aliceVault = await aliceDb.db.openVault('demo')
     expect(await aliceVault.collection<Invoice>('invoices').get('a'))
       .toEqual({ id: 'a', amount: 100 })
     aliceDb.db.close()
 
-    const bobDb = await restoreAs(bytes, 'bob-r', 'bob-pw')
+    const bobDb = await restoreAs(bytes, 'bob-r', SECRETS.bob)
     const bobVault = await bobDb.db.openVault('demo')
     expect(await bobVault.collection<Invoice>('invoices').get('b'))
       .toEqual({ id: 'b', amount: 200 })
@@ -183,13 +199,13 @@ describe('writePod — multi-recipient', () => {
     const { db: src, vault } = await setupSourceVault()
     const recipients: readonly PodRecipient[] = [
       // 'restricted' gets only invoices — payments DEK must NOT be wrapped.
-      { id: 'restricted', secret: 'r-pw', role: 'operator',
+      { id: 'restricted', secret: SECRETS.restricted, role: 'operator',
         permissions: { invoices: 'ro' } },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const r = await restoreAs(bytes, 'restricted', 'r-pw')
+    const r = await restoreAs(bytes, 'restricted', SECRETS.restricted)
     const rv = await r.db.openVault('demo')
 
     // Invoices: readable.
@@ -208,8 +224,8 @@ describe('writePod — multi-recipient', () => {
     const { db: src, vault } = await setupSourceVault()
     await expect(
       writePod(vault, {
-        exportSecret: 'pw',
-        recipients: [{ id: 'r', secret: 'r-pw' }],
+        exportSecret: 'correct horse battery staple river stone',
+        recipients: [{ id: 'r', secret: SECRETS.restricted }],
       }),
     ).rejects.toThrow(/either exportSecret or recipients, not both/)
     src.close()
@@ -220,8 +236,8 @@ describe('writePod — multi-recipient', () => {
     await expect(
       writePod(vault, {
         recipients: [
-          { id: 'same', secret: 'pw1' },
-          { id: 'same', secret: 'pw2' },
+          { id: 'same', secret: SECRETS.alice },
+          { id: 'same', secret: SECRETS.bob },
         ],
       }),
     ).rejects.toThrow(/duplicate recipient id/)
@@ -245,11 +261,11 @@ describe('writePod — recipients compose with slice', () => {
     // since filter while still proving the two pipelines compose.
     const bytes = await writePod(vault, {
       since: '2000-01-01T00:00:00Z',
-      recipients: [{ id: 'r', secret: 'r-pw' }],
+      recipients: [{ id: 'r', secret: SECRETS.restricted }],
     })
     src.close()
 
-    const r = await restoreAs(bytes, 'r', 'r-pw')
+    const r = await restoreAs(bytes, 'r', SECRETS.restricted)
     const rv = await r.db.openVault('demo')
     expect(await rv.collection<Invoice>('invoices').get('a'))
       .toEqual({ id: 'a', amount: 100 })

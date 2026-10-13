@@ -59,7 +59,7 @@ describe('#199 P3 — two-party withdrawal', () => {
     expect(pending[0]!.collections).toEqual(['invoices'])
 
     // Owner approves → bundle handed back + records deleted under owner authority.
-    const { bundle, snapshot } = await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'client-takeaway' } })
+    const { bundle, snapshot } = await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'client takeaway river stone battery staple' } })
     expect(snapshot).toBeUndefined()
     const dump = JSON.parse((await readPod(bundle)).dumpJson) as { collections?: Record<string, unknown> }
     expect(Object.keys(dump.collections ?? {})).toContain('invoices')
@@ -74,7 +74,7 @@ describe('#199 P3 — two-party withdrawal', () => {
   it('freeze disposition flows end-to-end through the request', async () => {
     const { ov, cv } = await setup(makeStore())
     const { requestId } = await cv.user.requestWithdrawal({ disposition: 'freeze', legalBasis: 'retention' })
-    const { snapshot } = await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'p' } })
+    const { snapshot } = await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'correct horse battery staple river stone' } })
     expect(snapshot).toBeTruthy()
     expect(snapshot!.recordCount).toBe(2)
     expect(snapshot!.sha256).toMatch(/^[0-9a-f]{64}$/)
@@ -104,8 +104,8 @@ describe('#199 P3 — two-party withdrawal', () => {
   it('a request cannot be approved twice', async () => {
     const { ov, cv } = await setup(makeStore())
     const { requestId } = await cv.user.requestWithdrawal({ legalBasis: 'gdpr-art-17' })
-    await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'p' } })
-    await expect(ov.user.approveWithdrawal(requestId, { reKey: { secret: 'p' } }))
+    await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'correct horse battery staple river stone' } })
+    await expect(ov.user.approveWithdrawal(requestId, { reKey: { secret: 'correct horse battery staple river stone' } }))
       .rejects.toBeInstanceOf(WithdrawalRequestError)
   })
 

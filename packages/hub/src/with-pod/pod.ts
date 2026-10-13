@@ -57,6 +57,7 @@ import type { Redirect } from './redirect.js'
 import type { DocSigner } from '../with-audit/attestation/signer.js'
 import { sha256Hex as sha256HexBytes } from '../capsule/index.js'
 import { PodIntegrityError, PodSealMismatchError, ValidationError } from '../kernel/errors.js'
+import { assertStrongSecret, assertStrongEchoSecret } from '../kernel/validation.js'
 import type { Vault } from '../kernel/vault.js'
 import type { PodRecipient } from '../with-party/team/keyring.js'
 import { pickLocale } from '../with-party/directory/cover/storage.js'
@@ -146,6 +147,22 @@ export interface WritePodOptions {
    * userId, role, and permissions. Mutually exclusive with `recipients`.
    */
   readonly exportSecret?: string
+  /**
+   * Bypass the structural-strength gate on `exportSecret` and every
+   * `recipients[].secret` (family#177).
+   *
+   * ⛔ THE GATE IS NEW, AND A REFUSAL. Until family#177 a pod could be re-keyed
+   * under a one-character secret: `assertStrongSecret` guarded
+   * `createOwnerKeyring`, `grant` and `rotateSecret`, and the export secret
+   * reached none of them. A `.noydb` bundle is the artefact most likely to
+   * leave the machine, so it was the weakest secret in the system guarding the
+   * most portable file.
+   *
+   * ⚠️ Same escape hatch, same meaning as `createOwnerKeyring`'s: intended for
+   * fixtures, CLI scripts and dev environments, and it never loosens the key
+   * derivation — only the structural check.
+   */
+  readonly allowWeakSecret?: boolean
   /**
    * Multi-recipient re-keying. Replaces the bundle's keyring
    * map with one slot per recipient, each sealed with its own
@@ -316,6 +333,7 @@ export const WRITE_POD_OPTION_KEYS = [
   'where',
   'tierAtMost',
   'exportSecret',
+  'allowWeakSecret',
   'recipients',
   'autoCredentials',
   'sealedCredentials',
@@ -1433,6 +1451,39 @@ export async function writePod(
     throw new Error(
       'writePod: pass either exportSecret or recipients, not both',
     )
+  }
+
+  // family#177 — the export secret gets the same gate as the owner secret, and
+  // it is a REFUSAL rather than a warning (ruled 2026-10-13).
+  //
+  // ⛔ IT HAD NO GATE AT ALL. `assertStrongSecret` guards `createOwnerKeyring`,
+  // `grant` and `rotateSecret`; `exportSecret` reached none of them, so a pod
+  // could be re-keyed under a one-character secret. A `.noydb` bundle is the
+  // artefact most likely to leave the machine — mailed, uploaded, handed over —
+  // so this was the weakest secret in the system guarding the most portable
+  // file. Found while trying to make `writePod` throw for a test: the weak
+  // secret was simply accepted.
+  //
+  // ⚠️ EVERY RECIPIENT TOO, not just the shorthand. `recipients[].secret` seals
+  // one keyring slot each, so gating only `exportSecret` would leave the
+  // multi-recipient path — the one used to hand a bundle to several people —
+  // ungated, which is the wrong way round.
+  // ⚠️ PRECEDENCE, stated because it is observable: this gate runs BEFORE the
+  // duplicate-recipient-id check, which lives deep in
+  // `buildBundleRecipientKeyrings` (vault.ts). So a request that is wrong in
+  // both ways reports the weak secret first. That is the useful order — the
+  // secrets must be fixed either way — and hoisting the id check up here would
+  // put one rule in two places, which is the drift this codebase keeps paying
+  // for. A fixture asserting the duplicate error therefore needs strong
+  // secrets, and `bundle-recipients.test.ts` now has them.
+  if (opts.exportSecret !== undefined) assertStrongSecret(opts.exportSecret, opts)
+  for (const recipient of opts.recipients ?? []) {
+    // ⚠️ A recipient secret is a string OR echo parts, and the two have
+    // different floors — `assertStrongEchoSecret` relaxes the per-word length
+    // because echo secrets are natural-language sentences. Coercing both into
+    // the string gate would reject every legitimate echo recipient.
+    if (typeof recipient.secret === 'string') assertStrongSecret(recipient.secret, opts)
+    else assertStrongEchoSecret(recipient.secret, opts)
   }
 
   // Auto-unlock: normalize once, validate + build from the

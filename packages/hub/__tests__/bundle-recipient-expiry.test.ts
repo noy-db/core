@@ -64,6 +64,16 @@ async function setupSourceVault() {
   return { db, vault }
 }
 
+/**
+ * ⚠️ ONE CONSTANT FOR BOTH SIDES. family#177 gates `recipients[].secret` with
+ * `assertStrongSecret`, so the weak literal here had to go — and in
+ * `bundle-recipients.test.ts` a mechanical replacement updated the `secret:`
+ * properties but not `restoreAs`'s positional argument, which surfaced as
+ * "Invalid key — wrong secret" and reads as a crypto fault rather than a
+ * fixture one. Naming it removes that failure mode.
+ */
+const AUDITOR_SECRET = 'auditor river stone battery staple horse'
+
 async function restoreAs(
   bundleBytes: Uint8Array,
   recipientUserId: string,
@@ -110,12 +120,12 @@ describe('writePod — recipient expiresAt', () => {
     const { db: src, vault } = await setupSourceVault()
     const yesterday = new Date(Date.now() - 86400_000).toISOString()
     const recipients: readonly PodRecipient[] = [
-      { id: 'auditor', secret: 'aud-pw', role: 'viewer', expiresAt: yesterday },
+      { id: 'auditor', secret: AUDITOR_SECRET, role: 'viewer', expiresAt: yesterday },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const auditor = await restoreAs(bytes, 'auditor', 'aud-pw')
+    const auditor = await restoreAs(bytes, 'auditor', AUDITOR_SECRET)
     await expect(auditor.db.openVault('demo')).rejects.toThrow(KeyringExpiredError)
     auditor.db.close()
   })
@@ -124,12 +134,12 @@ describe('writePod — recipient expiresAt', () => {
     const { db: src, vault } = await setupSourceVault()
     const tomorrow = new Date(Date.now() + 86400_000).toISOString()
     const recipients: readonly PodRecipient[] = [
-      { id: 'auditor', secret: 'aud-pw', role: 'viewer', expiresAt: tomorrow },
+      { id: 'auditor', secret: AUDITOR_SECRET, role: 'viewer', expiresAt: tomorrow },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const auditor = await restoreAs(bytes, 'auditor', 'aud-pw')
+    const auditor = await restoreAs(bytes, 'auditor', AUDITOR_SECRET)
     const v = await auditor.db.openVault('demo')
     expect(await v.collection<Invoice>('invoices').get('a')).toEqual({ id: 'a', amount: 100 })
     auditor.db.close()
@@ -138,12 +148,12 @@ describe('writePod — recipient expiresAt', () => {
   it('omitted expiresAt = no cutoff (existing behavior unchanged)', async () => {
     const { db: src, vault } = await setupSourceVault()
     const recipients: readonly PodRecipient[] = [
-      { id: 'auditor', secret: 'aud-pw', role: 'viewer' },
+      { id: 'auditor', secret: AUDITOR_SECRET, role: 'viewer' },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const auditor = await restoreAs(bytes, 'auditor', 'aud-pw')
+    const auditor = await restoreAs(bytes, 'auditor', AUDITOR_SECRET)
     const v = await auditor.db.openVault('demo')
     expect(await v.collection<Invoice>('invoices').get('a')).toEqual({ id: 'a', amount: 100 })
     auditor.db.close()
@@ -153,12 +163,12 @@ describe('writePod — recipient expiresAt', () => {
     const { db: src, vault } = await setupSourceVault()
     const yesterday = new Date(Date.now() - 86400_000).toISOString()
     const recipients: readonly PodRecipient[] = [
-      { id: 'auditor', secret: 'aud-pw', role: 'viewer', expiresAt: yesterday },
+      { id: 'auditor', secret: AUDITOR_SECRET, role: 'viewer', expiresAt: yesterday },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const auditor = await restoreAs(bytes, 'auditor', 'aud-pw')
+    const auditor = await restoreAs(bytes, 'auditor', AUDITOR_SECRET)
     try {
       await auditor.db.openVault('demo')
       throw new Error('expected throw')
