@@ -1995,30 +1995,6 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     // quantize stage below throws the real error.
     if (this.via) record = this.via.ingest(record as Record<string, unknown>) as T
 
-    // Gate bus (Track A) — write-gating services (guards: record-lock /
-    // field-freeze / amendment-collect; periods: closed-period guard) run here,
-    // before any schema/i18n/history work. A throwing gate handler propagates
-    // and aborts the write; the amendment branch collects without throwing.
-    // Zero-cost when no gate handler is registered; elides its own
-    // prior-read (#267) too — see {@link resolveGatePrior}.
-    if (this.subsystemBus?.hasGateHandlers('beforePut')) {
-      const { env: existingEnv, record: existingRecord } = await this.resolveGatePrior('beforePut', id)
-      const gateEvent: GatePutEvent = {
-        op: existingEnv ? 'update' : 'create',
-        vault: this.vault, collection: this.name, docId: id,
-        incoming: record,
-        existing: this.via ? this.via.canonicalizeStored(existingRecord as Record<string, unknown>) : existingRecord,
-        existingVersion: existingEnv?._v ?? 0,
-        existingTs: existingEnv?._ts,
-        userId: this.keyring.userId,
-        role: this.keyring.role,
-        ...(this.computed !== undefined
-          ? { computedFieldNames: new Set(Object.keys(this.computed)) }
-          : {}),
-      }
-      await this.subsystemBus.dispatchGate('beforePut', gateEvent)
-    }
-
     // Shared Via write ctx for enforceWrite + encodeWrite below (`prior` is
     // lazy — paid only if a binding calls it, e.g. i18n densify).
     const viaWriteCtx: ViaWriteCtx = {
@@ -2039,6 +2015,31 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     if (this.computed !== undefined) {
       record = (await loadEvalComputedFields())(record as Record<string, unknown>, this.computed, id) as T
     }
+
+    // ⛔ AFTER computed (family#202): a computed `dateField` is absent before
+    // it, read as OUTSIDE every period. Not a 2nd dispatch — see its test.
+    // Gate bus (Track A) — guards (record-lock / field-freeze /
+    // amendment-collect) and the closed-period guard. A throwing handler
+    // aborts the write. Zero-cost with no handler registered; elides its own
+    // prior-read (#267) — see {@link resolveGatePrior}.
+    if (this.subsystemBus?.hasGateHandlers('beforePut')) {
+      const { env: existingEnv, record: existingRecord } = await this.resolveGatePrior('beforePut', id)
+      const gateEvent: GatePutEvent = {
+        op: existingEnv ? 'update' : 'create',
+        vault: this.vault, collection: this.name, docId: id,
+        incoming: record,
+        existing: this.via ? this.via.canonicalizeStored(existingRecord as Record<string, unknown>) : existingRecord,
+        existingVersion: existingEnv?._v ?? 0,
+        existingTs: existingEnv?._ts,
+        userId: this.keyring.userId,
+        role: this.keyring.role,
+        ...(this.computed !== undefined
+          ? { computedFieldNames: new Set(Object.keys(this.computed)) }
+          : {}),
+      }
+      await this.subsystemBus.dispatchGate('beforePut', gateEvent)
+    }
+
 
     // Schema validation — runs BEFORE encryption so invalid records are
     // rejected at the store boundary. The validator may transform the
