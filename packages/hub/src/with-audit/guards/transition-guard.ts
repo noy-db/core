@@ -117,8 +117,33 @@ export function transitionGuard<T extends Record<string, unknown>>(
       const to = stateOf(rec, field)
 
       // Insert — gate on the allowed initial set (any value if unset).
+      //
+      // ⛔ `initial` CONSTRAINS LOCAL CREATES ONLY (family#188, ruled). It used
+      // to apply whenever `ctx.existing === null`, with no reference to
+      // `ctx.origin` — so a FRESH DEVICE rejected every pulled record already
+      // past its initial state. An invoice at `issued` arriving on a new device
+      // has no local prior, so `existing` is null, so `initial: ['draft']`
+      // refused it: `IllegalTransitionError('(none)' → 'issued')`. For an issued
+      // (WORM) record that is permanent — the device can never receive it.
+      //
+      // ⭐ The rule is about AUTHORSHIP, not about absence. `initial` says "a
+      // record may only be CREATED in these states", which is a statement about
+      // what this application may author. A pulled record was authored
+      // elsewhere and already passed that gate on the device that wrote it;
+      // re-applying it here asks the wrong question of a record whose history
+      // this device simply does not hold.
+      //
+      // ⚠️ Absent origin counts as local. The non-remote write paths do not set
+      // it, and treating `undefined` as remote would disable the gate for every
+      // ordinary `put` — the opposite failure, and a silent one.
+      //
+      // ⚠️ The ARC check below still runs on EVERY origin. A remote update from
+      // a state this device holds is exactly the case the transitions map
+      // exists for, and exempting remotes there would let a peer drive a record
+      // along an edge the map forbids.
       if (ctx.existing === null) {
-        if (initial !== undefined && !initial.includes(to)) {
+        const localCreate = ctx.origin === undefined || ctx.origin === 'local-write'
+        if (localCreate && initial !== undefined && !initial.includes(to)) {
           throw new IllegalTransitionError(collection, recordId(rec), '(none)', to)
         }
         return
