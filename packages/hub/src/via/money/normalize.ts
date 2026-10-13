@@ -82,13 +82,62 @@ export function canonicalizeIncomingMoney(
   if (!moneyFields || Object.keys(moneyFields).length === 0) return record
   try {
     return decodeMoneyFields(
-      quantizeMoneyFields(record as Record<string, unknown>, moneyFields),
+      quantizeMoneyFields(stripMoneyVirtuals(record as Record<string, unknown>, moneyFields), moneyFields),
       moneyFields,
       'raw',
     )
   } catch {
     return record
   }
+}
+
+/**
+ * family#201 — DROP the `<path>Formatted` / `<path>Number` read virtuals a
+ * caller carried in, before quantizing.
+ *
+ * ⛔ WHY. `'raw'` stops this function ADDING virtuals, but `decodeMoneyFields`
+ * shallow-clones (`{ ...record }`), so virtuals already on the record survive —
+ * and the commonest write there is is `const r = await coll.get(id, { locale });
+ * await coll.put(id, r)`. The gate's `existing` goes through
+ * {@link canonicalizeStoredMoney}, which carries none, so `frozenFields`
+ * deep-compared `{ amount, sku, amountFormatted, amountNumber }` against
+ * `{ amount, sku }` and refused an UNCHANGED re-put with `FieldFrozenError`.
+ * Measured on a NESTED money path (`'line.amount'`): a top-level path compares
+ * scalar-to-scalar and never saw it.
+ *
+ * ⭐ This is {@link canonicalizeStoredMoney}'s own stated rule applied to the
+ * other side: those boundaries carry no locale, and letting a virtual through
+ * "would re-create a two-read-paths skew inside comparisons". It also stops a
+ * locale-formatted string being PERSISTED — measured: a round-tripped read
+ * stored `amountFormatted` and it came back out of `locale: 'raw'`, where it
+ * would go stale and carry one client's locale forever.
+ *
+ * ⚠️ A caller's own field named `<moneyPath>Formatted` is dropped too. That
+ * name is already owned by the read path, which overwrites it on every
+ * localized read, so it could never hold a value of theirs reliably.
+ */
+function stripMoneyVirtuals(
+  record: Record<string, unknown>,
+  moneyFields: Record<string, MoneyDescriptor>,
+): Record<string, unknown> {
+  let out: Record<string, unknown> = { ...record }
+  for (const path of Object.keys(moneyFields)) {
+    if (isSimpleMoneyPath(path)) {
+      delete out[`${path}Formatted`]
+      delete out[`${path}Number`]
+      continue
+    }
+    // ⚠️ `parseMoneyPath` returns SEGMENT OBJECTS (`{ kind, key, array }`), not
+    // strings. A `typeof leaf !== 'string'` guard here silently skipped every
+    // nested path — the strip ran and did nothing, which is the one shape this
+    // whole function exists for.
+    out = transformAtMoneyPath(out, path, parseMoneyPath(path), 0, (container, key) => {
+      if (typeof key !== 'string' || Array.isArray(container)) return
+      delete container[`${key}Formatted`]
+      delete container[`${key}Number`]
+    }, /* lenient */ true) as Record<string, unknown>
+  }
+  return out
 }
 
 /** Quantize ONE field value (any nesting level) to its stored form. */
