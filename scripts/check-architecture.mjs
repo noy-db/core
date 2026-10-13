@@ -1929,7 +1929,14 @@ const KERNEL_SURFACE_BUDGET = {
   // explanations, and an unexplained guard in the always-on kernel is the more
   // expensive of the two. ⛔ Do not read this as the ceiling being soft: both
   // raises were measured, and each one shrank its call site first.
-  'packages/hub/src/kernel/noydb.ts': 2489,  // see the #1121 note above
+  // 2489→2493 (family#178): `attachSyncTarget` refuses a peer this device has
+  // already diverged from. ⛔ It cannot live at first keyring access, which is
+  // where it belongs conceptually: `vault()` throws unless the vault is already
+  // open, so attach necessarily runs AFTER the open — and the open is where the
+  // self-provision happens. Four lines: the import, a one-line guarded call,
+  // and the comment pointing at `assertPeerKeyringMatches`, which carries the
+  // reasoning so this site stays short.
+  'packages/hub/src/kernel/noydb.ts': 2493,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,
