@@ -618,6 +618,48 @@ export interface CreateOwnerKeyringOptions extends SecretPolicy {
  * `NoydbOptions.validateSecret`. Direct callers (CLI, scripts,
  * test fixtures) opt in explicitly.
  */
+/**
+ * Create the owner keyring, yielding to whoever won a concurrent create
+ * (family#164).
+ *
+ * ⛔ TWO CONCURRENT FIRST OPENS LEFT ONE CALLER WITH A RAW `ConflictError`.
+ * {@link writeKeyringFile} CASes a create at `expectedVersion: 0` (core#134),
+ * so the second create is correctly REFUSED — but nothing caught the refusal,
+ * and `Version conflict: expected 0, found 1` reached the caller out of
+ * `openVault`. A caller who does not retry reads that as a vault it cannot
+ * open; a caller who does retry succeeds, which is what made this a latent race
+ * rather than a visible one.
+ *
+ * ⭐ The loser is a READER, not a failure. A keyring now exists for this
+ * principal, written from the same secret, so loading it is both correct and
+ * what the caller asked for. Retried ONCE: a second conflict would mean a third
+ * writer, and looping against a shared store is how a race becomes a hang.
+ *
+ * ⚠️ RESIDUAL, measured rather than assumed. On a store whose
+ * `capabilities.casAtomic` is false the CAS is advisory, so two creates could in
+ * principle both land and the second clobber the first — which WOULD be
+ * permanent unopenability, because the first session's collection DEKs are
+ * wrapped under a KEK nobody holds. I could not reproduce it: the
+ * 600K-iteration KEK derivation dominates any store's read-then-write window by
+ * orders of magnitude, so the two writes serialise in practice. Recorded
+ * because "could not reproduce" is not "cannot happen".
+ */
+export async function createOwnerKeyringOrLoad(
+  store: NoydbStore,
+  vault: string,
+  options: CreateOwnerKeyringOptions,
+): Promise<UnlockedKeyring> {
+  try {
+    return await createOwnerKeyring(store, vault, options)
+  } catch (err) {
+    if (!isConflictError(err)) throw err
+    // ⚠️ The SAME credentials the create was attempted with — taken off the
+    // options bag rather than threaded separately, so the load cannot drift to
+    // a different principal than the create it is standing in for.
+    return await loadKeyring(store, vault, { userId: options.userId, secret: options.secret })
+  }
+}
+
 export async function createOwnerKeyring(
   store: NoydbStore,
   vault: string,
