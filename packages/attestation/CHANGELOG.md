@@ -1,5 +1,9 @@
 # @noy-db/attestation
 
+## 0.10.0-pre.2
+
+- No behaviour change. Versioned with the family's lockstep line.
+
 ## 0.10.0-pre.1
 
 Lockstep bump to 0.10.0-pre.1; no package-level change in this release. See `@noy-db/hub` 0.10.0-pre.1 for the line's notes.

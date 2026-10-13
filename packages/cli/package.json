@@ -1,6 +1,6 @@
 {
   "name": "@noy-db/cli",
-  "version": "0.10.0-pre.1",
+  "version": "0.10.0-pre.2",
   "description": "DEPRECATED shim — every `noydb` command now lives in `create-noy-db`'s `noy-db` bin. This package only redirects. Install create-noy-db instead.",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",

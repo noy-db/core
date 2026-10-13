@@ -1,5 +1,86 @@
 # Changelog — hub
 
+## 0.10.0-pre.2
+
+**The capsule seam closes, and four correctness fixes land on paths every vault takes.**
+
+User-visible behaviour changes, each of which can change what your code does:
+
+- **`saveAll` REPLACES.** A collection absent from the snapshot is gone afterwards, and an empty
+  record set empties its collection. Reserved `_`-prefixed collections are carried forward unless
+  the snapshot names them — a snapshot carrying `_keyring` replaces the live keyring without
+  passing through any keyring code path (family#147).
+- **An absent record is at version 0.** `put` with `expectedVersion: 0` is a sentinel-free "write
+  only if absent"; a NONZERO expectation against nothing now **throws `ConflictError`** instead of
+  upserting (family#147, core#134).
+- **A push whose CAS is refused against an empty remote now CREATES**, rather than leaving the
+  entry dirty forever and conflicting on every subsequent push (family#147).
+- **A capsule that lacks a group is refused at startup**, in three places: `createNoydb()` for an
+  enabled service, `vault.collection()` for a declared field form, and the keyring entries for the
+  `authenticate`/`seal` posture groups — before any keyring is read or written (family#156).
+- **An export secret must be at least 12 characters**, with no opt-out, and so must every string
+  `recipients[].secret`. Any characters qualify — a passphrase, a generated token, a
+  password-manager string. This is deliberately NOT the owner phrase rule: a `.noydb` bundle is
+  built to travel (family#177).
+- **`attachSyncTarget` refuses a peer this device has diverged from.** A device that opened the
+  vault before attaching its peer self-provisioned a keyring and then diverged silently; the attach
+  now throws, naming both supported paths (family#178).
+- **`EnclaveNotSupportedError` is deprecated.** `CapsuleNotSupportedError` is canonical and the
+  conformance kit accepts both codes, so an existing fork keeps passing (family#168).
+- **A computed `dateField` no longer dodges a closed period.** The `beforePut` gate judged the record
+  *before* computed fields applied, and an absent date reads as outside every period — so the
+  closed-period guard never fired. Two bypasses are closed: a create, and **back-dating an update**
+  into a sealed period (family#202).
+- **`transitionGuard`'s `initial` no longer rejects pulled records.** It constrains local creates
+  only; the arc check on updates still runs on every origin (family#188).
+- **A guard no longer sees a change on every pulled record with a `money()` field** — it compared
+  `"100000"` against `"1000.00"` for the same value, so an issued (WORM) record never synced
+  (family#187).
+- **An unchanged re-put of a nested money field is accepted.** `put(id, await get(id, { locale }))`
+  was refused outright on an issued record, because the read's `<path>Formatted`/`<path>Number`
+  virtuals survived ingest and the frozen-field compare saw them as a change. Those virtuals are
+  also no longer **persisted** — raw storage stays clean across a round-trip (family#201).
+- **`first-writer-wins` gives a version tie to the remote.** On a tie the local copy won, which is
+  the second writer, overwriting the first on the remote (family#209).
+- **A changed materialized-view definition is detected on reopen.** The stored `queryHash` was
+  written and never compared, so a view kept serving rows built under the old definition until an
+  unrelated source write refreshed it. ⚠️ A changed `rowKey` is **not** covered — it is not part of
+  the hash (family#204, and family#211 for `rowKey`).
+- **A schema-manifest write and its ledger append are one unit.** The append re-read the record and
+  hashed whatever it found, recording that hash against *our* version, so a concurrent sync could
+  make a restore report `BACKUP_CORRUPTED` on untampered data (family#197). ⚠️ Cross-process
+  ordering of the two appends remains open (family#212).
+- **A declaration-only option on a reconcile `vault.collection()` is no longer dropped in silence.**
+  `archive` now attaches; `schemaUpdate` is refused with a message naming the option and the way out.
+  ⚠️ `schema` on a reconcile is **still** dropped — it needs a late-attach door (family#194, and
+  family#208 for `schema`).
+
+**Known limitations in this release, stated because you will meet them before the fixes:**
+
+- ⛔ **`vault.sequence()` is unique per DEVICE, not across devices.** Counters are CASed against the
+  local store and `_sequences` never syncs, so two devices issue the same numbers. Measured: A
+  `next()` → 1, A pushes, B pulls the whole vault, B `next()` → 1. Do not use it for a fleet-unique
+  invoice number until family#206 lands — it is the first item of the next cycle.
+- ⚠️ **`schema` passed to a second `vault.collection(name, { schema })` call has no effect** and is
+  not yet refused, because a materialized view opens its source collection first and makes the
+  consumer's own declaration the reconcile call (family#208).
+- ⚠️ **A changed materialized-view `rowKey` is not detected** — old-key rows survive beside new ones
+  until a full refresh (family#211).
+- **`rotateKeys` CASes each record it rewrites.** A concurrent write during a rotation was silently
+  lost, and the stored version regressed with it (family#163).
+- **Two concurrent first opens both succeed.** The loser of the keyring-create race now loads
+  rather than surfacing a raw `ConflictError` (family#164).
+- **The `.join()` dangling-ref warning no longer logs a decrypted value**, and its dedup set no
+  longer retains one for the process lifetime (family#167).
+- **One central segment check** around the mounted store: a vault or collection that is not a single
+  segment, and an id with an empty, `.` or `..` component, are refused before any store sees them.
+  A `/` and a NUL in an id stay legal — hub emits both (family#133, family#174).
+- **`vault.export()` records an audit entry**, appended after the decrypt and before `encode`, and
+  `exportAccessibleData` records the access it made before building (family#151, family#175).
+- Additive: `ExportChunk` carries `ids` always and `envelopeMeta` on request; `PRIMITIVE_GROUPS`,
+  `GROUPS_WITHOUT_PRIMITIVES` and `VDIG_ITERATIONS` publish on `@noy-db/hub/capsule`; a sealer takes
+  an optional vault context (family#151, family#166, family#168, family#157).
+
 ## 0.10.0-pre.1
 
 **The first-entry pre-release.** Hub source since `0.10.0-pre.0`: two exports nothing could import are

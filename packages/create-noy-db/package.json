@@ -1,6 +1,6 @@
 {
   "name": "create-noy-db",
-  "version": "0.10.0-pre.1",
+  "version": "0.10.0-pre.2",
   "description": "The one noy-db command line: `npm create noy-db` scaffolds a project; `noy-db` then adds collections and users, rotates keys, backs up, inspects and verifies .noydb pods, audits schemas, validates and scaffolds configs, and monitors a live store.",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
