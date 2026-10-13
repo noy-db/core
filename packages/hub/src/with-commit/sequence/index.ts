@@ -31,6 +31,28 @@ export { withSequence } from './active.js'
 export { NO_SEQUENCE, type SequenceStrategy } from './strategy.js'
 export { SequenceNotEnabledError } from '../../kernel/errors.js'
 
+/**
+ * ⛔ **COUNTERS NEVER SYNC — A SEQUENCE IS UNIQUE PER DEVICE, NOT ACROSS A
+ * FLEET (family#206).** `_sequences` is absent from `RESERVED_REPLICATION`
+ * (`with-sync/reserved-mirror.ts:108`, whose replicated set is `_keyring`,
+ * `_broker_member`, `_broker`, `_meta`, `_users`, `_delegations`,
+ * `_rejections`), and `next()` CASes the counter record against the LOCAL
+ * store. So two devices issuing from the same sequence name produce the SAME
+ * numbers, and `next()`'s "no duplicates under concurrency" guarantee holds
+ * within one device only.
+ *
+ * ⚠️ The CAS is doing real work and it is not the gap here — it serializes
+ * concurrent writers against ONE store. What is missing is replication of the
+ * counter itself, which is why the failure is invisible to any single-device
+ * test and to every in-tree simulation that shares a store.
+ *
+ * ⛔ Do not use this for an invoice number that must be unique across devices
+ * until family#206 lands — it is the first item of the next cycle.
+ *
+ * ⭐ Measured: with sync on both devices, A `next()` → 1, A pushes, B pulls the
+ * whole vault, B `next()` → 1. Two records numbered 1 after a COMPLETE sync
+ * cycle — the pull cannot help, because there is nothing replicating to pull.
+ */
 export const SEQUENCE_COLLECTION = '_sequences'
 // A sequence is a single hot CAS row — higher contention than a ledger
 // append. A larger budget + jittered backoff absorbs moderate concurrency;
