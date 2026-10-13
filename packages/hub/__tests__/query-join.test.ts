@@ -396,7 +396,14 @@ describe('Query.join() — v0.6 eager single-FK joins', () => {
     warnSpy.mockRestore()
   })
 
-  it('warn mode attaches null and emits a one-shot warning per unique dangling ref', async () => {
+  it('warn mode attaches null and emits ONE warning per leg (family#167)', async () => {
+    // ⚠️ THIS CASE USED TO ASSERT ONE WARNING PER UNIQUE DANGLING VALUE, and
+    // that was correct for the old design and is now wrong. family#167 moved the
+    // dedup key from `field → target:refId` to `field → target`, because
+    // `refId` is decrypted record content: the old key RETAINED every dangling
+    // value in a module-level Set for the process lifetime, and the message
+    // printed it. Two unique values therefore produce ONE line now, and the
+    // count below changed from 2 to 1 deliberately rather than loosening.
     const c = await db.openVault('TEST')
     const clients = c.collection<Client>('clients')
     const invoices = c.collection<Invoice>('invoices', {
@@ -419,12 +426,15 @@ describe('Query.join() — v0.6 eager single-FK joins', () => {
     expect(rows[1]?.client).toBeNull()
     expect(rows[2]?.client).toBeNull()
 
-    // Two unique dangling keys → two unique warnings. The same
-    // refId should only warn once even though two rows hit it.
+    // Two unique dangling keys, three rows → ONE warning, naming the leg and
+    // carrying no value from either record.
     const danglingCalls = warnSpy.mock.calls.filter(call =>
       typeof call[0] === 'string' && call[0].includes('dangling ref'),
     )
-    expect(danglingCalls).toHaveLength(2)
+    expect(danglingCalls).toHaveLength(1)
+    const logged = danglingCalls.map(c => String(c[0])).join('\n')
+    expect(logged).not.toContain('missing')
+    expect(logged).not.toContain('other-missing')
     warnSpy.mockRestore()
   })
 

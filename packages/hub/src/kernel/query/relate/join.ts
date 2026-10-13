@@ -447,18 +447,30 @@ export function coerceRefKey(value: unknown): string | null {
 }
 
 /**
- * Warn-channel deduplication for dangling-ref `'warn'` mode. Keyed
- * by `field → target:refId` so the same dangling ref only produces
- * one warning even across many rows or repeated queries.
+ * Warn-channel deduplication for dangling-ref `'warn'` mode (family#167).
+ *
+ * ⛔ THE REF VALUE NEVER REACHES THE LOG. It used to: the message carried
+ * `"<target>:<refId>"`, and `refId` is decrypted record content — a ref field
+ * is routinely an email, an account number or a customer id. `console.warn`
+ * goes wherever the host collects logs: a file, a shipper, a cloud sink. That
+ * is outside the zero-knowledge boundary this library exists to hold, and it
+ * leaked on an ordinary read path, in the mode a caller picks to be lenient.
+ *
+ * ⚠️ Keyed by `field → target` now, not by value — so one line per leg instead
+ * of one per dangling id. No information is lost: the id was never usable from
+ * a log without the leak, and `mode: 'strict'` hands it to the CALLER, who
+ * already holds the plaintext, as `DanglingReferenceError.refId`.
  */
 const warnedDanglingKeys = new Set<string>()
-function warnOnceDangling(field: string, target: string, refId: string): void {
-  const key = `${field}→${target}:${refId}`
+function warnOnceDangling(field: string, target: string): void {
+  const key = `${field}→${target}`
   if (warnedDanglingKeys.has(key)) return
   warnedDanglingKeys.add(key)
   console.warn(
-    `[noy-db] .join() encountered dangling ref in 'warn' mode: ` +
-      `field "${field}" → "${target}:${refId}" not found. Attaching null.`,
+    `[noy-db] .join() encountered a dangling ref in 'warn' mode: ` +
+      `field "${field}" → "${target}" not found. Attaching null. ` +
+      `The ref VALUE is deliberately omitted — use mode: 'strict' to get it, ` +
+      `as DanglingReferenceError.refId, in your own catch.`,
   )
 }
 
@@ -932,7 +944,7 @@ function attachJoin(
       })
     }
     if (refKey !== null && leg.mode === 'warn') {
-      warnOnceDangling(leg.field, leg.target, refKey)
+      warnOnceDangling(leg.field, leg.target)
     }
     // For 'cascade' and null refs we attach null silently. Cascade
     // is a delete-time mode; any dangling refs visible at read time

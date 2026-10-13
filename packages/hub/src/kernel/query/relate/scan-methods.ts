@@ -338,13 +338,26 @@ export class ScanRelateMethods<T, S extends keyof T = never, M extends keyof T &
         })
       }
       if (refKey !== null && leg.mode === 'warn') {
-        const dedupKey = `${leg.field}→${leg.target}:${refKey}`
+        // family#167 — the ref VALUE never reaches the log. `refKey` is
+        // decrypted record content: a ref field is routinely an email, an
+        // account number or a customer id, and `console.warn` goes wherever the
+        // host collects logs — a file, a shipper, a cloud sink. That is outside
+        // the zero-knowledge boundary this library exists to hold, and it leaked
+        // on an ordinary read path in the DEFAULT-adjacent 'warn' mode.
+        //
+        // ⚠️ Deduped per (field, target) rather than per value, which also
+        // means one line instead of one per dangling id. No information is
+        // lost: the id was never usable from a log without the leak, and
+        // `mode: 'strict'` hands it to the caller — who already holds the
+        // plaintext — as `DanglingReferenceError.refId`.
+        const dedupKey = `${leg.field}→${leg.target}`
         if (!resolver.warnedKeys.has(dedupKey)) {
           resolver.warnedKeys.add(dedupKey)
           console.warn(
-            `[noy-db] ScanBuilder.join() encountered dangling ref in ` +
-              `'warn' mode: field "${leg.field}" → "${leg.target}:` +
-              `${refKey}" not found. Attaching null.`,
+            `[noy-db] ScanBuilder.join() encountered a dangling ref in ` +
+              `'warn' mode: field "${leg.field}" → "${leg.target}" not found. ` +
+              `Attaching null. The ref VALUE is deliberately omitted — use ` +
+              `mode: 'strict' to get it, as DanglingReferenceError.refId.`,
           )
         }
       }
