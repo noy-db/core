@@ -29,11 +29,14 @@
  *                     — every file that constructs its own Noydb
  *                       (calls `createNoydb({...})`) AND uses a
  *                       strategy-gated API on the resulting vault
- *                       (e.g. `vault.dump()`, `vault.ledger()`,
+ *                       (e.g. `vault.ledger()`,
  *                       `vault.dictionary()`) must also reference
  *                       the corresponding `with*()` factory.
- *                       Closes #299 (vault.dump() needs withHistory)
- *                       and #300 (test-fixture strategy audit).
+ *                       Closes #300 (test-fixture strategy audit).
+ *                       ⛔ #299 is NOT closed by this check any more:
+ *                       its premise ("vault.dump() needs withHistory")
+ *                       is false — see the `.dump` note on
+ *                       STRATEGY_GATED_APIS.
  *
  *   6. kernel-surface — the always-on orchestration files
  *                       (collection.ts / vault.ts / noydb.ts) must stay
@@ -109,51 +112,219 @@ function walkTsFiles(dir, onFile) {
  * don't trip on code shown inside `@example` blocks. Not a full parser
  * — but the only thing we care about is "could this line plausibly be
  * an actual import," and code-in-comments doesn't fit that bill.
+ *
+ * ⛔⛔ THIS WAS A REGEX CHAIN UNTIL family#207, AND IT ONLY HALF-WORKED.
+ * The chain recognised a line comment only at the START of a line
+ * (`/^\s*\/\/.*$/gm`), so every TRAILING comment survived into the later
+ * passes and was then read as code. Two distinct failures came out of that,
+ * and the first is the one this file already thought it had fixed:
+ *
+ *   1. THE PHANTOM BLOCK, STILL LIVE. The 2026-08-14 fix reordered the passes
+ *      (line comments before block comments) because `// via/lookup/**` opened
+ *      a phantom block that ran to the next `*​/` anywhere in the file, deleting
+ *      the real code in between. Reordering fixed that for a comment on its own
+ *      line and left it UNTOUCHED for `const g = 1 // via/lookup/**`. Measured
+ *      on the existing suite's own case 1, comment moved to the end of the
+ *      line: 3 protected-body accesses became 1.
+ *
+ *   2. THE PHANTOM STRING. `stripCommentsAndStrings` blanks quoted spans, so an
+ *      apostrophe in surviving comment prose — `// we don't opt in here` — pairs
+ *      with the next quote in the FILE and blanks everything between. Measured:
+ *      it deleted `openVault('acme')` on the following line.
+ *
+ * ⭐ Both are the same root cause, so both are fixed by the same thing: ONE
+ * state-aware pass that knows where it is. There is no pass ordering left to
+ * get wrong, which is why the old `ORDER IS LOAD-BEARING` note is gone rather
+ * than merely satisfied — the invariant it protected no longer exists.
+ *
+ * ⚠️ The failure mode is the one this repo keeps re-learning: a guard that
+ * silently stops looking. It reports success over a file whose body it threw
+ * away, and 17 call sites share it. What it was hiding when family#207 found
+ * it: exactly one real violation (see the `.dump` note on STRATEGY_GATED_APIS),
+ * plus 323 code identifiers deleted across 34 files that no check's pattern
+ * happened to match — measured against `typescript`'s own scanner as an
+ * oracle, where the old chain loses those 323 and this one loses none.
  */
+// ─── region: source scanner ───────────────────────────────────────────
+// ⚠️ scripts/__tests__/strip-comments.test.ts LIFTS this whole region out of
+// this file and evaluates it, because the checker is a script with no exports
+// and a copy in the test would test the copy. The sentinels are the contract:
+// keep `scanSource` and both wrappers between them, and do not reference
+// anything declared outside the region.
+
+/**
+ * One left-to-right pass over TypeScript source, tracking which construct it
+ * is inside. Comments (both forms, anywhere on a line) are replaced with
+ * spaces; newlines are preserved throughout so a line number taken from the
+ * stripped text still points at the right source line.
+ *
+ * `blankStrings` empties string and template bodies as well — see
+ * {@link stripCommentsAndStrings}.
+ *
+ * ⚠️ Known and deliberate limits, because this is a scanner and not a parser:
+ *
+ *   - A template literal is blanked WHOLE, `${...}` interiors included, so a
+ *     call that appears ONLY inside an interpolation is invisible to the
+ *     caller. Pre-existing, carried over from the regex chain on purpose:
+ *     template-literal call sites are a rare path and keeping the interiors
+ *     means re-entering the scanner recursively for no measured gain.
+ *   - `/` after an identifier, a number, `)` or `]` is read as DIVISION, and
+ *     after anything else as the start of a regex literal. That is the
+ *     standard heuristic and it is right for every form in this tree; a regex
+ *     immediately following a keyword (`return /x/`) is the shape it would get
+ *     wrong, so the keyword list below exists. Regex bodies are emitted
+ *     VERBATIM — they are code, and blanking them would hide real call shapes.
+ *   - An unterminated string or regex is emitted up to the newline rather than
+ *     swallowing the rest of the file. Fail-small is the whole point here.
+ */
+function scanSource(content, blankStrings) {
+  // Tokens after which a `/` opens a REGEX rather than dividing. Anything not
+  // listed (an identifier, a number, `)`, `]`) means division.
+  const REGEX_FOLLOWS = new Set([
+    '', '=', '(', ',', ':', '[', '!', '&', '|', '?', '{', '}', ';', '+', '-',
+    '*', '%', '<', '>', '~', '^', 'return', 'typeof', 'case', 'in', 'of', 'do',
+    'else', 'yield', 'await', 'new', 'delete', 'void', 'instanceof',
+  ])
+  const WORD = /[A-Za-z0-9_$]/
+  // ⚠️ PERFORMANCE, not style: this walks in BULK between interesting
+  // characters instead of per-character. `INTERESTING` finds the next
+  // construct opener; everything before it is copied in one slice.
+  //
+  // The per-character form was CORRECT and was rejected on cost alone. Min of
+  // repeated warm runs over this tree: old regex chain 0.44s, per-character
+  // scanner 5.23s, this 1.23s. So state-awareness costs ~2.8x and a naive
+  // walk costs ~12x, on a gate that runs in CI on every push.
+  // ⚠️ The per-character figure first READ as 20.9s, on its first run against
+  // a freshly written file. That was a cold start, not a measurement, and it
+  // is recorded here because it nearly shipped as one: re-time back to back
+  // before quoting a ratio.
+  const INTERESTING = /[/"'`]/g
+  const parts = []
+  let i = 0
+  let prev = ''
+
+  /** The last significant token of `text`, for the regex-vs-division call. */
+  const tailToken = (text) => {
+    let e = text.length - 1
+    while (e >= 0 && /\s/.test(text[e])) e -= 1
+    if (e < 0) return null
+    if (!WORD.test(text[e])) return text[e]
+    let s = e
+    while (s > 0 && WORD.test(text[s - 1])) s -= 1
+    return text.slice(s, e + 1)
+  }
+
+  while (i < content.length) {
+    INTERESTING.lastIndex = i
+    const hit = INTERESTING.exec(content)
+    if (hit === null) {
+      parts.push(content.slice(i))
+      break
+    }
+    if (hit.index > i) {
+      const plain = content.slice(i, hit.index)
+      parts.push(plain)
+      const t = tailToken(plain)
+      if (t !== null) prev = t
+      i = hit.index
+    }
+
+    const c = content[i]
+    const next = content[i + 1]
+
+    // `// …` to end of line — ANYWHERE on the line, which is the whole fix.
+    if (c === '/' && next === '/') {
+      let j = i
+      while (j < content.length && content[j] !== '\n') j += 1
+      i = j
+      continue
+    }
+
+    // `/* … */`, blanked to spaces with newlines kept.
+    if (c === '/' && next === '*') {
+      const close = content.indexOf('*/', i + 2)
+      const stop = close === -1 ? content.length : close + 2
+      parts.push(content.slice(i, stop).replace(/[^\n]/g, ' '))
+      i = stop
+      continue
+    }
+
+    if (c === '"' || c === "'") {
+      let j = i + 1
+      while (j < content.length) {
+        if (content[j] === '\\') { j += 2; continue }
+        if (content[j] === c || content[j] === '\n') break
+        j += 1
+      }
+      const closed = content[j] === c
+      parts.push(blankStrings ? c + c : content.slice(i, closed ? j + 1 : j))
+      i = closed ? j + 1 : j
+      prev = c
+      continue
+    }
+
+    if (c === '`') {
+      let j = i + 1
+      let depth = 0
+      while (j < content.length) {
+        if (content[j] === '\\') { j += 2; continue }
+        if (content[j] === '`' && depth === 0) break
+        if (content[j] === '$' && content[j + 1] === '{') { depth += 1; j += 2; continue }
+        if (content[j] === '}' && depth > 0) { depth -= 1; j += 1; continue }
+        j += 1
+      }
+      const stop = Math.min(j + 1, content.length)
+      // Newlines inside a blanked template must survive, or every line number
+      // after a multi-line template shifts.
+      parts.push(blankStrings ? '``' + content.slice(i, stop).replace(/[^\n]/g, '') : content.slice(i, stop))
+      i = stop
+      prev = '`'
+      continue
+    }
+
+    if (c === '/' && REGEX_FOLLOWS.has(prev)) {
+      let j = i + 1
+      let inClass = false
+      let closed = false
+      while (j < content.length) {
+        if (content[j] === '\\') { j += 2; continue }
+        if (content[j] === '\n') break
+        if (content[j] === '[') inClass = true
+        else if (content[j] === ']') inClass = false
+        else if (content[j] === '/' && !inClass) { closed = true; break }
+        j += 1
+      }
+      if (closed) {
+        parts.push(content.slice(i, j + 1))
+        i = j + 1
+        prev = '/'
+        continue
+      }
+    }
+
+    // A lone `/` that is division, or an unterminated regex: emit and move on.
+    parts.push(c)
+    prev = c
+    i += 1
+  }
+  return parts.join('')
+}
+
 function stripComments(content) {
-  // ORDER IS LOAD-BEARING: line comments first, block comments second.
-  //
-  // The reverse order (which this had until 2026-08-14) is silently wrong. A
-  // line comment that merely MENTIONS a glob or path containing a slash-star —
-  // `// via/lookup/**` is the real example that exposed it — opens a phantom
-  // block comment for the block regex, which then runs to the next star-slash
-  // ANYWHERE in the file and deletes the real code in between.
-  //
-  // That is a guard that silently stops looking. It zeroed an entire file's
-  // enclave-body-only count while reporting success, and it is shared by 15
-  // call sites, so the same blindness applied to every check built on it.
-  // Nothing in the tree was being hidden when this was found, but only by luck
-  // — the phantom blocks happened to close over comment-only regions.
-  //
-  // Stripping line comments first cannot have the inverse problem: a `//`
-  // inside a block comment is removed harmlessly, and the block's own
-  // delimiters survive to be matched normally.
-  return content
-    .replace(/^\s*\/\/.*$/gm, '')       // // line comments
-    .replace(/\/\*[\s\S]*?\*\//g, '')   // /* ... */ and /** ... */
+  return scanSource(content, false)
 }
 
 /**
  * Stronger strip used by checks that scan for method-call shapes —
  * also removes string-literal contents so a substring like
  * `"vault.dictionary(...)"` inside an error message doesn't read as
- * an actual call. Replaces the body of strings with spaces (preserves
- * line numbers + structure for any later reporting).
+ * an actual call. Replaces the body of strings with nothing (preserves
+ * the quotes, and every newline, for any later reporting).
  */
 function stripCommentsAndStrings(content) {
-  let s = stripComments(content)
-  // Template literals (backticks) — handle ${...} interpolations by
-  // keeping their interiors (they ARE code) and only blanking the
-  // surrounding text. Cheaper proxy: blank everything inside backticks
-  // including `${...}`. False negative on calls that ONLY appear
-  // inside template-interpolated code is acceptable — template-literal
-  // call sites are a rare path.
-  s = s.replace(/`(?:\\.|[^`\\])*`/g, '``')
-  // Single + double quoted strings.
-  s = s.replace(/'(?:\\.|[^'\\])*'/g, "''")
-  s = s.replace(/"(?:\\.|[^"\\])*"/g, '""')
-  return s
+  return scanSource(content, true)
 }
+// ─── endregion: source scanner ────────────────────────────────────────
 
 // ─── Check 1: peer-dep convention ──────────────────────────────────────
 
@@ -391,8 +562,24 @@ function checkStoresCiphertextOnly() {
  * the ones with unique-enough method names AND realistic
  * production / test footprint.
  */
+// ⛔⛔ DO NOT RE-ADD A `.dump` ROW. It was here from #299 until family#207 and
+// it asserted a dependency that does not exist: this table is for APIs that
+// THROW without their strategy (see the docstring above), and `vault.dump()`
+// does not throw. It degrades, deliberately and documented —
+// `kernel/vault.ts`'s `dump()` doc says backups from "hub instances built
+// without the history strategy skip the integrity check with a warning — both
+// modes round-trip cleanly", it reads the ledger through `getLedgerOrNull()`,
+// and the no-op history stub returns empty rather than throwing
+// (`with-commit/history/strategy.ts`). `vault.ledger()` is the real
+// historyStrategy gate and its row below stays: it throws in so many words.
+//
+// ⭐ The reason this is a COMMENT and not an exemption for the one file that
+// tripped it: an exemption would have preserved the false claim and taxed
+// every future `dump()` caller with a wrong error message telling them to
+// pass a strategy they do not need. The row was never enforced before
+// family#207 only because the comment scanner was deleting the call site —
+// nothing proved the claim, which is how it survived a year.
 const STRATEGY_GATED_APIS = [
-  { api: /\.dump\s*\(/,        option: 'historyStrategy', factory: 'withHistory' },
   { api: /\.ledger\s*\(\s*\)/, option: 'historyStrategy', factory: 'withHistory' },
   { api: /\.dictionary\s*\(/,  option: 'i18nStrategy',    factory: 'withI18n' },
   { api: /\.lazyQuery\s*\(/,   option: 'indexingStrategy',   factory: 'withIndexing' },
