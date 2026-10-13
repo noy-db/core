@@ -230,9 +230,79 @@ export function toFile(options: JsonFileOptions): NoydbStore {
    * read-only, and nothing becomes unreadable.
    */
   function legacyRecordPath(vault: string, collection: string, id: string): string | null {
-    const encoded = encodeId(id)
-    if (encoded === id) return null // nothing moved for this id
+    // ⛔ THE FIRST VERSION OF THIS RETURNED ANOTHER RECORD'S CIPHERTEXT, and my
+    // own changeset called the residual a cosmetic `list` artefact. It was not.
+    // `a%00b` is simultaneously a literal id AND the encoded form of `a\x00b`,
+    // so falling back to the raw `a%00b.json` for the literal id handed back the
+    // NUL id's record — a CROSS-ID READ. Measured: `get('a%00b')` returned the
+    // body written for `a\x00b`.
+    //
+    // Three conditions, each ruling out a distinct way to be wrong:
+    //   1. The id holds no NUL. Such an id could never be stored before the
+    //      encoding existed, so it has no legacy copy by construction.
+    //   2. The id contains `%`. That is the only character whose encoding MOVED
+    //      an existing file; without one there is no legacy name to look for.
+    //   3. `encodeId(decodeId(id)) !== id` — the id is not itself a valid
+    //      ENCODED form. If it is, the raw path belongs to whatever decodes to
+    //      it and never to this id. This is the condition that closes the
+    //      cross-id read, and it works because an encoded path can only ever
+    //      contain `%25` or `%00`.
+    if (id.includes('\0')) return null
+    if (!id.includes('%')) return null
+    if (encodeId(decodeId(id)) === id) return null
     return contained(join(dir, vault, collection, `${id}.json`), `record "${id}"`)
+  }
+
+  /**
+   * Read one record by id — encoded path first, legacy raw name second.
+   *
+   * ⭐ ONE READER FOR `get` AND `loadAll`, because they had drifted and only
+   * one of them was right. `loadAll` joined the DECODED id straight into a
+   * path, so a NUL-bearing id threw inside its `try` and the WHOLE collection
+   * came back empty — which a sync peer reads as every record deleted — while
+   * `get` went through `recordPath` and worked. Two readers for one on-disk
+   * layout is how that happens; the fix is one reader, not the same correction
+   * applied twice.
+   */
+  async function readRecord(
+    vault: string,
+    collection: string,
+    id: string,
+  ): Promise<EncryptedEnvelope | null> {
+    const path = recordPath(vault, collection, id)
+    try {
+      return JSON.parse(await readFile(path, 'utf-8')) as EncryptedEnvelope
+    } catch (err) {
+      // family#162 — only an ABSENT file may fall through to `null`. A read
+      // failure or a corrupt body is reported, because hub reads `null` as "no
+      // such record" and will create over it.
+      if (!isAbsence(err)) throw err
+      const legacy = legacyRecordPath(vault, collection, id)
+      if (legacy === null) return null
+      try {
+        return JSON.parse(await readFile(legacy, 'utf-8')) as EncryptedEnvelope
+      } catch (legacyErr) {
+        if (!isAbsence(legacyErr)) throw legacyErr
+        return null
+      }
+    }
+  }
+
+  /**
+   * Unlink a path that may not exist, and report anything else.
+   *
+   * family#162's write-side rule: deleting what is already gone is the caller's
+   * intent already satisfied, but an EACCES or EPERM reported as success is a
+   * delete the caller believes happened — and sync and forget both act on that
+   * answer. `null` is "there is no such path to consider", not a failure.
+   */
+  async function unlinkIfPresent(path: string | null): Promise<void> {
+    if (path === null) return
+    try {
+      await unlink(path)
+    } catch (err) {
+      if (!isAbsence(err)) throw err
+    }
   }
 
   function collectionDir(vault: string, collection: string): string {
@@ -307,14 +377,6 @@ export function toFile(options: JsonFileOptions): NoydbStore {
     return code === 'ENOENT' || code === 'ENOTDIR'
   }
 
-  async function fileExists(path: string): Promise<boolean> {
-    try {
-      await stat(path)
-      return true
-    } catch {
-      return false
-    }
-  }
 
   function serialize(envelope: EncryptedEnvelope): string {
     return pretty ? JSON.stringify(envelope, null, 2) : JSON.stringify(envelope)
@@ -335,27 +397,7 @@ export function toFile(options: JsonFileOptions): NoydbStore {
     },
 
     async get(vault, collection, id) {
-      const path = recordPath(vault, collection, id)
-      try {
-        const content = await readFile(path, 'utf-8')
-        return JSON.parse(content) as EncryptedEnvelope
-      } catch (err) {
-        // family#162 — only an ABSENT file may fall through to `null`. A read
-        // failure or a corrupt body is reported, because hub reads `null` as
-        // "no such record" and will create over it.
-        if (!isAbsence(err)) throw err
-        // family#174 — fall back to the pre-encoding name. See
-        // `legacyRecordPath`: this is what keeps a live record whose id contains
-        // a `%` readable across the encoding change.
-        const legacy = legacyRecordPath(vault, collection, id)
-        if (legacy === null) return null
-        try {
-          return JSON.parse(await readFile(legacy, 'utf-8')) as EncryptedEnvelope
-        } catch (legacyErr) {
-          if (!isAbsence(legacyErr)) throw legacyErr
-          return null
-        }
-      }
+      return readRecord(vault, collection, id)
     },
 
     async put(vault, collection, id, envelope, expectedVersion) {
@@ -367,9 +409,14 @@ export function toFile(options: JsonFileOptions): NoydbStore {
         // NONZERO expectation against nothing conflicts instead of upserting.
         // ⚠️ Still advisory, not atomic — `capabilities.casAtomic` is false here
         // because this read and the write below can interleave with another writer.
-        const current = await fileExists(path)
-          ? (JSON.parse(await readFile(path, 'utf-8')) as EncryptedEnvelope)._v
-          : 0
+        // ⚠️ THE LEGACY PATH COUNTS FOR THE CAS TOO. Reading only the encoded
+        // name made a legacy `%`-bearing id report version 0, so every versioned
+        // put against it conflicted FOREVER — measured: `get` saw `_v: 3` and
+        // `put` expecting 3 was told "found 0". A record that is readable but
+        // unwritable is worse than one that is neither, because nothing surfaces
+        // until a caller tries to change it.
+        const existing = await readRecord(vault, collection, id)
+        const current = existing?._v ?? 0
         if (current !== expectedVersion) {
           throw new ConflictError(current, `Version conflict: expected ${expectedVersion}, found ${current}`)
         }
@@ -381,18 +428,20 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       // Persisted indexing therefore never worked on a to-file mount.
       await ensureDir(dirname(path))
       await atomicWrite(path, serialize(envelope))
+      // ⛔ DROP THE RAW COPY ON WRITE. Leaving it meant two files for one id,
+      // and `list` reports both — so a record that had been rewritten came back
+      // twice, under its real name and under the decoded legacy one. Converging
+      // on write is also what makes the fallback above a MIGRATION rather than a
+      // permanent second lookup path.
+      await unlinkIfPresent(legacyRecordPath(vault, collection, id))
     },
 
     async delete(vault, collection, id) {
-      const path = recordPath(vault, collection, id)
-      try {
-        await unlink(path)
-      } catch (err) {
-        // family#162, the write-side twin: deleting what is already gone is
-        // success, but an EACCES or EPERM reported as success is a delete the
-        // caller believes happened. Sync and forget both act on that answer.
-        if (!isAbsence(err)) throw err
-      }
+      // ⛔ BOTH NAMES. Deleting only the encoded path left the legacy copy
+      // standing, and `list` still reported it — so a deleted record RESURFACED
+      // on the next listing, and a sync peer would re-create it.
+      await unlinkIfPresent(recordPath(vault, collection, id))
+      await unlinkIfPresent(legacyRecordPath(vault, collection, id))
     },
 
     async list(vault, collection) {
@@ -413,8 +462,14 @@ export function toFile(options: JsonFileOptions): NoydbStore {
 
           const records: Record<string, EncryptedEnvelope> = {}
           for (const id of await listIds(vault, collName)) {
-            const content = await readFile(join(collPath, `${id}.json`), 'utf-8')
-            records[id] = JSON.parse(content) as EncryptedEnvelope
+            // ⛔ THROUGH `readRecord`, NEVER `join(collPath, id)`. `listIds`
+            // returns DECODED ids, so joining one straight into a path put a
+            // raw NUL in a filename — which throws, inside this `try`, which
+            // abandoned the WHOLE collection. Measured: a vault holding one
+            // NUL-bearing id and one ordinary record returned an EMPTY
+            // snapshot, and a sync peer reads that as every record deleted.
+            const envelope = await readRecord(vault, collName, id)
+            if (envelope !== null) records[id] = envelope
           }
           snapshot[collName] = records
         }
