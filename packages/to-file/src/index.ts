@@ -305,6 +305,93 @@ export function toFile(options: JsonFileOptions): NoydbStore {
     }
   }
 
+  /**
+   * Does this filesystem fold case? Probed once, lazily, in the store dir.
+   *
+   * ⛔ WHY A PROBE AND NOT A PLATFORM CHECK. `process.platform === 'darwin'`
+   * is the wrong question twice over: macOS can be formatted case-SENSITIVE,
+   * and a case-sensitive Linux host can have a case-folding mount (SMB, a
+   * FAT/exFAT volume, a Docker bind mount from a macOS host). The only honest
+   * answer comes from the directory the records actually live in.
+   *
+   * ⚠️ The probe writes one file and reads it back under a differently-cased
+   * name, then removes it. It runs at most once per store and is cached even
+   * on failure — an unwritable dir is not a case question, and re-probing on
+   * every write would make a cold store slower for no information.
+   */
+  let foldsCase: boolean | null = null
+  async function filesystemFoldsCase(): Promise<boolean> {
+    if (foldsCase !== null) return foldsCase
+    const probe = join(root, '.noydb-case-probe-Aa')
+    try {
+      await mkdir(root, { recursive: true })
+      // ⛔ A DIRECTORY, PROBED WITH `stat` — NO FILE WRITE AT ALL. Two earlier
+      // shapes both changed what they measured:
+      //   - `atomicWrite` consumed a test's injected write failure
+      //     (`atomic-write.test.ts` tears the FIRST write to simulate an
+      //     interruption), so the real put then succeeded and two cases that
+      //     assert a rejection stopped seeing one;
+      //   - plain `writeFile` did the same, because the mock is at the
+      //     `node:fs/promises` layer, not at this adapter's.
+      // A diagnostic that spends the caller's first write is a diagnostic that
+      // changes the thing it is diagnosing. `mkdir` + `stat` touches neither.
+      await mkdir(probe, { recursive: true })
+      foldsCase = await stat(join(root, '.noydb-case-probe-aa'))
+        .then(() => true)
+        .catch(() => false)
+    } catch {
+      // Cannot probe (read-only dir, permissions). Assume NOT folding: a false
+      // positive would refuse legitimate writes on a case-sensitive store,
+      // which is worse than leaving the collapse detectable downstream — hub's
+      // AAD binds the id, so a folded read surfaces as TamperedError rather
+      // than as wrong plaintext.
+      foldsCase = false
+    } finally {
+      await rm(probe, { recursive: true, force: true })
+    }
+    return foldsCase
+  }
+
+  /**
+   * Refuse a write whose id case-folds onto a DIFFERENT existing id (family#177).
+   *
+   * ⛔ THE COLLAPSE IS SILENT AND THE SURVIVOR IS A CHIMERA. Measured outside
+   * noy-db entirely — `printf 'UPPER' > Abc.json`, `printf 'lower' > abc.json`
+   * leaves ONE file named `Abc.json` containing `lower`. The entry keeps the
+   * FIRST id's name and the SECOND id's content, which is exactly the shape
+   * MySQL's case-insensitive collation produced for `to-mysql`.
+   *
+   * ⚠️ REFUSING, not re-encoding. Encoding case into the filename would move
+   * every existing record whose id has an uppercase letter — a storage-format
+   * break with a migration attached — and this adapter's contract already
+   * allows a store to reject an id it cannot represent.
+   */
+  async function assertNoCaseCollision(vault: string, collection: string, id: string): Promise<void> {
+    if (!await filesystemFoldsCase()) return
+    const encoded = encodeId(id)
+    const parent = dirname(join(dir, vault, collection, `${encoded}.json`))
+    const leaf = `${encoded.split('/').pop() ?? encoded}.json`
+    let entries: string[]
+    try {
+      entries = await readdir(parent)
+    } catch (err) {
+      if (isAbsence(err)) return // nothing to collide with yet
+      throw err
+    }
+    const folded = leaf.toLowerCase()
+    for (const entry of entries) {
+      if (entry !== leaf && entry.toLowerCase() === folded) {
+        throw new ValidationError(
+          `to-file: record id ${JSON.stringify(id)} case-folds onto the existing `
+          + `${JSON.stringify(decodeId(entry.slice(0, -5)))} on a case-insensitive filesystem, `
+          + `so writing it would REPLACE that record's body while keeping its name. `
+          + `Refusing. Use ids that differ by more than case, or mount the store on a `
+          + `case-sensitive filesystem.`,
+        )
+      }
+    }
+  }
+
   function collectionDir(vault: string, collection: string): string {
     assertName(vault, 'vault')
     assertName(collection, 'collection')
@@ -426,6 +513,7 @@ export function toFile(options: JsonFileOptions): NoydbStore {
       // `_idx/<field>/<recordId>` nests below the collection, and the atomic write
       // failed with ENOENT on its `.tmp` leaf because nothing created that directory.
       // Persisted indexing therefore never worked on a to-file mount.
+      await assertNoCaseCollision(vault, collection, id)
       await ensureDir(dirname(path))
       await atomicWrite(path, serialize(envelope))
       // ⛔ DROP THE RAW COPY ON WRITE. Leaving it meant two files for one id,
