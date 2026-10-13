@@ -2110,8 +2110,28 @@ export async function rotateKeys(
     ]
     for (const ref of refs) {
       const { collection: refColl, id } = ref
+      // family#163 — THE REKEY IS A READ-MODIFY-WRITE AND IT HAD NO CAS.
+      //
+      // ⛔ A concurrent writer between the read and the write was silently
+      // lost, and the stored version REGRESSED with it: `rekeyEnvelopeToDek`
+      // carries `_v` through unchanged (an in-place rekey is "same `_v`, new
+      // bytes" by design, core#100), so writing the re-keyed copy of version 5
+      // over a concurrently-written version 6 put the record back at 5. The
+      // lost content is the obvious half; the regression is the worse one,
+      // because sync orders by `_v` and a peer that already pulled 6 will never
+      // re-pull 5. Measured: no throw, `_v` back to 1, the concurrent body gone.
+      //
+      // ⚠️ A bounded RE-READ, not just a CAS. On conflict the record is newer
+      // and still under the OLD dek, so the rotation must re-key THAT version —
+      // failing instead would leave the collection half-rotated, which is the
+      // state this whole function is built to be resumable from. Three attempts:
+      // a writer hot enough to win three races will win a fourth, and looping
+      // forever inside a rotation holding the caller's keyring is worse than a
+      // loud failure a resume can finish.
+      let attempt = 0
+      for (;;) {
       const envelope = await store.get(vault, refColl, id)
-      if (!envelope || !envelope._iv) continue
+      if (!envelope || !envelope._iv) break
 
       // #1074 — one enclave helper does the whole per-record rotation:
       // carries every slot except `_bidx`, and re-wraps a per-record CEK
@@ -2140,13 +2160,20 @@ export async function rotateKeys(
         newEnvelope = await rekeyEnvelopeIfNeeded({ collection: refColl, id }, envelope, oldDek, newDek)
       } catch (err) {
         if (await envelopeOpensUnderAny({ collection: refColl, id }, envelope, siblingSlotDeks)) {
-          continue // another slot's business — that slot's own pass re-keys it
+          break // another slot's business — that slot's own pass re-keys it
         }
         throw err
       }
-      if (newEnvelope !== null) {
-        await store.put(vault, refColl, id, newEnvelope)
+      if (newEnvelope === null) break // already under newDek — resumed rotation
+      try {
+        await store.put(vault, refColl, id, newEnvelope, envelope._v)
         rewritten.push({ collection: refColl, id, version: newEnvelope._v })
+        break
+      } catch (err) {
+        if (!isConflictError(err) || ++attempt >= 3) throw err
+        // Someone wrote between the read and the write. Loop: re-read, re-key
+        // the newer version, CAS again.
+      }
       }
     }
   }
