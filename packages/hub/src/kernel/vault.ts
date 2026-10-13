@@ -62,7 +62,7 @@ import type { NoydbEventEmitter } from './events.js'
 import type { ObjectProjection } from '../with-shape/blobs/object-projection.js'
 import type { ArchivePolicy, ArchiveContext, ArchiveResult, ArchiveRunOptions } from '../with-fork/archive/index.js'
 import { runArchive, runRestore, runListArchived } from '../with-fork/archive/index.js'
-import { type SequenceStore, type SequenceHandle, type FormattedSequenceHandle, type SequenceOptions, resolveSequenceKey, compileSequenceFormat, SEQUENCE_COLLECTION } from '../with-commit/sequence/index.js'
+import { type SequenceStore, type SequenceHandle, type FormattedSequenceHandle, type SequenceOptions, resolveSequenceKey, compileSequenceFormat, resolveRemoteSequenceStore, SEQUENCE_COLLECTION } from '../with-commit/sequence/index.js'
 import { DeferredNumberingStore, type Assignment } from '../with-commit/numbering/index.js'
 import type { DeferredNumberingConfig } from '../with-commit/numbering/descriptor.js'
 import type { TierMoveResult } from '../with-audit/tiers/strategy.js'
@@ -135,7 +135,7 @@ import type { ReadOnlyVaultFacade } from '../with-audit/guards/read-only-facade.
 import type { DerivationRegistry } from '../with-formula/derivations/registry.js'
 import type { DerivationStrategy } from '../with-formula/derivations/types.js'
 import { buildBehaviorSummary, type BehaviorSummary } from '../with-shape/introspection/behaviors.js'
-import { ReservedCollectionNameError, StaticDictReadonlyError, SatelliteConfigError } from './errors.js'
+import { ReservedCollectionNameError, StaticDictReadonlyError, SatelliteConfigError, SequenceAuthorityUnavailableError } from './errors.js'
 import { declareSatellite } from '../with-shape/satellites/declare.js'
 import { makeSatelliteProxy, makeBaseProxy } from '../with-shape/satellites/proxy.js'
 import type { SatelliteRegistry } from '../with-shape/satellites/registry.js'
@@ -338,13 +338,7 @@ export class Vault {
 
   /** Lazily-built atomic-sequence store. See {@link sequence}. */
   private sequenceStore: SequenceStore | null = null
-  /**
-   * family#206 — the separate sequence store bound to the sync-peer's store,
-   * for `authority: 'remote'` series. Kept apart from {@link sequenceStore}
-   * because the two address DIFFERENT stores and must never be swapped by
-   * accident: one memoized store serving both authorities would hand a remote
-   * series the local adapter the moment the local one was built first.
-   */
+  /** family#206 — the `authority: 'remote'` store. SEPARATE from `sequenceStore` on purpose: they address different stores, and one memo for both would hand a remote series the local adapter. */
   private remoteSequenceStore: SequenceStore | null = null
   /** family#206 — resolves the sync-peer target to issue remote sequences from. */
   private getAuthorityStore: (() => { store: NoydbStore; label?: string } | null) | undefined
@@ -472,14 +466,7 @@ export class Vault {
     syncAdapter?: NoydbStore | undefined
     /** #615 — push-only sync targets (backup/archive) this vault may target-purge. Default: none. */
     getPurgeableTargets?: () => readonly { store: NoydbStore; role: 'backup' | 'archive'; label?: string }[]
-    /**
-     * family#206 — the SYNC-PEER target a remote-authority sequence issues
-     * from, or `null`. Deliberately not `syncAdapter`: that falls back to the
-     * first target of any role (`noydb.ts`'s `primaryTarget`), and a
-     * `backup`/`archive` target is push-only, so reading a counter back from
-     * it is not part of its contract. An authority must be a store both
-     * devices read AND write.
-     */
+    /** family#206 — the SYNC-PEER a remote-authority sequence issues from, or `null`. ⛔ Not `syncAdapter`: see `with-commit/sequence`'s `resolveRemoteSequenceStore`. */
     getAuthorityStore?: () => { store: NoydbStore; label?: string } | null
     /**
      * tree-shake seam — strategy for optional blob storage.
@@ -1656,6 +1643,26 @@ export class Vault {
    * await seq.next()   // { serial: 1, formatted: '2026/0001' }
    * ```
    */
+  /** family#206 — the store a remote-authority series issues from. Preconditions and the reasoning: `with-commit/sequence`'s `resolveRemoteSequenceStore`. */
+  private authoritativeSequenceStore(series: string): SequenceStore {
+    this.remoteSequenceStore = resolveRemoteSequenceStore({
+      series,
+      target: this.getAuthorityStore?.() ?? null,
+      existing: this.remoteSequenceStore,
+      deks: () => this.keyring.deks,
+      build: (adapter, getDEK) => this.strategies.sequence.createStore({
+        adapter, vault: this.name, encrypted: this.encrypted, getDEK, actor: this.keyring.userId,
+      }),
+    })
+    return this.remoteSequenceStore
+  }
+
+  /** family#206 — a sync-peer attached after open becomes the authority; drop any store memoized against the previous answer. */
+  _setAuthorityStore(resolve: () => { store: NoydbStore; label?: string } | null): void {
+    this.getAuthorityStore = resolve
+    this.remoteSequenceStore = null
+  }
+
   sequence(series: string, opts: SequenceOptions & { format: string }): FormattedSequenceHandle
   sequence(series: string, opts?: SequenceOptions): SequenceHandle
   sequence(series: string, opts?: SequenceOptions): SequenceHandle | FormattedSequenceHandle {
@@ -1692,18 +1699,24 @@ export class Vault {
         },
       }
     }
-    if (!this.sequenceStore) {
-      // Opt-in gate (S4): NO_SEQUENCE.createStore throws SequenceNotEnabledError
-      // unless `sequenceStrategy: withSequence()` was passed to createNoydb.
-      this.sequenceStore = this.strategies.sequence.createStore({
-        adapter: this.adapter,
-        vault: this.name,
-        encrypted: this.encrypted,
-        getDEK: this.getDEK,
-        actor: this.keyring.userId,
-      })
+    // family#206 — `'remote'` issues from the sync-peer; absent/`'local'` is unchanged.
+    let store: SequenceStore
+    if (opts?.authority === 'remote') store = this.authoritativeSequenceStore(series)
+    else {
+      if (!this.sequenceStore) {
+        // Opt-in gate (S4): NO_SEQUENCE.createStore throws SequenceNotEnabledError
+        // unless `sequenceStrategy: withSequence()` was passed to createNoydb.
+        this.sequenceStore = this.strategies.sequence.createStore({
+          adapter: this.adapter,
+          vault: this.name,
+          encrypted: this.encrypted,
+          getDEK: this.getDEK,
+          actor: this.keyring.userId,
+        })
+      }
+      store = this.sequenceStore
     }
-    const handle = this.sequenceStore.handle(resolveSequenceKey(series, opts))
+    const handle = store.handle(resolveSequenceKey(series, opts))
     if (opts?.format === undefined) return handle
     // Formatted variant: validate the template now (throws on a bad
     // token), then wrap next() to also return the rendered serial string.
