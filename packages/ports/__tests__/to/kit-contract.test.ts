@@ -110,6 +110,16 @@ describe('the adapter conformance kit, run against stores broken in one way each
     await expectRefused('broken-merges-saveall', /a collection absent from the snapshot is gone/, 2)
   }, 120_000)
 
+  // family#217 — a case-FOLDING store that also prunes `saveAll` by the
+  // snapshot's unfolded keys, which is how `to-file` lost both records. Count
+  // is 2 and measured, not predicted: this fixture genuinely folds ids, so the
+  // `put`-level family#177 case fires alongside the `saveAll` one. Both belong
+  // to the same defect, which is the attribution holding rather than slipping
+  // — the same shape as the `expectedVersion` fixture reddening four.
+  it('⛔ FAILS a store that folds id case and prunes the folded record (family#217)', async () => {
+    await expectRefused('broken-folds-case', /must not LOSE a record whose id case-folds/, 2)
+  }, 120_000)
+
   it('⛔ FAILS a store that strips the _del delete marker (#589)', async () => {
     await expectRefused('broken-drops-delete-marker', /round-trips a delete-marker envelope/)
   }, 120_000)
