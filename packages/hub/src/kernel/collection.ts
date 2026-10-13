@@ -1699,7 +1699,14 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     if ((envelope._tier ?? 0) > 0) return { admitted: true }
     let incoming: unknown
     try {
-      incoming = await this.codec.decryptRecord({ collection: this.name, id }, envelope, { skipValidation: true })
+      const raw = await this.codec.decryptRecord({ collection: this.name, id }, envelope, { skipValidation: true })
+      // family#187 — CANONICALIZED, exactly as `existing` is below. It was not,
+      // so a guard comparing the two on a `money()` field compared a STORED
+      // shape against a canonical one and reported a change on every pulled
+      // record — for an issued (WORM) record, it never synced. Invisible to any
+      // single-shape test: a collection with no via fields canonicalizes to
+      // itself, so the suite passed.
+      incoming = this.via ? this.via.canonicalizeStored(raw as Record<string, unknown>) : raw
     } catch {
       return { admitted: true }
     }
