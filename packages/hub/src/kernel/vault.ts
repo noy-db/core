@@ -1614,9 +1614,9 @@ export class Vault {
    */
   /**
    * Atomic, gap-free numbering. `vault.sequence('invoice-2026').next()`
-   * returns 1, 2, 3, … with no gaps or duplicates under concurrency, via
-   * an optimistic-CAS counter at `_sequences/<name>`. Each name is an
-   * independent sequence.
+   * returns 1, 2, 3, … with no duplicates under concurrency ON THIS DEVICE
+   * — ⛔ counters never sync; two devices issue the SAME numbers (family#206).
+   * Optimistic-CAS counter at `_sequences/<name>`; each name is independent.
    *
    * **Online-only:** `next()` throws `SequenceOfflineError` unless the
    * store advertises `capabilities.casAtomic` — gap-free numbering cannot
