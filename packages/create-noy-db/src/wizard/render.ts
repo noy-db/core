@@ -75,9 +75,20 @@ export interface RenderTokens {
  */
 // ⚠️ Was '0.8.0' through create-noy-db 0.9.0, whose scaffolds paired hub 0.9.0
 // with in-* 0.8.0 (peer hub ^0.8.0) — an ERESOLVE under npm's strict peers.
-// Set to the in line cut in the SAME family cut as this hub (0.10.0-pre.0,
-// ruled 2026-09-29); resolvable once `in` has published, minutes after core.
-export const NOYDB_IN_VERSION = '0.10.0-pre.1'
+// Set to the in line cut in the SAME family cut as this hub.
+//
+// ⚠️ 0.10.0-pre.2 (ruled 2026-10-13). ⛔ THE WINDOW IS A FEW RELEASES, NOT
+// MINUTES — the older note here said "minutes after core", which understates
+// it: `in` is SIXTH in the family publish order, after core, to, as, on and at.
+// A scaffold created between core's publish and `in`'s will fail to install,
+// and the family root closes the window within the same session.
+//
+// ⛔ NOTHING IN THIS REPO CAN CATCH A WRONG VALUE HERE. `pins-resolve.test.ts`
+// says so itself: for an `@noy-db/in-*` dep the structural gate can only check
+// the token was applied, and only the `NOYDB_SCAFFOLD_INSTALL=1` registry gate
+// proves the version exists on npm. So a stale or premature value passes every
+// default run — which is how the 0.8.0/0.9.0 pairing above shipped.
+export const NOYDB_IN_VERSION = '0.10.0-pre.2'
 
 /** The package a wizard adapter choice names in generated prose (see `ADAPTER_PACKAGE`). */
 export const ADAPTER_PACKAGES = {

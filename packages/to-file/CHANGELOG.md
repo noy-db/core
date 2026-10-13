@@ -1,5 +1,26 @@
 # Changelog — to-file
 
+## 0.10.0-pre.2
+
+**Three defect classes, all of which answered a failure with the same value as an absence.**
+
+- **A read failure is no longer reported as an absence.** `get` returned `null`, `list` returned
+  `[]` and `loadAll` returned `{}` for every read error. Hub acts on those: its fail-closed
+  self-provisioning gate reads an empty `_keyring` listing as "a new vault", so an EACCES made it
+  provision a second owner into a populated vault. Only `ENOENT` and `ENOTDIR` mean absence now; a
+  corrupt body on a torn write reaches the caller (family#162).
+- **Record ids are encoded, reversibly.** `%` and NUL are percent-escaped per `/`-separated
+  component and decoded on `list`, so a partitioned sequence or period can be stored at all. `%` is
+  escaped first because otherwise the literal id `a%00b` and the id `a\x00b` would land in one file
+  (family#174). A read falls back to the pre-encoding name, so a live record whose id contains a `%`
+  stays readable, and a write drops the raw copy.
+- **A case-folding filesystem is detected and colliding writes are refused.** On macOS (APFS
+  default) and Windows (NTFS default), `Abc.json` and `abc.json` are one file keeping the first id's
+  name and the second id's body. Detected by probing the store directory, not by checking
+  `process.platform` — a case-sensitive host can carry a case-folding mount (family#177).
+- A slash-bearing id writes, and `list`, `listPage`, `loadAll` and `saveAll` see nested records: all
+  four used a flat `readdir`, so persisted indexing never worked on this store (family#133).
+
 ## 0.10.0-pre.1
 
 Lockstep bump to 0.10.0-pre.1; no package-level change in this release. See `@noy-db/hub` 0.10.0-pre.1 for the line's notes.

@@ -1,5 +1,17 @@
 # Changelog — to-browser-idb
 
+## 0.10.0-pre.2
+
+- **A failing transaction no longer rejects a promise nobody is listening to.** Every read path took
+  the transaction's store without its `complete` promise, so a transaction error produced an
+  `unhandledrejection` in a browser or a process-level warning in Node — a store read error able to
+  take down the host application. The error now reaches the caller instead of being discarded
+  (family#165).
+- **The cached connection is invalidated on close and on `versionchange`.** One connection was held
+  for the adapter's lifetime, so once it went away every later transaction failed against a dead
+  handle, permanently. A rejected open was cached too, making one transient startup failure last the
+  session (family#165).
+
 ## 0.10.0-pre.1
 
 Lockstep bump to 0.10.0-pre.1; no package-level change in this release. See `@noy-db/hub` 0.10.0-pre.1 for the line's notes.

@@ -1,5 +1,14 @@
 # Changelog — create-noy-db
 
+## 0.10.0-pre.2
+
+- Scaffolds pin `@noy-db/*` at `0.10.0-pre.2` and `@noy-db/in-*` at `0.10.0-pre.2`.
+  ⚠️ **The `in-*` pin resolves only once `noy-db/in` publishes its own `0.10.0-pre.2`.** `in` is
+  sixth in the family publish order (after core, to, as, on and at), so a scaffold created between
+  core's publish and `in`'s will fail to install. The family root closes that window in the same
+  session; the `NOYDB_SCAFFOLD_INSTALL=1` registry gate is what proves the pin resolves, and the
+  default test suite can only confirm the token was substituted.
+
 ## 0.10.0-pre.1
 
 - **`minimal` is the default template, behind a gate (family#115).** *"Use the recommended setup?"* → hub + browser storage, one file; "no" or any explicit flag opens the full prompts. `--yes` defaults to `minimal`. Measured chunk: 95 kB gzip — hub's root-barrel floor (family#120).
