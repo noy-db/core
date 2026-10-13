@@ -45,6 +45,9 @@ async function setup(store: NoydbStore, clientMode: 'rw' | 'ro' = 'ro') {
   return { ov, cv }
 }
 
+/** family#177 — clears the 12-character export bar. */
+const TAKEAWAY_SECRET = 'client-takeaway-2026'
+
 describe('#199 P3 — two-party withdrawal', () => {
   it('a read-only client files a request, the owner approves and the records are deleted under firm authority', async () => {
     const { ov, cv } = await setup(makeStore())
@@ -74,7 +77,7 @@ describe('#199 P3 — two-party withdrawal', () => {
   it('freeze disposition flows end-to-end through the request', async () => {
     const { ov, cv } = await setup(makeStore())
     const { requestId } = await cv.user.requestWithdrawal({ disposition: 'freeze', legalBasis: 'retention' })
-    const { snapshot } = await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'p' } })
+    const { snapshot } = await ov.user.approveWithdrawal(requestId, { reKey: { secret: TAKEAWAY_SECRET } })
     expect(snapshot).toBeTruthy()
     expect(snapshot!.recordCount).toBe(2)
     expect(snapshot!.sha256).toMatch(/^[0-9a-f]{64}$/)
@@ -104,8 +107,8 @@ describe('#199 P3 — two-party withdrawal', () => {
   it('a request cannot be approved twice', async () => {
     const { ov, cv } = await setup(makeStore())
     const { requestId } = await cv.user.requestWithdrawal({ legalBasis: 'gdpr-art-17' })
-    await ov.user.approveWithdrawal(requestId, { reKey: { secret: 'p' } })
-    await expect(ov.user.approveWithdrawal(requestId, { reKey: { secret: 'p' } }))
+    await ov.user.approveWithdrawal(requestId, { reKey: { secret: TAKEAWAY_SECRET } })
+    await expect(ov.user.approveWithdrawal(requestId, { reKey: { secret: TAKEAWAY_SECRET } }))
       .rejects.toBeInstanceOf(WithdrawalRequestError)
   })
 

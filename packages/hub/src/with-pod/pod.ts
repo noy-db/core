@@ -57,6 +57,7 @@ import type { Redirect } from './redirect.js'
 import type { DocSigner } from '../with-audit/attestation/signer.js'
 import { sha256Hex as sha256HexBytes } from '../capsule/index.js'
 import { PodIntegrityError, PodSealMismatchError, ValidationError } from '../kernel/errors.js'
+import { assertStrongSecret, assertStrongEchoSecret, EXPORT_SECRET_POLICY } from '../kernel/validation.js'
 import type { Vault } from '../kernel/vault.js'
 import type { PodRecipient } from '../with-party/team/keyring.js'
 import { pickLocale } from '../with-party/directory/cover/storage.js'
@@ -1433,6 +1434,57 @@ export async function writePod(
     throw new Error(
       'writePod: pass either exportSecret or recipients, not both',
     )
+  }
+
+  // family#177 — the export secret is ALWAYS checked, against the EXPORT bar
+  // rather than the owner bar (ruled 2026-10-13, after the first draft of this
+  // used the owner policy and refused 16 of this repo's own flows).
+  //
+  // ⛔ IT HAD NO GATE AT ALL. `assertStrongSecret` guards `createOwnerKeyring`,
+  // `grant` and `rotateSecret`; `exportSecret` reached none of them, so a pod
+  // could be re-keyed under a one-character secret. A `.noydb` bundle is the
+  // artefact most likely to leave the machine — mailed, uploaded, handed over —
+  // so this was the weakest secret in the system guarding the most portable
+  // file. Found while trying to make `writePod` throw for a test: the weak
+  // secret was simply accepted.
+  //
+  // ⭐ THE ASYMMETRY WITH THE OWNER CHECK IS DELIBERATE. The owner secret is
+  // validated only when a consumer opts in (`secret-mode.ts` passes
+  // `validate: validateSecret === true`, and never in managed mode); this one
+  // is checked always. That is not an inconsistency to tidy up: the owner
+  // secret guards a local vault behind the host OS's own protections, while
+  // this secret guards a file built to travel — mailed, uploaded, left in a
+  // downloads folder — where the only thing standing between an attacker and
+  // the plaintext is the secret itself. The bars differ in SHAPE for the same
+  // reason; see `EXPORT_SECRET_POLICY`.
+  //
+  // ⛔ NO `allowWeakSecret` HATCH, because "always checked" means always. The
+  // owner path has one and this deliberately does not: at a 12-character floor
+  // nothing in this repo needed it — every fixture that had to change was
+  // carrying a secret like `pw` or `r-pw` that no caller should ship. Re-adding
+  // a hatch is one line if a consumer presents a case for it.
+  //
+  // ⚠️ EVERY RECIPIENT TOO, not just the shorthand. `recipients[].secret` seals
+  // one keyring slot each, so gating only `exportSecret` would leave the
+  // multi-recipient path — the one used to hand a bundle to several people —
+  // ungated, which is the wrong way round.
+  // ⚠️ PRECEDENCE, stated because it is observable: this gate runs BEFORE the
+  // duplicate-recipient-id check, which lives deep in
+  // `buildBundleRecipientKeyrings` (vault.ts). So a request that is wrong in
+  // both ways reports the weak secret first. That is the useful order — the
+  // secrets must be fixed either way — and hoisting the id check up here would
+  // put one rule in two places, which is the drift this codebase keeps paying
+  // for. A fixture asserting the duplicate error therefore needs strong
+  // secrets, and `bundle-recipients.test.ts` now has them.
+  if (opts.exportSecret !== undefined) assertStrongSecret(opts.exportSecret, EXPORT_SECRET_POLICY)
+  for (const recipient of opts.recipients ?? []) {
+    // ⚠️ A recipient secret is a string OR echo parts. The string form takes the
+    // export bar; the echo form keeps `assertStrongEchoSecret`, whose per-word
+    // floor is deliberately relaxed because echo secrets are natural-language
+    // sentences — coercing it into a length floor would reject the shape it
+    // exists to accept.
+    if (typeof recipient.secret === 'string') assertStrongSecret(recipient.secret, EXPORT_SECRET_POLICY)
+    else assertStrongEchoSecret(recipient.secret)
   }
 
   // Auto-unlock: normalize once, validate + build from the

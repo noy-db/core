@@ -129,6 +129,16 @@ async function restoreAs(
   return { db }
 }
 
+/** ⚠️ NAMED, so the write side and the read side cannot drift — see
+ *  `bundle-recipient-expiry.test.ts` for what happened when they did. Each
+ *  clears family#177's 12-character export bar. */
+const SECRETS = {
+  export: 'recipient-export-2026',
+  alice: 'alice-export-2026',
+  bob: 'bob-export-2026x',
+  restricted: 'restricted-export-2026',
+} as const
+
 describe('writePod — exportSecret shorthand', () => {
   it('single-recipient bundle unlocks with the new secret', async () => {
     const { db: src, vault } = await setupSourceVault()
@@ -160,19 +170,19 @@ describe('writePod — multi-recipient', () => {
   it('every recipient unlocks independently with their own secret', async () => {
     const { db: src, vault } = await setupSourceVault()
     const recipients: readonly PodRecipient[] = [
-      { id: 'alice-r', secret: 'alice-pw', role: 'viewer' },
-      { id: 'bob-r',   secret: 'bob-pw',   role: 'viewer' },
+      { id: 'alice-r', secret: SECRETS.alice, role: 'viewer' },
+      { id: 'bob-r',   secret: SECRETS.bob,   role: 'viewer' },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const aliceDb = await restoreAs(bytes, 'alice-r', 'alice-pw')
+    const aliceDb = await restoreAs(bytes, 'alice-r', SECRETS.alice)
     const aliceVault = await aliceDb.db.openVault('demo')
     expect(await aliceVault.collection<Invoice>('invoices').get('a'))
       .toEqual({ id: 'a', amount: 100 })
     aliceDb.db.close()
 
-    const bobDb = await restoreAs(bytes, 'bob-r', 'bob-pw')
+    const bobDb = await restoreAs(bytes, 'bob-r', SECRETS.bob)
     const bobVault = await bobDb.db.openVault('demo')
     expect(await bobVault.collection<Invoice>('invoices').get('b'))
       .toEqual({ id: 'b', amount: 200 })
@@ -183,13 +193,13 @@ describe('writePod — multi-recipient', () => {
     const { db: src, vault } = await setupSourceVault()
     const recipients: readonly PodRecipient[] = [
       // 'restricted' gets only invoices — payments DEK must NOT be wrapped.
-      { id: 'restricted', secret: 'r-pw', role: 'operator',
+      { id: 'restricted', secret: SECRETS.restricted, role: 'operator',
         permissions: { invoices: 'ro' } },
     ]
     const bytes = await writePod(vault, { recipients })
     src.close()
 
-    const r = await restoreAs(bytes, 'restricted', 'r-pw')
+    const r = await restoreAs(bytes, 'restricted', SECRETS.restricted)
     const rv = await r.db.openVault('demo')
 
     // Invoices: readable.
@@ -209,7 +219,7 @@ describe('writePod — multi-recipient', () => {
     await expect(
       writePod(vault, {
         exportSecret: 'pw',
-        recipients: [{ id: 'r', secret: 'r-pw' }],
+        recipients: [{ id: 'r', secret: SECRETS.restricted }],
       }),
     ).rejects.toThrow(/either exportSecret or recipients, not both/)
     src.close()
@@ -220,8 +230,8 @@ describe('writePod — multi-recipient', () => {
     await expect(
       writePod(vault, {
         recipients: [
-          { id: 'same', secret: 'pw1' },
-          { id: 'same', secret: 'pw2' },
+          { id: 'same', secret: SECRETS.alice },
+          { id: 'same', secret: SECRETS.bob },
         ],
       }),
     ).rejects.toThrow(/duplicate recipient id/)
@@ -245,11 +255,11 @@ describe('writePod — recipients compose with slice', () => {
     // since filter while still proving the two pipelines compose.
     const bytes = await writePod(vault, {
       since: '2000-01-01T00:00:00Z',
-      recipients: [{ id: 'r', secret: 'r-pw' }],
+      recipients: [{ id: 'r', secret: SECRETS.restricted }],
     })
     src.close()
 
-    const r = await restoreAs(bytes, 'r', 'r-pw')
+    const r = await restoreAs(bytes, 'r', SECRETS.restricted)
     const rv = await r.db.openVault('demo')
     expect(await rv.collection<Invoice>('invoices').get('a'))
       .toEqual({ id: 'a', amount: 100 })
