@@ -16,7 +16,7 @@
  * it as part of the package contents.
  */
 
-import { promises as fs } from 'node:fs'
+import { promises as fs, existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -173,39 +173,84 @@ export function applyTokens(input: string, tokens: RenderTokens): string {
  * Resolves the absolute path of a template directory shipped inside the
  * package. The package layout is:
  *
- *   packages/create-noy-db/
+ *   create-noy-db/
  *     dist/
- *       wizard/render.js   ← we are here at runtime (after tsup build)
+ *       index.js           ← the LIBRARY entry lives here
+ *       bin/create.js      ← the BINS live one level deeper
  *     templates/
  *       nuxt-default/      ← we want to point at this
  *
- * In the published tarball the same relative path holds: `dist/` and
- * `templates/` are siblings under the package root. Computing the path
- * relative to `import.meta.url` lets us avoid hardcoding any assumption
- * about whether we're running from source, from `dist/`, or from a
- * globally installed copy.
+ * ⛔ THE DEPTH IS NOT FIXED, so a hardcoded `'..', '..'` cannot be right for
+ * both. This file is bundled (tsup, `splitting: false`, three entries), so
+ * `render.ts` is INLINED into each entry and `import.meta.url` is the
+ * ENTRY's path, never this source file's. From `dist/bin/create.js` two
+ * levels up is the package root; from `dist/index.js` it is the package's
+ * PARENT — `node_modules/`, or `packages/` in this monorepo. family#216:
+ * `ownVersion()` therefore read `node_modules/package.json` (ENOENT) and
+ * `templateDir()` pointed outside the package, for every LIBRARY caller
+ * (`bundledCatalog()`, `describeBundle()`); the bins were fine, which is
+ * exactly why it shipped. Latent since the 0.8 base, not a new regression —
+ * family#124 only widened it by making `describe` call `ownVersion()`.
+ *
+ * ⭐ So find the root by WALKING UP to our own `package.json` instead of
+ * counting levels. That is correct from any entry depth, from `src/` under
+ * vitest (no build), and from a global install.
  */
 export function templateDir(name: string): string {
-  // From `dist/wizard/render.js` we go up two levels to the package root,
-  // then into `templates/<name>`.
-  const here = fileURLToPath(import.meta.url)
-  const packageRoot = path.resolve(path.dirname(here), '..', '..')
-  return path.join(packageRoot, 'templates', name)
+  return path.join(packageRoot(), 'templates', name)
+}
+
+let cachedPackageRoot: string | undefined
+
+/**
+ * This package's own root: the nearest ancestor holding a `package.json`
+ * whose `name` is `create-noy-db`.
+ *
+ * ⚠ The NAME check is load-bearing, not belt-and-braces. "Nearest
+ * `package.json`" happens to work from today's two entry depths, but the
+ * scaffolds under `templates/<name>/` carry their own manifests, so
+ * "nearest" is only safe while nothing resolves from below `templates/`.
+ * Matching the name also means a vendored `dist/` fails with a sentence
+ * instead of silently resolving to somebody else's package root.
+ */
+function packageRoot(): string {
+  if (cachedPackageRoot !== undefined) return cachedPackageRoot
+  let dir = path.dirname(fileURLToPath(import.meta.url))
+  for (;;) {
+    const candidate = path.join(dir, 'package.json')
+    if (existsSync(candidate)) {
+      try {
+        const pkg = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string }
+        if (pkg.name === 'create-noy-db') {
+          cachedPackageRoot = dir
+          return dir
+        }
+      } catch {
+        // An unreadable or malformed manifest is not ours to diagnose — keep walking.
+      }
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) {
+      throw new Error(
+        `create-noy-db: could not locate its own package root by walking up from ${path.dirname(fileURLToPath(import.meta.url))} — no ancestor holds a package.json named "create-noy-db"`,
+      )
+    }
+    dir = parent
+  }
 }
 
 let cachedOwnVersion: string | undefined
 
 /**
  * This package's own version, read from its `package.json` (a sibling of
- * `dist/` and `templates/`, same layout reasoning as `templateDir`). The
- * wizard versions in lockstep with the `@noy-db/*` family, so this is the
- * value `{{NOYDB_VERSION}}` resolves to at scaffold time.
+ * `dist/` and `templates/`, found by {@link packageRoot} — see the depth
+ * warning there). The wizard versions in lockstep with the `@noy-db/*`
+ * family, so this is the value `{{NOYDB_VERSION}}` resolves to at scaffold
+ * time.
  */
 export async function ownVersion(): Promise<string> {
   if (cachedOwnVersion === undefined) {
-    const here = fileURLToPath(import.meta.url)
-    const packageRoot = path.resolve(path.dirname(here), '..', '..')
-    const raw = await fs.readFile(path.join(packageRoot, 'package.json'), 'utf8')
+    const raw = await fs.readFile(path.join(packageRoot(), 'package.json'), 'utf8')
     cachedOwnVersion = (JSON.parse(raw) as { version: string }).version
   }
   return cachedOwnVersion
