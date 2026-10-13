@@ -129,7 +129,7 @@ describe('conflictPolicy (v0.9)', () => {
 
       await db.pull(COMP)
       const localEnv = await local.get(COMP, 'notes', 'note-1')
-      // local _v=1 <= remote _v=5 → local (earlier) wins
+      // local _v=1 < remote _v=5 → local (earlier) wins
       expect(JSON.parse(localEnv!._data!).title).toBe('first')
     })
 
