@@ -65,7 +65,9 @@ export interface ExportAccessibleOptions {
 
 /**
  * Produce a re-keyed, access-scoped `.noydb` bundle of the caller's accessible
- * data. Appends a tamper-evident audit entry (`reason: 'user-export:<userId>'`).
+ * data. Appends a tamper-evident audit entry (`reason: 'user-export:<userId>'`)
+ * BEFORE building, so a build that fails part-way still records the access it
+ * already made (family#175).
  */
 export async function exportAccessibleData(
   vault: Vault,
@@ -73,10 +75,23 @@ export async function exportAccessibleData(
 ): Promise<Uint8Array> {
   const { keyring } = vault._introspectState()
   const collections = resolveAccessibleCollections(keyring, opts.scope)
-  const bytes = await buildAccessibleBundle(vault, collections, opts.reKey, opts.compression ?? 'auto')
 
   // §11.11 audit — non-destructive, always-allowed export. No-op when the vault
   // has no history/ledger strategy (avoids minting a phantom _ledger DEK).
+  //
+  // ⚠️ BEFORE THE BUILD, since family#175. It used to come after, which
+  // under-recorded the case an audit reader cares about most: a build that
+  // throws part-way has already READ the caller's accessible collections, and
+  // with `reKey` it has decrypted them in-process to re-encrypt under the
+  // export secret. A failure does not un-read them, so an entry written only
+  // on success reports "no export" for an access that happened.
+  //
+  // ⛔ THE REASON STRING IS UNCHANGED, deliberately. A consumer greps
+  // `user-export:` out of the ledger, so the entry's MEANING moves from
+  // "completed" to "attempted" while its shape does not. For a trail of data
+  // ACCESS that is the stronger reading of the same event — the same argument
+  // family#151 made for `exportWith`, where the plaintext chunks exist before
+  // `encode` runs.
   await vault._getLedgerOrNull()?.append({
     op: 'lifecycle',
     collection: '',
@@ -87,5 +102,5 @@ export async function exportAccessibleData(
     reason: `user-export:${keyring.userId}`,
   })
 
-  return bytes
+  return await buildAccessibleBundle(vault, collections, opts.reKey, opts.compression ?? 'auto')
 }
