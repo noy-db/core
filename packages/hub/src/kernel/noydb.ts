@@ -65,6 +65,7 @@ import { CrossTabWriteRelay } from '../with-sync/tab-write-relay.js'
 import {
   loadKeyring,
   createOwnerKeyringOrLoad, // family#164 — never the bare create; see that function
+  assertPeerKeyringMatches,
   assertKeyringOpenAllowed,
   changeSecret as keyringChangeSecret,
   listUsers as keyringListUsers,
@@ -1771,6 +1772,9 @@ export class Noydb {
     const t = normalizeSyncTargets(target)[0]!
     const declared = t.policy ?? this.options.syncPolicy
     const keyring = await this._getKeyringInternal(vault)
+    // family#178 — refuse a peer this device has already diverged from; see that
+    // function for why it cannot live at first keyring access.
+    if (this.options.encrypt !== false) await assertPeerKeyringMatches(this.options.store, t.store, vault, this.options.user)
     const engine = this.strategies.sync.buildSyncEngine({
       local: this.options.store, remote: t.store, vault, strategy: this.options.conflict ?? 'version', emitter: this.emitter,
       syncPolicy: declared ?? INDEXED_STORE_POLICY, role: t.role, mergeAuthority: buildMergeAuthority(() => this.keyringCache.get(vault) ?? keyring),

@@ -566,6 +566,83 @@ export async function loadKeyring(
  * the contract plus each store honouring it, and what hub owes is to NOT
  * swallow a store that does throw. `__tests__/162-...` asserts that.
  */
+/**
+ * Refuse to attach a sync peer whose keyring for this user is a DIFFERENT file
+ * from the local one (family#178).
+ *
+ * ⛔ WHAT IT CATCHES, measured on two devices. A second device that attaches its
+ * peer with `attachSyncTarget` rather than the construction-time `sync` option
+ * finds no `_keyring` at open, self-provisions a brand-new owner keyring, and
+ * then diverges permanently: each device reads only its own records, under two
+ * different keyrings, with NO error anywhere. Device 1 cannot read device 2's
+ * data and device 2 cannot read device 1's.
+ *
+ * ⭐ THE TRIGGER IS A LOCAL WRITE BEFORE THE ATTACH. With no local write the
+ * reserved-keyring mirror adopts the peer's keyring on the first pull and
+ * everything works — so a two-device test WITHOUT the write passes and proves
+ * nothing. Once the device has written under its self-provisioned keyring the
+ * mirror will not supersede it, and the divergence sticks.
+ *
+ * ⛔ WHY THE CHECK IS HERE AND NOT AT FIRST KEYRING ACCESS. It cannot be there:
+ * `Noydb.vault()` throws unless the vault is already open, so `attachSyncTarget`
+ * necessarily runs AFTER `openVault` — and `openVault` is where the
+ * self-provision happens. At that moment no peer is attached and none can be
+ * consulted. "Bootstrap from any attached peer at first keyring access" is empty
+ * on a first open, and "refuse while an attached peer has not been checked"
+ * would refuse every first open.
+ *
+ * ⚠️ IT REFUSES RATHER THAN REPAIRS, deliberately. Adopting the peer's keyring
+ * would discard the local one, and every record this device already wrote is
+ * sealed under the discarded DEKs — so a "repair" trades a visible divergence
+ * for silent data loss. Refusing leaves both copies intact and tells the caller
+ * the two supported paths.
+ *
+ * ⚠️ The invariant it rests on was verified, not assumed: a legitimate pair ends
+ * with BYTE-IDENTICAL `_keyring/<user>` on both stores (measured for the
+ * construction-time form), because the keyring is per-user and mirrored. Two
+ * different files for one userId cannot both be right.
+ */
+export async function assertPeerKeyringMatches(
+  local: NoydbStore,
+  peer: NoydbStore,
+  vault: string,
+  userId: string,
+): Promise<void> {
+  const [mine, theirs] = await Promise.all([
+    readKeyringFile(local, vault, userId),
+    readKeyringFile(peer, vault, userId),
+  ])
+  // Nothing to compare: either side missing is the bootstrap case the reserved
+  // mirror handles, and a peer with no keyring is simply a newer peer.
+  if (!mine || !theirs) return
+  // ⛔ NOT COMPARED ON THE ENVELOPE BODY. `_data` is a protected field and
+  // `enclave-body-only` refuses it outside `capsule/**` — correctly, since
+  // envelope knowledge leaking back out is the class that check exists for. The
+  // comparison uses two FILE fields this module already reads freely.
+  if (mine.file.salt === theirs.file.salt) return // same keyring lineage
+
+  // ⚠️ A DIFFERENT SALT IS NOT ENOUGH ON ITS OWN, and getting this wrong would
+  // turn the guard into a nuisance. `rotateSecret` mints a fresh salt, so a peer
+  // that is merely BEHIND — device 1 rotated, device 2 has not pulled yet —
+  // legitimately differs. What distinguishes divergence from staleness is the
+  // roster epoch: a rotation ADVANCES it, while two independent first boots both
+  // sit at the initial epoch. So refuse only when both sides are at the same
+  // epoch and the salts differ, which cannot be one lineage.
+  const mineEpoch = mine.file.roster_epoch ?? 0
+  const theirsEpoch = theirs.file.roster_epoch ?? 0
+  if (mineEpoch !== theirsEpoch) return // one side is behind; the mirror resolves it
+
+  throw new NoAccessError(
+    `attachSyncTarget("${vault}"): this device holds a DIFFERENT keyring for "${userId}" than the peer does, `
+    + `so the two have diverged and neither can read the other's records. This happens when a device opens `
+    + `the vault before its peer is attached: the open finds no keyring and provisions a new one. `
+    + `Either pass the peer at construction — createNoydb({ sync: { store, role: 'sync-peer' } }) — so the `
+    + `keyring is adopted before the first open, or start this device from an empty local store. `
+    + `⛔ Refusing rather than adopting the peer's keyring: any record already written on this device is `
+    + `sealed under the keyring that would be discarded.`,
+  )
+}
+
 export async function assertKeyringOpenAllowed(
   store: NoydbStore,
   vault: string,
