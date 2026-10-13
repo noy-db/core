@@ -653,6 +653,77 @@ export function runStoreConformanceTests(
         expect(Object.keys(snapshot.coll1 ?? {}).sort()).toEqual(['Abc', 'abc'].sort())
       })
 
+      it('saveAll must not LOSE a record whose id case-folds onto an existing one (family#217)', async () => {
+        // ⛔ THE CASE ABOVE COULD NOT CATCH THIS, and the gap cost a data-loss
+        // bug. That one exercises `put`, which `to-file` had guarded since
+        // family#177. `saveAll` was unguarded, and because it REPLACES it also
+        // PRUNES — so on a case-folding filesystem the sequence below lost
+        // BOTH records and raised nothing:
+        //
+        //   put('Abc')                    → Abc.json
+        //   saveAll({ coll1: { abc } })   → writes abc's body INTO the folded
+        //                                   Abc.json, then prunes `Abc` because
+        //                                   the snapshot says `abc`
+        //   list()  -> []                   ← the record that existed is gone
+        //   get('abc') -> null              ← and so is the one just written
+        //
+        // Measured on APFS against `@noy-db/to-file@0.10.0-pre.2`.
+        //
+        // ⭐ THE ASSERTION IS SURVIVAL, NOT REFUSAL, and that ordering is the
+        // point. A store may legitimately REFUSE the snapshot or REPRESENT both
+        // ids — the same latitude the case above grants — so asserting a throw
+        // would fail a conformant store that encodes case into its key. What no
+        // store may do is accept the call and end up holding NEITHER record.
+        // Capturing the outcome instead of asserting on it also means the
+        // failure a broken store produces is `list` = [] against what it held,
+        // which is the data loss itself rather than a missing exception.
+        // ⚠️ BOTH ENVELOPES ARE BUILT ONCE AND REUSED. `makeEnvelope` stamps
+        // `_ts` from the clock, so calling it a second time to compare against
+        // produces an envelope that differs by a millisecond whenever the clock
+        // ticks between the two calls. Caught as a ~1-in-5 flake here before
+        // this shipped; in a PUBLISHED kit it would have been an intermittent
+        // failure in every satellite store's CI, blamed on the store.
+        const upper = makeEnvelope(1, 'UPPER-Abc')
+        const lower = makeEnvelope(1, 'lower-abc')
+        await adapter.put('comp-case-save', 'coll1', 'Abc', upper)
+
+        const outcome = await adapter
+          .saveAll('comp-case-save', { coll1: { abc: lower } })
+          .then(() => 'resolved' as const, (err: unknown) => err)
+
+        const ids = await adapter.list('comp-case-save', 'coll1')
+        expect(ids.length, 'saveAll pruned the record it had just folded a write into — both are gone').toBeGreaterThan(0)
+
+        if (outcome !== 'resolved') {
+          // REFUSED. The pre-existing record must be untouched: a store that
+          // refused by corrupting what it already held would otherwise pass on
+          // the length assertion alone.
+          expect(ids, 'a refused saveAll must leave the store as it was').toEqual(['Abc'])
+          expect(await adapter.get('comp-case-save', 'coll1', 'Abc')).toEqual(upper)
+          return
+        }
+
+        // ACCEPTED. The store kept the data, so what is left to forbid is the
+        // CHIMERA: an entry under one id carrying the other id's body, which is
+        // how the folded write shows up when nothing prunes it away.
+        //
+        // ⛔ DELIBERATELY NOT ASSERTING THAT `Abc` IS GONE. That is REPLACEMENT
+        // semantics, and it belongs to family#147's two `saveAll` cases. The
+        // first draft of this case asserted it, which made it fail the
+        // `broken-merges-saveall` fixture as well — three red cases where the
+        // control expects two, and `kit-contract.test.ts`'s header says why
+        // that matters: the exact count IS the attribution, and a case that
+        // reddens for somebody else's defect makes a red run stop telling you
+        // which defect it found. Each case here answers for one thing.
+        expect(await adapter.get('comp-case-save', 'coll1', 'abc'), 'the written record is not readable under the id it was written with').toEqual(lower)
+        for (const id of ids) {
+          expect(
+            await adapter.get('comp-case-save', 'coll1', id),
+            `the record under "${id}" carries another id's body — the ids were folded together`,
+          ).toEqual(id === 'Abc' ? upper : lower)
+        }
+      })
+
       it('round-trips an id containing a NUL byte, through put, get AND list (family#174)', async () => {
         // ⛔ HUB EMITS THESE. `resolveSequenceKey` and `resolvePeriodKey` join a
         // partition as `${name}\x00${parts}`, chosen precisely because a NUL

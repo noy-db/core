@@ -129,3 +129,57 @@ export function mergesOnSaveAll(): NoydbStore {
     },
   }
 }
+
+/**
+ * family#217 — the `to-file` defect shape, in a Map: ids are resolved
+ * case-insensitively onto an existing entry (what a case-folding filesystem
+ * does), and `saveAll` writes FOLDED while pruning by the snapshot's own key
+ * names. The two together lose both records, which is what shipped:
+ *
+ *   put('Abc')                   -> entry 'Abc'
+ *   saveAll({ coll1: { abc } })  -> folds 'abc' onto 'Abc', so 'Abc' now holds
+ *                                   abc's body; then prunes 'Abc', because the
+ *                                   snapshot says 'abc'
+ *   list() -> []
+ *
+ * ⛔ The REPLACE semantics are kept faithful on purpose — absent collections
+ * and empty record sets are still emptied — so this fixture is broken in
+ * exactly one way and attributes to the case-folding case alone. Reproducing
+ * the defect by also breaking replacement would redden family#147's cases too
+ * and attribute nothing; see `kit-contract.test.ts`'s header.
+ */
+export function foldsCaseAndPrunes(): NoydbStore {
+  const inner = memoryStore()
+  const fold = async (vault: string, collection: string, id: string): Promise<string> => {
+    const existing = await inner.list(vault, collection)
+    return existing.find((e) => e.toLowerCase() === id.toLowerCase()) ?? id
+  }
+  return {
+    ...inner,
+    async put(vault, collection, id, envelope, expectedVersion) {
+      return inner.put(vault, collection, await fold(vault, collection, id), envelope, expectedVersion)
+    },
+    async get(vault, collection, id) {
+      return inner.get(vault, collection, await fold(vault, collection, id))
+    },
+    async delete(vault, collection, id) {
+      return inner.delete(vault, collection, await fold(vault, collection, id))
+    },
+    async saveAll(vault, data) {
+      for (const [collection, records] of Object.entries(data)) {
+        for (const [id, envelope] of Object.entries(records)) {
+          await inner.put(vault, collection, await fold(vault, collection, id), envelope)
+        }
+      }
+      // Prune against the snapshot's UNFOLDED keys — the knife.
+      const held = await inner.loadAll(vault)
+      for (const [collection, records] of Object.entries(held)) {
+        if (collection.startsWith('_')) continue
+        const keep = data[collection]
+        for (const id of Object.keys(records)) {
+          if (keep === undefined || !(id in keep)) await inner.delete(vault, collection, id)
+        }
+      }
+    },
+  }
+}
