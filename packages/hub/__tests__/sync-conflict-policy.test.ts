@@ -132,6 +132,46 @@ describe('conflictPolicy (v0.9)', () => {
       // local _v=1 <= remote _v=5 → local (earlier) wins
       expect(JSON.parse(localEnv!._data!).title).toBe('first')
     })
+
+    it('family#209: on a version tie the first writer to reach the remote survives, and both devices converge on it', async () => {
+      const remote = inlineMemory()
+      const localA = inlineMemory()
+      const localB = inlineMemory()
+
+      const dbA = await createNoydb({ store: localA, sync: remote, user: 'a', syncStrategy: withSync(), encrypt: false })
+      const dbB = await createNoydb({ store: localB, sync: remote, user: 'b', syncStrategy: withSync(), encrypt: false })
+      const notesA = (await dbA.openVault(COMP)).collection<Note>('notes', { conflictPolicy: 'first-writer-wins' })
+      const notesB = (await dbB.openVault(COMP)).collection<Note>('notes', { conflictPolicy: 'first-writer-wins' })
+
+      // Common ancestor: A creates _v 1, pushes; B pulls it.
+      await notesA.put('note-1', { title: 'base', body: '' })
+      await dbA.push(COMP)
+      await dbB.pull(COMP)
+      expect((await localB.get(COMP, 'notes', 'note-1'))!._v).toBe(1)
+
+      // Both edit from _v 1 → each holds _v 2.
+      await notesA.put('note-1', { title: 'from A', body: '' })
+      await notesB.put('note-1', { title: 'from B', body: '' })
+      expect((await localA.get(COMP, 'notes', 'note-1'))!._v).toBe(2)
+      expect((await localB.get(COMP, 'notes', 'note-1'))!._v).toBe(2)
+
+      // A reaches the remote first; B's push then conflicts at a 2-vs-2 tie.
+      await dbA.push(COMP)
+      const pushB = await dbB.push(COMP)
+      expect(pushB.conflicts).toHaveLength(1)
+
+      // The first writer (A) survives on the remote.
+      expect(JSON.parse((await remote.get(COMP, 'notes', 'note-1'))!._data!).title).toBe('from A')
+
+      // Both devices converge on A's copy.
+      await dbA.pull(COMP)
+      await dbB.pull(COMP)
+      for (const store of [localA, localB]) {
+        expect(JSON.parse((await store.get(COMP, 'notes', 'note-1'))!._data!).title).toBe('from A')
+      }
+      expect((await notesA.get('note-1'))!.title).toBe('from A')
+      expect((await notesB.get('note-1'))!.title).toBe('from A')
+    })
   })
 
   describe('manual', () => {
