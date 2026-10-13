@@ -23,7 +23,7 @@
 
 import { buildSealedRecordEnvelope, openEnvelopeJson, writeEnvelopeBody, type EnclaveKey } from '../../capsule/index.js'
 import { canonicalJson, sha256Hex } from '../../with-commit/history/ledger/index.js'
-import type { NoydbStore } from '../../kernel/types.js'
+import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
 import { MANIFEST_COLLECTION } from './reserved-collections.js'
 import { MANIFEST_SCHEMA_RECORD_ID, type SchemaManifest, type SchemaManifestEntry } from './types.js'
 
@@ -80,7 +80,10 @@ export async function saveSchemaManifest(
   manifest: SchemaManifest,
   expectedVersion: number,
   getDEK: GetManifestDEK,
-): Promise<void> {
+  // family#197 — returns the envelope it WROTE, so the ledger append can hash
+  // exactly that rather than re-reading the record (where a concurrent writer's
+  // newer envelope would be hashed against our version number).
+): Promise<EncryptedEnvelope> {
   const dek = await getDEK(MANIFEST_COLLECTION)
   const json = JSON.stringify(manifest)
   const env = await buildSealedRecordEnvelope(
@@ -89,6 +92,7 @@ export async function saveSchemaManifest(
     {},
   )
   await store.put(vault, MANIFEST_COLLECTION, MANIFEST_SCHEMA_RECORD_ID, env, expectedVersion)
+  return env
 }
 
 /**

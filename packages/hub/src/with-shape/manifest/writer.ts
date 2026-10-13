@@ -23,7 +23,7 @@
 
 import { isConflictError, ManifestConflictError } from '../../kernel/errors.js'
 import { saveSchemaManifest, type GetManifestDEK } from './storage.js'
-import type { NoydbStore } from '../../kernel/types.js'
+import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
 import type { SchemaManifest } from './types.js'
 
 /**
@@ -38,9 +38,10 @@ export async function writeSchemaManifest(
   manifest: SchemaManifest,
   expectedVersion: number,
   getDEK: GetManifestDEK,
-): Promise<void> {
+  /** family#197 — the envelope actually written, for the ledger append to hash. */
+): Promise<EncryptedEnvelope> {
   try {
-    await saveSchemaManifest(store, vault, manifest, expectedVersion, getDEK)
+    return await saveSchemaManifest(store, vault, manifest, expectedVersion, getDEK)
   } catch (err) {
     if (isConflictError(err)) {
       throw new ManifestConflictError(err.version, expectedVersion)
