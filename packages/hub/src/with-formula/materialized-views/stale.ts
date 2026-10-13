@@ -120,6 +120,59 @@ async function hydratePersistedStaleMarkers(accessor: MVStaleAccessor, registry:
   // "nothing pending" — silently treating it as fresh is the exact leak class
   // this module closes (mirrors `subject-index.ts`'s bare `adapter.list` reads).
   for (const name of await adapter.list(vault, MV_STALE_COLLECTION)) markMVStale(registry, name)
+  await markDriftedMVsStale(accessor, mvs)
+}
+
+/**
+ * family#204 — mark an MV stale when its DEFINITION has changed since the rows
+ * were written.
+ *
+ * ⛔ `queryHash` was written and never read. `query-hash.ts` says it exists "to
+ * detect strategy drift: a row whose `_materializedFrom.queryHash` doesn't match
+ * the current strategy is considered stale", and `registry.ts` says a predicate
+ * change "forces refresh on next visit" — but NOTHING anywhere compared it
+ * (every `_materializedFrom` read was for `mvName`, for ownership). So a changed
+ * definition went undetected on reopen: with a changed `rowKey` the new rows
+ * landed under new ids and the old ones survived beside them, and the view
+ * double-counted until an unrelated source write happened to refresh it.
+ *
+ * ⭐ Marking stale is the whole fix — everything downstream already exists. The
+ * recompute on next read runs the executor, whose tombstone leg deletes any
+ * stamped row absent from the new id set, and `onEmpty` defaults to `'delete'`
+ * (`executor.ts:592`). So the old-key rows go without a new purge path.
+ *
+ * ⚠️ Runs inside the once-per-registry hydrate, so this is a COLD-SESSION cost,
+ * not a per-read one. It stops at the FIRST row this MV stamped — the stamp is
+ * on every row it wrote, so one is as good as all of them. Worst case is a
+ * same-collection MV (the DERIV-PP30-001 shape) whose user rows all sort before
+ * its own: then the scan is the collection, once per session.
+ *
+ * ⚠️ An MV with NO stamped rows yet is NOT stale — there is nothing to compare,
+ * and marking it would force a rebuild on every cold open of an empty view.
+ */
+async function markDriftedMVsStale(
+  accessor: MVStaleAccessor,
+  mvs: readonly RegisteredMV[],
+): Promise<void> {
+  for (const reg of mvs) {
+    if (isMVStale(accessor.registry(), reg.spec.name)) continue // already pending; nothing to learn
+    const outputColl = accessor.getCollection(reg.outputCollection)
+    const { adapter, vault } = storeOf(accessor, reg.outputCollection)
+    for (const id of await adapter.list(vault, reg.outputCollection)) {
+      const envelope = await adapter.get(vault, reg.outputCollection, id)
+      if (envelope === null) continue
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const decoded = await (outputColl as any)._decodeEnvelope(envelope, id)
+      if (decoded === null || typeof decoded !== 'object') continue // ownership unknown — not ours to judge
+      const stamp = (decoded as Record<string, unknown>)._materializedFrom as
+        { mvName?: string; queryHash?: string } | undefined
+      if (stamp?.mvName !== reg.spec.name) continue // another MV's row, or a user row
+      if (typeof stamp.queryHash === 'string' && stamp.queryHash !== reg.queryHash) {
+        markMVStale(accessor.registry(), reg.spec.name)
+      }
+      break // the stamp is uniform across this MV's rows
+    }
+  }
 }
 
 /**
