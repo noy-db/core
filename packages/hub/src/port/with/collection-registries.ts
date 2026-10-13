@@ -26,6 +26,65 @@ import type { ArchivePolicy } from '../../with-fork/archive/index.js'
 import type { OpenCollectionOptions } from './collection-options.js'
 import { isStaticDictDescriptor, type StaticDictDescriptor } from './i18n-strategy.js'
 import { collectLookupDictCompat, dictCollectionName, type LookupDescriptor } from './lookup-strategy.js'
+import { ValidationError } from '../../kernel/errors.js'
+
+/**
+ * family#194 — reconcile (cache-hit) handling for the declaration-only options
+ * the late-attach ladder never threaded.
+ *
+ * ⛔ WHAT WAS WRONG. The cache-hit branch threads the via-family options
+ * (`refs`, `computed`, `fieldMeta`, `meta`, `classifiedFields`, `blobFields`)
+ * through their `_apply*` doors, but `schema`, `archive`, `schemaUpdate` and
+ * `persistJsonSchema` had no door at all and were dropped in silence, so a
+ * second acquisition acted as if the collection had never been declared.
+ *
+ * ⭐ THE TREATMENT IS TIERED, following core#33: "a virtual entry is refused, a
+ * materialized one ATTACHES" — make the paths agree, and refuse only what
+ * genuinely cannot attach. A blanket refusal was the first attempt and it is
+ * WRONG, for a reason core#33's own test states: "MV registration opens its
+ * source collection first, which makes the consumer's own declaration the
+ * reconcile call." A consumer declaring on a collection that backs a
+ * materialized view is FORCED to be second — refusing them breaks correct code,
+ * and three in-tree tests (core#33's among them) proved it.
+ *
+ * So, measured per option:
+ *  - `archive` ATTACHES. It is a vault-level registry entry and nothing on the
+ *    Collection changes, so being second costs nothing.
+ *  - `schemaUpdate` is REFUSED. Its gate, drain and fence coordination are
+ *    built once at construction; there is nothing a late call can do.
+ *  - `schema` / `persistJsonSchema` are left ALONE here, deliberately. `schema`
+ *    is `private readonly` on Collection while `computed` and `moneyFields` are
+ *    mutable for exactly this MV-pre-creation reconcile — giving `schema` the
+ *    same door is its own change, tracked separately. Refusing it meanwhile
+ *    would break the MV consumers above.
+ *
+ * ⚠️ CACHE-STATE DEPENDENT, and not a defect in this check: anything that
+ * clears the collection cache — `_enableSync`, `_reloadKeyringAfterSync`
+ * (family#192) — sends the next acquisition down the FRESH branch, where every
+ * option is honoured and nothing refuses. The same call can therefore succeed
+ * or refuse depending on whether a sync happened in between.
+ */
+export function reconcileDeclarationOnlyOptions<T>(
+  r: CollectionRegistries,
+  collectionName: string,
+  options: OpenCollectionOptions<T> | undefined,
+): void {
+  if (options === undefined) return
+  if ((options.schemaUpdate?.length ?? 0) > 0) {
+    throw new ValidationError(
+      `vault.collection(${JSON.stringify(collectionName)}, { schemaUpdate }): this collection is ` +
+      `already open, and schemaUpdate can only take effect at its FIRST acquisition — its gate is ` +
+      `built once, when the collection is constructed, so declaring it here used to be dropped in ` +
+      `silence. Pass it on the first vault.collection(${JSON.stringify(collectionName)}, ...) call ` +
+      `in this process, or acquire the open collection with ` +
+      `vault.collection(${JSON.stringify(collectionName)}) and no options.`,
+    )
+  }
+  // Late-attach: a policy declared second is honoured, not dropped.
+  if (options.archive !== undefined) {
+    r.archiveRegistry.set(collectionName, options.archive as ArchivePolicy)
+  }
+}
 
 /** The via-derived field maps a declaration resolves to before registration. */
 export interface EffectiveViaFields {

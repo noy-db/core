@@ -1,5 +1,5 @@
 import type { OpenCollectionOptions } from '../port/with/collection-options.js'
-import { populateCollectionRegistries } from '../port/with/collection-registries.js'
+import { populateCollectionRegistries, reconcileDeclarationOnlyOptions } from '../port/with/collection-registries.js'
 import { NO_BLOBS } from '../port/with/blob-strategy.js'
 import { resolveExportSource, readEnvelopeMeta } from './export-scope.js'
 import { sealRejection, openRejection } from './rejection-seal.js'
@@ -749,7 +749,7 @@ export class Vault {
     // machinery) now lives behind ONE dispatch call in the unguarded via/reconcile.ts, not
     // inlined here. `Collection._applyX`'s own first-wins semantics are unchanged; this file
     // only threads the field-declaring options + this vault's registries through.
-    if (coll) {
+    if (coll) { reconcileDeclarationOnlyOptions(this.#registries(), collectionName, options) // family#194
       reconcileViaAttach(coll, this.graph, collectionName, this._viaReconcileCtx(), {
         effectiveViaFields,
         ...(options?.refs !== undefined ? { refs: options.refs } : {}), // #1141 — late `refs` declaration
