@@ -1,7 +1,8 @@
 {
   "name": "@noy-db/shamir",
   "version": "0.10.0-pre.2",
-  "description": "Shamir Secret Sharing over GF(2^8), byte-wise, plus the share codecs (bytes / base32 / JSON). Pure math, zero dependencies, no hub contract — the primitive @noy-db/on-shamir builds its unlock method on.",
+  "private": true,
+  "description": "Shamir Secret Sharing over GF(2^8), byte-wise, plus the share codecs (bytes / base32 / JSON). Pure math, zero dependencies, no hub contract \u2014 the primitive @noy-db/on-shamir builds its unlock method on.",
   "license": "Apache-2.0",
   "author": "vLannaAi <vicio@lanna.ai>",
   "homepage": "https://github.com/noy-db/core/tree/main/packages/shamir#readme",
@@ -46,9 +47,5 @@
     "k-of-n",
     "threshold",
     "gf256"
-  ],
-  "publishConfig": {
-    "access": "public",
-    "tag": "latest"
-  }
+  ]
 }
