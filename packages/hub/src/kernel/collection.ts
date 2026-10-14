@@ -329,7 +329,10 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
    * schema to `defineNoydbStore` (or `Collection.constructor`) get their
    * `T` inferred automatically via `InferOutput<Schema>`.
    */
-  private readonly schema: StandardSchemaV1<unknown, T> | undefined
+  /** ⚠️ MUTABLE since family#208 — same MV-pre-creation reconcile as {@link moneyFields}.
+   *  Dropped on the reconcile path it left the collection validating NOTHING: a `put` of a
+   *  record the schema rejects was ACCEPTED. See {@link _applySchema}. */
+  private schema: StandardSchemaV1<unknown, T> | undefined
 
   /**
    * Vault-default locale. Used as the fallback when no per-call
@@ -1291,6 +1294,14 @@ export class Collection<T, S extends keyof T = never, Q extends keyof T & string
     this.via = ViaPipeline.build([viaBinder('money')({ moneyFields, ...(virtualMoney.size > 0 ? { virtualMoneyFields: virtualMoney } : {}) }), ...(this.via?.bindings ?? [])], this.via?.taint) // #671 item 4 — thread taint through the rebuild
     this.moneyFields = moneyFields
     if (this.hydrated) this.rebuildEagerIndexesFromCache() // #686: re-canonicalize buckets built before this money late-attach
+  }
+
+  /** @internal — attach a schema post-construction (family#208). See {@link _applyMoneyFields}.
+   *  ⭐ First-wins is right, not merely consistent: the collection may already hold records
+   *  admitted under the schema it was built with, so replacing it would re-contract data
+   *  already stored. A second, different declaration is a no-op, not a silent re-contract. */
+  _applySchema(schema: StandardSchemaV1<unknown, T>): void {
+    if (this.schema === undefined) this.schema = schema
   }
 
   /** @internal — attach computed fields post-construction. See {@link _applyMoneyFields}. */

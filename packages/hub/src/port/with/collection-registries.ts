@@ -52,11 +52,21 @@ import { ValidationError } from '../../kernel/errors.js'
  *    Collection changes, so being second costs nothing.
  *  - `schemaUpdate` is REFUSED. Its gate, drain and fence coordination are
  *    built once at construction; there is nothing a late call can do.
- *  - `schema` / `persistJsonSchema` are left ALONE here, deliberately. `schema`
- *    is `private readonly` on Collection while `computed` and `moneyFields` are
- *    mutable for exactly this MV-pre-creation reconcile — giving `schema` the
- *    same door is its own change, tracked separately. Refusing it meanwhile
- *    would break the MV consumers above.
+ *  - `schema` ATTACHES as of family#208, through `Collection._applySchema`
+ *    (first-wins, like every other door). It used to be `private readonly`
+ *    while `computed` and `moneyFields` were mutable for exactly this
+ *    MV-pre-creation reconcile; being dropped here left the collection
+ *    validating NOTHING, and a reconcile-path `put` of a record the schema
+ *    rejects was ACCEPTED.
+ *  - `persistJsonSchema` is still left alone, and family#208 measured WHY it
+ *    needs no door: the fresh path only persists when `persistJsonSchema`,
+ *    `schema` AND a non-empty `schemaUpdate` are all present
+ *    (`vault.ts`'s construct branch). `schemaUpdate` is refused here, so the
+ *    option cannot take effect on this path — and it is inert WITHOUT
+ *    `schemaUpdate` on the fresh path too, so this is not a reconcile-specific
+ *    drop. ⚠️ That three-option requirement disagrees with the prose in
+ *    `with-shape/persisted-schemas/index.ts`, which documents two; reported
+ *    rather than changed here.
  *
  * ⚠️ CACHE-STATE DEPENDENT, and not a defect in this check: anything that
  * clears the collection cache — `_enableSync`, `_reloadKeyringAfterSync`

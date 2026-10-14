@@ -778,6 +778,11 @@ export class Vault {
     // inlined here. `Collection._applyX`'s own first-wins semantics are unchanged; this file
     // only threads the field-declaring options + this vault's registries through.
     if (coll) { reconcileDeclarationOnlyOptions(this.#registries(), collectionName, options) // family#194
+      // family#208 — a schema declared on the reconcile ATTACHES rather than
+      // being dropped. Threaded here and not through `reconcileViaAttach`:
+      // `schema` is not a Via-family option, and the via dispatch's contract
+      // is the field-declaring set.
+      if (options?.schema !== undefined) coll._applySchema(options.schema)
       reconcileViaAttach(coll, this.graph, collectionName, this._viaReconcileCtx(), {
         effectiveViaFields,
         ...(options?.refs !== undefined ? { refs: options.refs } : {}), // #1141 — late `refs` declaration
