@@ -532,6 +532,23 @@ export interface RecoverSecretInput {
  */
 export interface RecoverSecretResult {
   readonly newCodes: readonly string[]
+  /**
+   * family#219 — collections whose DEK the vault held before recovery and
+   * which the recovery proof could NOT restore. Empty when coverage was
+   * complete.
+   *
+   * ⛔ A recovery entry wraps a SNAPSHOT of the DEK set taken at ENROLMENT, so
+   * every collection created afterwards is absent from it. Those DEKs exist
+   * only wrapped under the old KEK — derived from the secret the user has just
+   * lost — so this path cannot restore them at all. Reading such a collection
+   * afterwards raises `NoAccessError`.
+   *
+   * ⚠️ Non-empty means DATA IS UNREACHABLE, not that something went wrong with
+   * the call: recovery succeeded for everything it covered. Surface this to the
+   * user — it was previously silent, which is how the gap was discovered from
+   * the far end, as an inexplicable `NoAccessError` on their own collection.
+   */
+  readonly uncoveredCollections: readonly string[]
 }
 
 /**

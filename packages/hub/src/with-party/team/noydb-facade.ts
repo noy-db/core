@@ -19,7 +19,7 @@
  * Internal service — reached through `noydb.team.rotateSecret(...)` etc.
  */
 import type { NoydbOptions, NoydbStore, KeyringAuthenticator } from '../../kernel/types.js'
-import { ensureCollectionDEK, type RotateResult, type RotateKeysOptions, type RosterVerifyResult, type QuarantineResult } from './keyring.js'
+import { ensureCollectionDEK, readKeyringFile, type RotateResult, type RotateKeysOptions, type RosterVerifyResult, type QuarantineResult } from './keyring.js'
 import { PERIODS_COLLECTION } from '../../with-audit/periods/window.js'
 import { ValidationError } from '../../kernel/errors.js'
 import { DELEGATIONS_COLLECTION } from './delegation.js'
@@ -570,13 +570,35 @@ export class TeamFacade {
     // under the auto-rotation logic.
     const entriesBeforeRecovery = await loadPaperRecoveryEntries(this.deps.options.store, vault)
 
+    // family#219 — what the vault HELD before recovery, by name. A recovery
+    // entry wraps a SNAPSHOT of the DEK set taken at enrolment, and
+    // `recoverViaPaperCode` rebuilds `deks` from that snapshot alone — so any
+    // DEK minted afterwards is dropped, and the user meets it later as a
+    // NoAccessError on a collection they own.
+    //
+    // ⭐ Computed HERE rather than inside the team function because both sides
+    // are readable without a key: the keyring file's `deks` is keyed by
+    // collection NAME in cleartext, and `next.deks` is the restored set. So
+    // the diff needs no format change and no signature change to the exported
+    // `keyringRecoverSecret`.
+    const heldBefore = await readKeyringFile(this.deps.options.store, vault, userId)
+    const namesBefore = Object.keys(heldBefore?.file.deks ?? {})
+
     const next = await keyringRecoverSecret(this.deps.options.shamirRecovery, this.deps.options.store, vault, userId, input)
     this.deps.keyringCache.set(vault, next)
+
+    // ⚠️ REPORTED, NOT REPAIRED. Restoring these is impossible on this path by
+    // construction: they are wrapped under the OLD KEK, which is derived from
+    // the secret the user has just told us they lost. Closing the gap means
+    // covering future DEKs at MINT time, which is a stored-format question and
+    // not this change's to answer (family#219 directions (a)/(b)). What this
+    // ends is the SILENCE.
+    const uncoveredCollections = namesBefore.filter((n) => !next.deks.has(n))
 
     const rotateRemaining = input.rotateRemainingCodes ?? true
     const remainingAfterBurn = Math.max(0, entriesBeforeRecovery.length - 1)
     if (!rotateRemaining || remainingAfterBurn === 0) {
-      return { newCodes: [] }
+      return { newCodes: [], uncoveredCollections }
     }
 
     // Auto-rotate: replace the remaining entries with a fresh set
@@ -600,9 +622,13 @@ export class TeamFacade {
     }
     // Single replace-all write — `savePaperRecoveryEntries` overwrites
     // `_meta/recovery-paper` atomically (one envelope `put`).
+    // ⚠️ These are minted from `next.deks`, the set recovery actually restored
+    // — so if coverage was already incomplete, the fresh sheet INHERITS the
+    // reduced coverage rather than repairing it. `uncoveredCollections` is the
+    // caller's only signal that this happened.
     await savePaperRecoveryEntries(this.deps.options.store, vault, newEntries)
 
-    return { newCodes: codes }
+    return { newCodes: codes, uncoveredCollections }
   }
 
   /**

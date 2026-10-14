@@ -2924,10 +2924,27 @@ export async function ensureCollectionDEK(
           if (refreshed) return refreshed
           throw new NoAccessError(
             `No access — user "${keyring.userId}" is entitled to collection "${collectionName}" ` +
-              'but holds no key for it, because the collection was created AFTER their grant. ' +
-              'A collection DEK can only be wrapped at grant time (wrapping needs the grantee\'s ' +
-              'secret, which the vault never stores), so this cannot be back-filled — re-grant ' +
-              'the user to give them the key.',
+              'but holds no key for it. A collection DEK can only be wrapped for a user when ' +
+              'their secret is in hand, which the vault never stores, so it cannot be ' +
+              'back-filled. Two things cause this:\n'
+              + '  - the collection was created AFTER their grant'
+              + (keyring.role === 'owner' ? '' : ' — re-grant the user to give them the key')
+              + ';\n'
+              + '  - or the secret was reset with a recovery proof, and the collection was '
+              + 'created after that recovery credential was ENROLLED: an entry wraps a snapshot '
+              + 'of the DEK set, so anything newer is not in it (family#219). '
+              + '`recoverSecret` returns these in `uncoveredCollections`.'
+              // ⛔ An OWNER must not be told to "re-grant the user". They are the
+              // grantor, so for a sole owner the advice is not merely unhelpful
+              // but impossible, and it points away from the real cause — which
+              // for an owner is almost always the recovery case above. The
+              // original text named only the grant cause and offered only that
+              // remedy, which is how family#219 was reported as an inexplicable
+              // NoAccessError on the reporter's own collection.
+              + (keyring.role === 'owner'
+                ? ' As the vault OWNER there is nobody to re-grant you: if this followed a '
+                  + 'recovery, this collection\'s key was not covered by the credential you used.'
+                : ''),
           )
         }
       } else if (await reservedCollectionHasSealedRecords(store, vault, collectionName)) {
