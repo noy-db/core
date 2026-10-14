@@ -205,6 +205,7 @@
     "SealedRecordMismatchError",
     "SealedRecordNotEnabledError",
     "SearchNotEnabledError",
+    "SequenceAuthorityUnavailableError",
     "SequenceContentionError",
     "SequenceNotEnabledError",
     "SequenceOfflineError",

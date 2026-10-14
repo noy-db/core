@@ -157,7 +157,20 @@ export class Noydb {
   private readonly vaultOpening = new Map<string, Promise<Vault>>()
   private readonly keyringCache = new Map<string, UnlockedKeyring>()
   private readonly syncEngines = new Map<string, SyncEngine>()
-  /** family#206 — per vault, the SYNC-PEER a remote sequence issues from. ⛔ NOT `primaryStore`: see `with-commit/sequence/index.ts` § authority selection. */
+  /**
+   * family#206 — per vault, the SYNC-PEER a remote-authority sequence issues
+   * from. First sync-peer wins, so an attach cannot move the authority out
+   * from under a series that has already issued against it.
+   *
+   * ⛔ NOT `primaryStore`, and core#139 one screen below is why: that selector
+   * falls back to `targets[0]` of ANY role, so `[{backup}, {sync-peer}]`
+   * chooses the archive. core#139 paid for exactly that shape with presence,
+   * where the symptom was a write nobody reads back. For a counter it is
+   * worse — numbers issued against a push-only store are numbers no other
+   * device can see, which is the failure this row exists to prevent, wearing
+   * a different hat. No sync-peer means no authority means the series
+   * REFUSES, which is intended and not a degradation.
+   */
   private readonly authorityTargets = new Map<string, { store: NoydbStore; label?: string }>()
   /** core#90 — conflict resolvers registered per vault, replayed onto a target attached after open. */
   private readonly conflictResolvers = new Map<string, Map<string, CollectionConflictResolver>>()

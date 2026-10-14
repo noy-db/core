@@ -23,13 +23,13 @@ import { buildRecordAad, buildRecordEnvelope } from '../../capsule/index.js'
 import type { NoydbStore, EncryptedEnvelope } from '../../kernel/types.js'
 import { encrypt, openEnvelopeJson, type EnclaveKey } from '../../capsule/index.js'
 import type { ConflictError} from '../../kernel/errors.js';
-import { isConflictError, SequenceAuthorityUnavailableError, SequenceContentionError, SequenceOfflineError, ValidationError } from '../../kernel/errors.js'
+import { isConflictError, SequenceContentionError, SequenceOfflineError, ValidationError } from '../../kernel/errors.js'
 
 // Capability opt-in seam (S4): `vault.sequence()` builds its CAS store through
 // the sequenceStrategy, so it throws SequenceNotEnabledError unless opted in.
 export { withSequence } from './active.js'
 export { NO_SEQUENCE, type SequenceStrategy } from './strategy.js'
-export { SequenceNotEnabledError, SequenceAuthorityUnavailableError } from '../../kernel/errors.js'
+export { SequenceNotEnabledError } from '../../kernel/errors.js'
 
 /**
  * ⛔ **COUNTERS NEVER SYNC — A SEQUENCE IS UNIQUE PER DEVICE, NOT ACROSS A
@@ -247,65 +247,6 @@ export interface SequenceStoreOptions {
   encrypted: boolean
   getDEK: (collectionName: string) => Promise<EnclaveKey>
   actor: string
-}
-
-/**
- * family#206 — resolve the store a REMOTE-authority series issues from, with
- * the three preconditions that must all hold.
- *
- * ## Authority selection: the sync-peer, and nothing else
- *
- * The caller passes the first **sync-peer** target. It deliberately does NOT
- * pass hub's `primaryTarget` / `syncAdapter`, which falls back to `targets[0]`
- * of any role: on `[{backup}, {sync-peer}]` that selects the archive. core#139
- * fixed exactly that shape for presence, where the symptom was a write nobody
- * reads back; for a counter it would be numbers issued against a push-only
- * store, which is to say numbers no other device can see. A `backup`/`archive`
- * target is push-only by contract, so reading a counter back from one was
- * never part of it. No sync-peer means no authority means the series refuses —
- * the intended outcome, not a degradation.
- *
- * ## Why all three are refusals and none is a fallback
- *
- * A remote-authority series exists because the local counter is per-device.
- * Degrading to it when the authority is unreachable reproduces the duplicate
- * numbers this is meant to prevent, while looking like it worked. For the
- * series people ask this for — fiscal invoice numbers — a duplicate is worse
- * than an outage, so the caller gets an error and retries or queues.
- *
- * ⛔ THE DEK IS CHECKED, NEVER MINTED (ruled on family#206). `getDEK` mints on
- * first access, which is right for a local counter and wrong here: a device
- * that mints its own `_sequences` key seals the SHARED counter under a key the
- * peer cannot unwrap. That surfaces later as an UNREADABLE counter rather than
- * a wrong number — a worse failure, and a confusing one. `_keyring` does
- * replicate, so the remedy is a pull, and the error says so.
- */
-export function resolveRemoteSequenceStore(opts: {
-  readonly series: string
-  readonly target: { store: NoydbStore; label?: string } | null
-  /** Memoized store from a previous call, reused when the target still holds. */
-  readonly existing: SequenceStore | null
-  /** The device's unwrapped DEKs. Read, never written — see above. */
-  readonly deks: () => ReadonlyMap<string, unknown>
-  readonly build: (adapter: NoydbStore, getDEK: (collection: string) => Promise<EnclaveKey>) => SequenceStore
-}): SequenceStore {
-  const { series, target } = opts
-  if (target === null) throw new SequenceAuthorityUnavailableError(series, 'no-target')
-  if (target.store.capabilities?.casAtomic !== true) {
-    throw new SequenceAuthorityUnavailableError(series, 'not-cas', target.label)
-  }
-  if (!opts.deks().has(SEQUENCE_COLLECTION)) {
-    throw new SequenceAuthorityUnavailableError(series, 'no-key')
-  }
-  if (opts.existing) return opts.existing
-  return opts.build(target.store, async (collection) => {
-    // The eager check above produces the accurate message; this is the
-    // backstop for a keyring that changed under a handle the caller already
-    // holds, and it names the series this store was first built for.
-    const dek = opts.deks().get(collection) as EnclaveKey | undefined
-    if (dek === undefined) throw new SequenceAuthorityUnavailableError(series, 'no-key')
-    return dek
-  })
 }
 
 export class SequenceStore {

@@ -62,7 +62,7 @@ import type { NoydbEventEmitter } from './events.js'
 import type { ObjectProjection } from '../with-shape/blobs/object-projection.js'
 import type { ArchivePolicy, ArchiveContext, ArchiveResult, ArchiveRunOptions } from '../with-fork/archive/index.js'
 import { runArchive, runRestore, runListArchived } from '../with-fork/archive/index.js'
-import { type SequenceStore, type SequenceHandle, type FormattedSequenceHandle, type SequenceOptions, resolveSequenceKey, compileSequenceFormat, resolveRemoteSequenceStore, SEQUENCE_COLLECTION } from '../with-commit/sequence/index.js'
+import { type SequenceStore, type SequenceHandle, type FormattedSequenceHandle, type SequenceOptions, resolveSequenceKey, compileSequenceFormat, SEQUENCE_COLLECTION } from '../with-commit/sequence/index.js'
 import { DeferredNumberingStore, type Assignment } from '../with-commit/numbering/index.js'
 import type { DeferredNumberingConfig } from '../with-commit/numbering/descriptor.js'
 import type { TierMoveResult } from '../with-audit/tiers/strategy.js'
@@ -135,7 +135,7 @@ import type { ReadOnlyVaultFacade } from '../with-audit/guards/read-only-facade.
 import type { DerivationRegistry } from '../with-formula/derivations/registry.js'
 import type { DerivationStrategy } from '../with-formula/derivations/types.js'
 import { buildBehaviorSummary, type BehaviorSummary } from '../with-shape/introspection/behaviors.js'
-import { ReservedCollectionNameError, StaticDictReadonlyError, SatelliteConfigError, SequenceAuthorityUnavailableError } from './errors.js'
+import { ReservedCollectionNameError, StaticDictReadonlyError, SatelliteConfigError } from './errors.js'
 import { declareSatellite } from '../with-shape/satellites/declare.js'
 import { makeSatelliteProxy, makeBaseProxy } from '../with-shape/satellites/proxy.js'
 import type { SatelliteRegistry } from '../with-shape/satellites/registry.js'
@@ -338,7 +338,17 @@ export class Vault {
 
   /** Lazily-built atomic-sequence store. See {@link sequence}. */
   private sequenceStore: SequenceStore | null = null
-  /** family#206 — the `authority: 'remote'` store. SEPARATE from `sequenceStore` on purpose: they address different stores, and one memo for both would hand a remote series the local adapter. */
+  /**
+   * family#206 — the store for `authority: 'remote'` series.
+   *
+   * ⛔ SEPARATE FROM {@link sequenceStore} ON PURPOSE, and do not "simplify"
+   * the two into one memoized field. They address DIFFERENT stores — the local
+   * adapter and the sync-peer's — so a single memo would hand whichever
+   * authority asked second the other one's adapter, decided by nothing but
+   * which `vault.sequence()` call happened first. A remote series issuing from
+   * the local store is the exact bug family#206 exists to close, and it would
+   * look like it worked.
+   */
   private remoteSequenceStore: SequenceStore | null = null
   /** family#206 — resolves the sync-peer target to issue remote sequences from. */
   private getAuthorityStore: (() => { store: NoydbStore; label?: string } | null) | undefined
@@ -466,7 +476,18 @@ export class Vault {
     syncAdapter?: NoydbStore | undefined
     /** #615 — push-only sync targets (backup/archive) this vault may target-purge. Default: none. */
     getPurgeableTargets?: () => readonly { store: NoydbStore; role: 'backup' | 'archive'; label?: string }[]
-    /** family#206 — the SYNC-PEER a remote-authority sequence issues from, or `null`. ⛔ Not `syncAdapter`: see `with-commit/sequence`'s `resolveRemoteSequenceStore`. */
+    /**
+     * family#206 — the SYNC-PEER target a remote-authority sequence issues
+     * from, or `null`.
+     *
+     * ⛔ NOT `syncAdapter`, which is right here beside it and is the wrong
+     * store: that one resolves through `primaryTarget`, which falls back to
+     * `targets[0]` of ANY role, so a `[{backup}, {sync-peer}]` configuration
+     * selects the archive. An authority must be a store both devices read AND
+     * write; `backup`/`archive` are push-only by contract. The full argument,
+     * including what core#139 already paid for this shape, is in
+     * `with-commit/sequence`'s `resolveRemoteSequenceStore`.
+     */
     getAuthorityStore?: () => { store: NoydbStore; label?: string } | null
     /**
      * tree-shake seam — strategy for optional blob storage.
@@ -1644,17 +1665,36 @@ export class Vault {
    * ```
    */
   /** family#206 — the store a remote-authority series issues from. Preconditions and the reasoning: `with-commit/sequence`'s `resolveRemoteSequenceStore`. */
-  private authoritativeSequenceStore(series: string): SequenceStore {
+  /**
+   * family#206 — bind a remote-authority handle for `series`.
+   *
+   * ⚠️ `async` + a DYNAMIC import, and both are forced, not stylistic.
+   * `check-architecture`'s `port-layering` forbids the kernel spine from
+   * statically reaching a `with-*` service, and its grandfathered list is a
+   * ratchet whose own comment says never to add to it — a dynamic `import()`
+   * is the sanctioned escape hatch (the S4 gate recipe). It also keeps the
+   * module out of the always-on bundle for every caller who never asks for a
+   * remote series, which is what the opt-in architecture is for.
+   *
+   * ⚠️ `#`, not `private`. A TS `private` method is still a real prototype
+   * property, so it would land in `__tests__/kernel-api-surface-golden.test.ts`'s
+   * frozen Vault surface — an implementation detail needing a deliberate edit
+   * to the microkernel's public manifest. `#` is genuinely absent from
+   * `getOwnPropertyNames`.
+   */
+  async #remoteSequenceHandle(series: string, key: string): Promise<SequenceHandle> {
+    const { resolveRemoteSequenceStore } = await import('../with-commit/sequence/remote-authority.js')
     this.remoteSequenceStore = resolveRemoteSequenceStore({
       series,
       target: this.getAuthorityStore?.() ?? null,
       existing: this.remoteSequenceStore,
       deks: () => this.keyring.deks,
+      encrypted: this.encrypted,
       build: (adapter, getDEK) => this.strategies.sequence.createStore({
         adapter, vault: this.name, encrypted: this.encrypted, getDEK, actor: this.keyring.userId,
       }),
     })
-    return this.remoteSequenceStore
+    return this.remoteSequenceStore.handle(key)
   }
 
   /** family#206 — a sync-peer attached after open becomes the authority; drop any store memoized against the previous answer. */
@@ -1699,10 +1739,22 @@ export class Vault {
         },
       }
     }
-    // family#206 — `'remote'` issues from the sync-peer; absent/`'local'` is unchanged.
-    let store: SequenceStore
-    if (opts?.authority === 'remote') store = this.authoritativeSequenceStore(series)
-    else {
+    const key = resolveSequenceKey(series, opts)
+    let handle: SequenceHandle
+    // family#206 — `'remote'` issues from the sync-peer, resolved at USE time
+    // (see `lazyRemoteHandle`). Absent or `'local'` takes the branch below,
+    // byte for byte what it was before.
+    if (opts?.authority === 'remote') {
+      // Resolved per OPERATION, not here: `SequenceOfflineError` is thrown by
+      // `next()`/`seedTo()` and not by `vault.sequence()`, so acquiring a
+      // handle stays safe and USING it is what can refuse. It also lets a
+      // handle acquired before `attachSyncTarget()` start working after it.
+      handle = {
+        next: async (o) => (await this.#remoteSequenceHandle(series, key)).next(o),
+        peek: async () => (await this.#remoteSequenceHandle(series, key)).peek(),
+        seedTo: async (n) => (await this.#remoteSequenceHandle(series, key)).seedTo(n),
+      }
+    } else {
       if (!this.sequenceStore) {
         // Opt-in gate (S4): NO_SEQUENCE.createStore throws SequenceNotEnabledError
         // unless `sequenceStrategy: withSequence()` was passed to createNoydb.
@@ -1714,9 +1766,8 @@ export class Vault {
           actor: this.keyring.userId,
         })
       }
-      store = this.sequenceStore
+      handle = this.sequenceStore.handle(key)
     }
-    const handle = store.handle(resolveSequenceKey(series, opts))
     if (opts?.format === undefined) return handle
     // Formatted variant: validate the template now (throws on a bad
     // token), then wrap next() to also return the rendered serial string.
