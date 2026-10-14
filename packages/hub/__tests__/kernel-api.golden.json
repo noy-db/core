@@ -123,6 +123,7 @@
     "migrateSatellitePerRecordKeys",
     "onCrossTierAccess",
     "openPeriod",
+    "provisionCollectionKeys",
     "publishRevocationList",
     "purgePeriodTargets",
     "rebuildSubjectIndex",
