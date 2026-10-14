@@ -569,6 +569,17 @@ export async function exportVaultJSON(ctx: BackupContext, opts: ExportStreamOpti
       schema: null
       refs: Record<string, { target: string; mode: 'strict' | 'warn' | 'cascade' }>
       records: unknown[]
+      /**
+       * family#175 — each record's HUB ID, aligned position-for-position with
+       * `records`. Additive: a reader that does not know about it ignores it.
+       *
+       * ⚠️ POSITIONAL, not a map, and the same shape family#166 chose for
+       * `envelopeMeta`: `ids[i]` identifies `records[i]`. A record need not
+       * carry an id FIELD at all — hub's id is the store key, not a property
+       * of the record — which is exactly why the artefact could not be diffed
+       * or re-imported by hub id without this.
+       */
+      ids?: readonly string[]
     }
   > = {}
   let ledgerHead: ExportChunk['ledgerHead'] | undefined
@@ -590,6 +601,10 @@ export async function exportVaultJSON(ctx: BackupContext, opts: ExportStreamOpti
       schema: null, // Standard Schema validators are not JSON-serializable
       refs: chunk.refs,
       records: chunk.records,
+      // family#175 — omitted rather than emitted empty when the stream carries
+      // none, so an older artefact and a new one with nothing to say are the
+      // same bytes.
+      ...(chunk.ids !== undefined ? { ids: chunk.ids } : {}),
     }
     if (chunk.ledgerHead) ledgerHead = chunk.ledgerHead
     // Collect dictionary snapshots unless resolveLabels is set
