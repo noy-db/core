@@ -41,6 +41,14 @@ function redactChunk(
   }
   const opts: ListProjectionOptions | undefined =
     redact === true ? undefined : { sensitivity: redact.sensitivity as never }
+  // ⚠️ `map`, NEVER a filter, and the spread below is load-bearing for the same
+  // reason (family#166). `chunk.envelopeMeta[i]` describes `records[i]`
+  // positionally, so redaction must be 1:1: dropping a record here would
+  // silently shift every later record's version and write time onto its
+  // neighbour, and nothing downstream could detect the skew. If redaction ever
+  // needs to OMIT a record it must drop the matching `envelopeMeta` entry in
+  // the same step. `__tests__/166-export-envelope-meta-port.test.ts` case 4
+  // asserts the alignment survives redaction.
   const records = chunk.records.map((r) =>
     applyListProjection(described, r as Record<string, unknown>, opts),
   )
@@ -86,10 +94,11 @@ function contextFor(vault: Vault): FormatsContext {
     // no limit at all. Neither the compiler nor any chunk-level assertion can
     // tell these three implementations apart — only a store observation can
     // (`__tests__/45-export-scope-narrows-read.test.ts`).
-    chunks: async function* (collections) {
+    chunks: async function* (collections, withEnvelopeMeta) {
       yield* vault.exportStream({
         granularity: 'collection',
         ...(collections ? { collections } : {}),
+        ...(withEnvelopeMeta === true ? { withEnvelopeMeta: true } : {}), // family#166
       })
     },
     // NOT swallowed. A caller who asked for redaction and silently got
@@ -156,7 +165,7 @@ export function withFormats(): FormatsStrategy {
       else ctx.assertCanExport('plaintext', format.id)
 
       const chunks: ExportChunk[] = []
-      for await (const chunk of ctx.chunks(options.collections)) {
+      for await (const chunk of ctx.chunks(options.collections, options.withEnvelopeMeta)) {
         chunks.push(redactChunk(chunk, ctx, options.redact))
       }
 
