@@ -2,11 +2,44 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import type { NoydbStore, EncryptedEnvelope } from '@noy-db/hub/to'
 import { ConflictError } from '@noy-db/hub/to'
 
+/**
+ * A fixed epoch for {@link makeEnvelope}'s `_ts`. Any constant would do; this
+ * one is obviously synthetic so nobody reads a real write time into it.
+ */
+const ENVELOPE_EPOCH = Date.UTC(2026, 0, 1)
+
+/**
+ * Build a test envelope.
+ *
+ * ⛔⛔ `_ts` IS DERIVED FROM `version`, NEVER FROM THE CLOCK, and that is a
+ * correctness property of this KIT rather than a style choice.
+ *
+ * It was `new Date().toISOString()`. Two calls with the same arguments then
+ * produced envelopes that differed by a millisecond whenever the clock ticked
+ * between them — so any case that rebuilt an envelope to compare against was
+ * FLAKY, at roughly 1 run in 5:
+ *
+ *     - "_ts": "2026-10-13T18:21:11.847Z"
+ *     + "_ts": "2026-10-13T18:21:11.846Z"
+ *
+ * ⚠️ THE COST LANDS ON SOMEBODY ELSE. `@noy-db/ports` is published, so an
+ * intermittent failure here is an intermittent red in every satellite store's
+ * CI — and the store author has no reason to suspect the kit, so they debug
+ * their store. Caught on family#217 in a case that had not shipped yet; this
+ * removes the whole class rather than the one instance, so a future case can
+ * compare a rebuilt envelope and simply be correct.
+ *
+ * ⭐ Derived from the arguments rather than frozen outright, so same arguments
+ * still mean an identical envelope AND different versions still mean different
+ * envelopes — a case asserting two envelopes are distinct keeps working.
+ * Nothing in this suite asserts on a `_ts` VALUE (checked), so the dates being
+ * synthetic costs no coverage.
+ */
 function makeEnvelope(version: number, data = 'test-data'): EncryptedEnvelope {
   return {
     _noydb: 1,
     _v: version,
-    _ts: new Date().toISOString(),
+    _ts: new Date(ENVELOPE_EPOCH + version * 1000).toISOString(),
     _iv: 'dGVzdC1pdi0xMjM0', // base64 of "test-iv-1234"
     _data: Buffer.from(data).toString('base64'),
   }
@@ -452,10 +485,14 @@ export function runStoreConformanceTests(
       })
 
       it('handles empty string values in envelope fields', async () => {
+        // `_ts` from the epoch, not the clock — see `makeEnvelope`. Safe as
+        // written (built once, reused), but leaving a clock-derived envelope in
+        // this file is how the flake comes back: the next case to compare one
+        // would reintroduce it, and nothing would fail until CI felt like it.
         const envelope: EncryptedEnvelope = {
           _noydb: 1,
           _v: 1,
-          _ts: new Date().toISOString(),
+          _ts: new Date(ENVELOPE_EPOCH).toISOString(),
           _iv: '',
           _data: '',
         }
@@ -466,7 +503,8 @@ export function runStoreConformanceTests(
       })
 
       it('round-trips a delete-marker envelope (_del) byte-identically (#589)', async () => {
-        const marker = { _noydb: 1 as const, _v: 6, _ts: new Date().toISOString(), _iv: '', _data: '', _del: true as const }
+        // Compared with `toEqual` below, so `_ts` must not come from the clock.
+        const marker = { _noydb: 1 as const, _v: 6, _ts: new Date(ENVELOPE_EPOCH + 6_000).toISOString(), _iv: '', _data: '', _del: true as const }
         await adapter.put('comp1', 'coll1', 'id1', marker)
         const result = await adapter.get('comp1', 'coll1', 'id1')
         expect(result).toEqual(marker)          // _del must survive — a store that drops it breaks #589 convergence
