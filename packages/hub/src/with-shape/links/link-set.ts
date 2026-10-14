@@ -73,14 +73,30 @@ export class LinkSet implements LinkSetHandle {
     return this.dekPromise
   }
 
-  private async encryptEntry(entry: LinkEntry, version: number, key: string): Promise<EncryptedEnvelope> {
+  private async encryptEntry(
+    entry: LinkEntry,
+    version: number,
+    key: string,
+    /** family#210 — stamp `_del` so the row is a REMOVAL, not a link. */
+    removed = false,
+  ): Promise<EncryptedEnvelope> {
     const json = JSON.stringify(entry)
     const identity = { collection: this.collName, id: key, by: this.actor, version }
-    if (!this.encrypted) {
-      return buildRecordEnvelope(identity, { iv: '', data: json})
-    }
-    const { iv, data } = await encrypt(json, await this.dek(), buildRecordAad(identity))
-    return buildRecordEnvelope(identity, { iv, data})
+    const seal = this.encrypted
+      ? await encrypt(json, await this.dek(), buildRecordAad(identity))
+      : { iv: '', data: json }
+    const env = buildRecordEnvelope(identity, seal)
+    // `_del` on the ENVELOPE, not a field in the body: it is hub's existing
+    // delete-marker convention (#589), the one `@noy-db/ports`' `/to` suite
+    // already requires every store to round-trip byte-identically. A body
+    // field would be invisible to anything that cannot decrypt — including
+    // the sync mover, which is the whole point of putting it here.
+    return removed ? { ...env, _del: true } : env
+  }
+
+  /** family#210 — a removal marker, not a live link. See {@link disconnect}. */
+  private static isRemoved(env: EncryptedEnvelope): boolean {
+    return env._del === true
   }
 
   private async decryptEntry(key: string, env: EncryptedEnvelope): Promise<LinkEntry> {
@@ -103,16 +119,35 @@ export class LinkSet implements LinkSetHandle {
     this.emitter.emit('change', { vault: this.vault, collection: this.collName, id: key, action: 'put' })
   }
 
+  /**
+   * Remove a link.
+   *
+   * ⛔ WRITES A TOMBSTONE, it does not delete the row (family#210, ruled). A
+   * physical delete cannot replicate: the reserved mirror infers removal from
+   * ABSENCE, and absence is ambiguous for a set both devices can add to — A
+   * disconnecting `x–y` while B connects it is indistinguishable from B simply
+   * not having seen it yet. A marker says *removed here, at this version*,
+   * which the version comparison can then resolve like any other row.
+   *
+   * The body is still `{ a, b }`, so the row stays decryptable and the AAD is
+   * unchanged; only `_del` on the envelope distinguishes it.
+   */
   async disconnect(aId: string, bId: string): Promise<void> {
     const key = linkRowKey(aId, bId)
     const existing = await this.adapter.get(this.vault, this.collName, key)
     if (!existing) return
-    await this.adapter.delete(this.vault, this.collName, key)
+    if (LinkSet.isRemoved(existing)) return // already removed — idempotent, and no version churn
+    const marker = await this.encryptEntry({ a: aId, b: bId }, existing._v + 1, key, true)
+    await this.adapter.put(this.vault, this.collName, key, marker, existing._v)
     this.emitter.emit('change', { vault: this.vault, collection: this.collName, id: key, action: 'delete' })
   }
 
   async has(aId: string, bId: string): Promise<boolean> {
-    return (await this.adapter.get(this.vault, this.collName, linkRowKey(aId, bId))) !== null
+    const env = await this.adapter.get(this.vault, this.collName, linkRowKey(aId, bId))
+    // ⚠️ A tombstone is a row that EXISTS, so the old `!== null` answered true
+    // for a removed link. Every read path has to know about `_del`, not just
+    // `list()`.
+    return env !== null && !LinkSet.isRemoved(env)
   }
 
   async of(id: string): Promise<LinkRow[]> {
@@ -126,6 +161,7 @@ export class LinkSet implements LinkSetHandle {
     for (const key of keys) {
       const env = await this.adapter.get(this.vault, this.collName, key)
       if (!env) continue
+      if (LinkSet.isRemoved(env)) continue // family#210 — a removal, not a link
       const e = await this.decryptEntry(key, env)
       out.push(e.meta !== undefined ? { a: e.a, b: e.b, meta: e.meta } : { a: e.a, b: e.b })
     }
