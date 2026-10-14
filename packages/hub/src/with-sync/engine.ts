@@ -139,6 +139,15 @@ export class SyncEngine {
   private reservedLookup?: ReservedLookupSource
 
   /** Wire the reserved-lookup source (#650 Task 4). */
+  /**
+   * family#210 — the vault's declared link sets. Read per sync, not captured,
+   * so a `vault.link()` declared after the target was attached is still
+   * mirrored.
+   */
+  setLinkCollections(fn: () => readonly string[]): void {
+    this.linkCollections = fn
+  }
+
   setReservedLookupSource(source: ReservedLookupSource): void {
     this.reservedLookup = source
   }
@@ -209,6 +218,8 @@ export class SyncEngine {
 
   /** core#82 — when a pull replaces the caller's OWN keyring file, the vault reloads it in place. */
   private rosterReload?: { userId: string; reload: () => Promise<void> }
+  /** family#210 — declared link collections, for the reserved mirror. */
+  private linkCollections?: () => readonly string[]
 
   /** Wire the roster-reload seam (core#82). Same injection pattern as `setCacheInvalidator`. */
   /** core#107 — wire the vault's rejection sealing capability. */
@@ -280,7 +291,7 @@ export class SyncEngine {
         tombstoned++
       }
     }
-    const mirrored = await pushReserved(this.local, this.remote, this.vault)
+    const mirrored = await pushReserved(this.local, this.remote, this.vault, this.linkCollections?.() ?? [])
     const previous = await this.#remoteEpoch()
     const epoch = (previous?.epoch ?? 0) + 1
     const record: SyncEpochRecord = { epoch, at: new Date().toISOString(), by: actor, replaced, tombstoned }
@@ -880,7 +891,7 @@ export class SyncEngine {
     if (!filter) {
       this.progress({ direction: 'push', phase: 'reserved', records: pushed, bytes: pushBytes, total: { records: pushTotal } })
       try {
-        const mirrored = await pushReserved(this.local, this.remote, this.vault)
+        const mirrored = await pushReserved(this.local, this.remote, this.vault, this.linkCollections?.() ?? [])
         reserved = mirrored.copied
         // core#96 (pilot-1, finding B) — a local keyring the target supersedes
         // was discarded by the epoch rule; say so, as a conflict on `_keyring`.
@@ -945,7 +956,7 @@ export class SyncEngine {
           if (!set) { set = new Set(); protectedIds.set(d.collection, set) }
           set.add(d.id)
         }
-        const mirrored = await pullReserved(this.remote, this.local, this.vault, protectedIds)
+        const mirrored = await pullReserved(this.remote, this.local, this.vault, protectedIds, this.linkCollections?.() ?? [])
         reserved = mirrored.copied + mirrored.deleted
         if (this.rosterReload && mirrored.keyringsCopied.includes(this.rosterReload.userId)) await this.rosterReload.reload()
       } catch (err) {

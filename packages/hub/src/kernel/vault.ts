@@ -111,7 +111,7 @@ import {
   reservedDictDepsOf, // #653
   type LookupDescriptor,
 } from '../port/with/lookup-strategy.js'
-import { isLinkCollectionName, declareLink, type LinkSpec, type LinkSetHandle } from '../with-shape/links/names.js'
+import { isLinkCollectionName, declareLink, linkCollectionName, type LinkSpec, type LinkSetHandle } from '../with-shape/links/names.js'
 import { makeLazyLinkSetHandle, type LazyLinkSetHandle } from '../with-shape/links/lazy-handle.js'
 import { getAtPath } from './paths.js'
 import type { ComputedFields } from '../with-formula/computed/index.js'
@@ -1148,6 +1148,19 @@ export class Vault {
     if (dimName === undefined) return
     await this.dictionaryCache.get(dimName)?._refreshSyncCache(id)
     this._collectGraphTouch(collection, id)
+  }
+
+  /**
+   * @internal family#210 — the storage collection names of this vault's
+   * DECLARED link sets, for the reserved mirror.
+   *
+   * ⭐ Enumerated rather than matched. The mirror's declared rule list is what
+   * makes "which reserved records travel" auditable; a `_links_*` pattern
+   * would move that answer from a declaration into a regex, and nothing would
+   * then say which collections are in scope for a given vault.
+   */
+  _linkCollectionNames(): readonly string[] {
+    return [...this.linkRegistry.keys()].map((name) => linkCollectionName(name))
   }
 
   /** @internal #650 Task 4 (#647) — declared reserved-lookup collection names, for `SyncEngine.pull()`'s explicit prefix registry. */

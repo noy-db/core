@@ -158,6 +158,40 @@ const RESERVED_REPLICATION: readonly ReservedReplicationRule[] = [
   { collection: REJECTIONS_COLLECTION, supersedes: versionSupersedes, propagateDeletes: true },
 ]
 
+/**
+ * family#210 — one rule per DECLARED link collection.
+ *
+ * ⭐ ENUMERATED, not a name pattern, and that is the auditable choice: this
+ * file's whole job is that "which reserved records travel" is a declared,
+ * readable list. A regex over `_links_*` would make the answer depend on a
+ * match rather than on a declaration, and nothing would then tell a reader
+ * which collections are actually in scope for a given vault. The caller passes
+ * the vault's declared link specs; the TEMPLATE below is the part that is
+ * reviewed once.
+ *
+ * ⭐ `propagateDeletes: false`, and that is family#210 PR 1's payoff rather
+ * than an omission. Removal now travels as a MARKER row (`_del` on the
+ * envelope), which `versionSupersedes` carries like any other row. Absence-
+ * based deletion is not merely unnecessary here — it is precisely the
+ * ambiguity the marker removed: for a set both devices can add to, "the remote
+ * lacks it" cannot distinguish *removed there* from *not seen there yet*.
+ *
+ * ⚠️ DEK-free, like every other rule: the comparison is on the envelope's
+ * `_v`, and a link's set membership lives in the KEY (`linkRowKey(a, b)`), not
+ * in the sealed body. That is what makes links expressible here at all — a
+ * counter's value is sealed, which is why family#206 was solved on the issuing
+ * side instead.
+ */
+export function linkReplicationRules(
+  linkCollections: readonly string[],
+): readonly ReservedReplicationRule[] {
+  return linkCollections.map((collection) => ({
+    collection,
+    supersedes: versionSupersedes,
+    propagateDeletes: false,
+  }))
+}
+
 export interface ReservedMirrorResult {
   /** Records written to `to`. */
   readonly copied: number
@@ -205,11 +239,11 @@ async function mirrorRule(
 }
 
 /** The push half: mirror every declared rule from `local` to `remote`. Never deletes. */
-export async function pushReserved(local: NoydbStore, remote: NoydbStore, vault: string): Promise<ReservedMirrorResult> {
+export async function pushReserved(local: NoydbStore, remote: NoydbStore, vault: string, linkCollections: readonly string[] = []): Promise<ReservedMirrorResult> {
   let copied = 0
   let keyringsCopied: readonly string[] = []
   const staleKeyrings: { id: string; local: EncryptedEnvelope; remote: EncryptedEnvelope }[] = []
-  for (const rule of RESERVED_REPLICATION) {
+  for (const rule of [...RESERVED_REPLICATION, ...linkReplicationRules(linkCollections)]) {
     const ids = await mirrorRule(rule, local, remote, vault)
     copied += ids.length
     if (rule.collection === KEYRING_COLLECTION) {
@@ -258,6 +292,7 @@ export async function pullReserved(
   local: NoydbStore,
   vault: string,
   protectedIds: ReadonlyMap<string, ReadonlySet<string>>,
+  linkCollections: readonly string[] = [],
 ): Promise<ReservedMirrorResult> {
   const localKeyrings = await local.list(vault, KEYRING_COLLECTION)
   if (localKeyrings.length === 0) return { copied: 0, deleted: 0, keyringsCopied: [] }
@@ -270,7 +305,7 @@ export async function pullReserved(
   // become EMPTY when the last record is revoked — and that emptiness is the
   // revocation this must propagate (core#91), not a never-pushed target.
   let remoteInitialised = false
-  for (const rule of RESERVED_REPLICATION) {
+  for (const rule of [...RESERVED_REPLICATION, ...linkReplicationRules(linkCollections)]) {
     const remoteIds = (await remote.list(vault, rule.collection)).filter(id => inScope(rule, id))
     if (rule.collection === KEYRING_COLLECTION) remoteInitialised = remoteIds.length > 0
     const ids = await mirrorRule(rule, remote, local, vault, remoteIds)
