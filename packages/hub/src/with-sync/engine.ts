@@ -549,7 +549,20 @@ export class SyncEngine {
     // the record FIRST became dirty and carried forward. Replacing the entry
     // (below) keeps the latest envelope but must not move the base: the remote
     // has not advanced just because this device wrote again.
-    const base = idx >= 0 ? (this.dirty[idx]!.base ?? this.dirty[idx]!.version - 1) : version - 1
+    // family#225 — when the key is not in OUR snapshot, another instance on
+    // this same local store may already hold a row for it, carrying the base
+    // IT captured at first dirty. One `get` for a key we have not seen before
+    // (never a `list`, never O(N)); without it a second tab recomputes
+    // `version - 1` from a blind snapshot, which can only guess HIGHER than
+    // the truth and fails the CAS on push.
+    const carried = idx >= 0 ? undefined : await this.#rowBase(collection, id)
+    // ⭐ No `Math.min` against `version - 1` here, and the ordering is why: the
+    // write that produced `version` is the newest in the store, so any row's
+    // `version` is at or below it and its `base` at or below `version - 1`.
+    // A carried base can therefore only be lower, never higher.
+    const base = idx >= 0
+      ? (this.dirty[idx]!.base ?? this.dirty[idx]!.version - 1)
+      : carried ?? version - 1
     const entry: DirtyEntry = {
       vault: this.vault,
       collection,
@@ -886,6 +899,7 @@ export class SyncEngine {
   /** Push dirty records to remote adapter. Accepts optional `PushOptions` for partial sync. */
   async push(options?: PushOptions): Promise<PushResult> {
     await this.ensureLoaded()
+    await this.#refreshDirty() // family#225 — another instance's rows are part of the queue
     if (options?.full) await this.markAllDirty()
     this.graphBatchController?.begin() // #638 Task 4
 
@@ -974,6 +988,10 @@ export class SyncEngine {
   /** Pull remote records to local adapter. Accepts optional `PullOptions` for partial sync. */
   async pull(options?: PullOptions): Promise<PullResult> {
     await this.ensureLoaded()
+    // family#225 — the collision checks below read `this.dirty`; a mark made by
+    // another instance on this store must count, or the remote copy is applied
+    // over a locally-edited record with no resolver and no conflict reported.
+    await this.#refreshDirty()
 
     let pulled = 0
     let reserved = 0
@@ -1351,6 +1369,7 @@ export class SyncEngine {
    */
   async pushFiltered(predicate: (entry: DirtyEntry) => boolean): Promise<PushResult> {
     await this.ensureLoaded()
+    await this.#refreshDirty() // family#225
 
     let pushed = 0
     this.#pushRejected = []
@@ -1886,6 +1905,14 @@ export class SyncEngine {
     )
   }
 
+  /** family#225 — the `base` an existing row carries for this key, or undefined when there is none. */
+  async #rowBase(collection: string, id: string): Promise<number | undefined> {
+    const row = await this.local.get(this.vault, DIRTY_COLLECTION, this.dirtyRowId(collection, id))
+    if (!row) return undefined
+    const entry = JSON.parse(this.plainBody(row)) as DirtyEntry
+    return entry.base ?? entry.version - 1
+  }
+
   /** family#223 — drop one entry's row. Every array removal is paired with this. */
   private async deleteDirtyRow(collection: string, id: string): Promise<void> {
     this.dirtyIndex = null
@@ -1898,6 +1925,64 @@ export class SyncEngine {
     for (const id of await this.local.list(this.vault, DIRTY_COLLECTION)) {
       await this.local.delete(this.vault, DIRTY_COLLECTION, id)
     }
+  }
+
+  /**
+   * family#225 — THE ROWS ARE THE QUEUE, and `this.dirty` is a cache of them.
+   *
+   * ⛔ TWO INSTANCES SHARE ONE LOCAL STORE (two browser tabs of one origin),
+   * and `ensureLoaded()` runs ONCE per instance. family#223 made the durable
+   * queue per-entry, so the two tabs no longer overwrite each other's marks —
+   * but each engine still drove `push()` and `pull()` off the snapshot it
+   * loaded at open, so a row the OTHER instance wrote was invisible. Measured
+   * on 0.10.0-pre.2 and again after family#223:
+   *
+   * - a tab that wrote and closed without pushing lost the record outright
+   *   BEFORE family#223; after it the row survived but still only went out
+   *   when that tab itself pushed, or when anything reopened the store;
+   * - worse, `pull()` consults `this.dirty` to find a collision. Blind to the
+   *   other tab's row it classified a dirty record as clean, applied the
+   *   remote over it, consulted no resolver and emitted no `sync:conflict`.
+   *   With `conflict: 'local-wins'` the local edit was silently discarded —
+   *   a one-instance control on the identical sequence reported the conflict
+   *   and kept the edit.
+   *
+   * So every read of `this.dirty` AS THE QUEUE reconciles first. Called at the
+   * top of `push()`, `pushFiltered()` and `pull()` — ⛔ NEVER on the write
+   * path: putting a `list()` there is the O(N) shape family#223 removed.
+   *
+   * ⭐ A UNION, not a replacement, and the direction is deliberate. A row wins
+   * for its key (every `trackChange` upserts it, so the row is never older
+   * than our copy), and an in-memory entry whose row is GONE is kept rather
+   * than dropped: the fail-safe direction here is to deliver twice, never to
+   * drop once. A redundant push self-cleans — it resolves through the core#71
+   * branch below (same `_v`, identical body, because both instances read the
+   * same envelope from the shared local store) and the entry is completed
+   * without a conflict being reported.
+   *
+   * ⚠️ `base` takes the MINIMUM. family#224's base is "what the remote held
+   * when the record FIRST became dirty"; a second instance computing it from
+   * a blind snapshot can only ever guess HIGHER, and a base above the truth
+   * fails the CAS. Keeping the lower of the two is the conservative reading.
+   */
+  async #refreshDirty(): Promise<void> {
+    const byKey = new Map(this.dirty.map(d => [this.dirtyRowId(d.collection, d.id), d]))
+    let changed = false
+    for (const rowId of await this.local.list(this.vault, DIRTY_COLLECTION)) {
+      const row = await this.local.get(this.vault, DIRTY_COLLECTION, rowId)
+      if (!row) continue
+      const entry = JSON.parse(this.plainBody(row)) as DirtyEntry
+      const mine = byKey.get(this.dirtyRowId(entry.collection, entry.id))
+      if (mine && mine.version === entry.version && (mine.base ?? -1) <= (entry.base ?? -1)) continue
+      const base = mine === undefined
+        ? entry.base
+        : Math.min(mine.base ?? mine.version - 1, entry.base ?? entry.version - 1)
+      byKey.set(this.dirtyRowId(entry.collection, entry.id), { ...entry, ...(base !== undefined ? { base } : {}) })
+      changed = true
+    }
+    if (!changed) return
+    this.dirty = [...byKey.values()]
+    this.dirtyIndex = null
   }
 
   /**
