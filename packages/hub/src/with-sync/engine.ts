@@ -521,12 +521,18 @@ export class SyncEngine {
 
     // Deduplicate: if same collection+id already in dirty, update it
     const idx = this.dirty.findIndex(d => d.collection === collection && d.id === id)
+    // family#224 — the CAS base is the remote's believed version, captured when
+    // the record FIRST became dirty and carried forward. Replacing the entry
+    // (below) keeps the latest envelope but must not move the base: the remote
+    // has not advanced just because this device wrote again.
+    const base = idx >= 0 ? (this.dirty[idx]!.base ?? this.dirty[idx]!.version - 1) : version - 1
     const entry: DirtyEntry = {
       vault: this.vault,
       collection,
       id,
       action,
       version,
+      base,
       timestamp: new Date().toISOString(),
     }
 
@@ -714,7 +720,13 @@ export class SyncEngine {
           envelope,
           // core#100 — a `rekey` re-encrypted the record in place: same `_v`,
           // new bytes; the target still at that version takes it.
-          entry.action === 'rekey' ? entry.version : entry.version - 1,
+          //
+          // family#224 — otherwise the entry's own `base`: what the remote is
+          // believed to hold, captured when the record first became dirty.
+          // ⚠️ `?? version - 1` is the fallback for an entry an older build
+          // persisted into `_sync/meta` with no `base`, not a default — a new
+          // entry always has one.
+          entry.action === 'rekey' ? entry.version : (entry.base ?? entry.version - 1),
         )
         acc.completed.push(i)
         acc.pushed++
@@ -1342,7 +1354,18 @@ export class SyncEngine {
               entry.collection,
               entry.id,
               envelope,
-              entry.version - 1,
+              // family#224 — the SAME expression as `push()`'s CAS above, and
+              // deliberately identical. Two push paths that disagree about what
+              // the remote holds is a defect waiting for whichever path a
+              // caller happens to use.
+              //
+              // ⚠️ This also brings the `rekey` branch here, which `pushFiltered`
+              // did not have: it expected `version - 1` for a re-encrypt-in-place,
+              // where `push()` expects `version` (core#100). So a filtered push of
+              // a rekeyed record conflicted where a full push succeeded. Flagged
+              // rather than slipped in — it is a one-expression consequence of
+              // making the two agree, not an independent change.
+              entry.action === 'rekey' ? entry.version : (entry.base ?? entry.version - 1),
             )
             completed.push(i)
             pushed++

@@ -1747,6 +1747,28 @@ export interface DirtyEntry {
    */
   readonly action: 'put' | 'delete' | 'rekey'
   readonly version: number
+  /**
+   * family#224 — the version the REMOTE is believed to hold, i.e. what this
+   * entry's CAS should expect. Set when the record first becomes dirty and
+   * PRESERVED across later local writes to the same id.
+   *
+   * ⛔ WHY IT CANNOT BE DERIVED AS `version - 1`, which is what push did.
+   * `trackChange` deduplicates by (collection, id) and REPLACES the entry, so
+   * the third local write of a never-pushed record carries `version: 3` and the
+   * derivation expects the remote to be at 2 — while the remote has nothing at
+   * all. Every such put is refused, the conflict path then retries at
+   * `expectedVersion: 0`, and the record costs two puts and a conflict instead
+   * of one put. Measured: 3 records written 3 times each produced 3 conflicts
+   * and 6 remote puts. On DynamoDB that is a 400 per record
+   * (`ConditionalCheckFailedException`) — 107 of them for 106 successful
+   * PutItem in one observed window.
+   *
+   * ⚠️ OPTIONAL, because the dirty list is PERSISTED in `_sync/meta`: an entry
+   * written by an older build has no `base`, and push must keep working for it.
+   * The fallback is the old derivation, so an upgrade mid-queue behaves exactly
+   * as before for already-queued entries and correctly for new ones.
+   */
+  readonly base?: number
   readonly timestamp: string
 }
 
