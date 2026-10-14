@@ -841,7 +841,11 @@ export class Vault {
         activeTxId: () => this.noydb._activeTxContextOrNull?.txId ?? null,
         schemaUpdateGate,
         schemaFence: this.schemaFence,
-        getDEK: this.getDEK,
+        // family#192 — an INDIRECTION, never `this.getDEK` itself: that field is
+        // REPLACED on a keyring reload, and `Collection.getDEK` is readonly, so
+        // passing its value pins a handle to the pre-reload keyring. Reading it
+        // per call is what lets the reload refresh instances in place.
+        getDEK: (collectionName: string) => this.getDEK(collectionName),
         onDirty: this.onDirty,
         tabCoordinated: () => this.noydb._tabCoordinationActive, // #693: re-create gate fallback
         historyConfig: effectiveHistoryConfig,
@@ -3504,7 +3508,16 @@ export class Vault {
   /** core#82 — sync pulled a newer copy of THIS user's keyring file: reload it in place, rebuild the DEK resolver, drop cached collections. */
   async _reloadKeyringAfterSync(): Promise<void> {
     await this.backupContext().reloadKeyringAndRebuildDEK()
-    this.collectionCache.clear()
+    // ⛔⛔ INVALIDATE IN PLACE, AND DO NOT CLEAR THE MAP (family#192). Both
+    // halves are load-bearing and the second one is easy to miss:
+    // `_invalidateSyncApplied` finds its target through
+    // `collectionCache.get()`, so clearing ORPHANS a held handle from
+    // per-record invalidation for the rest of its life — it then reads
+    // correctly once and goes stale again on the NEXT pull, with no keyring
+    // change involved. `__tests__/192-handle-stale-after-keyring-reload.test.ts`
+    // measures exactly that in two rounds; round 2 is what fails if anyone
+    // "simplifies" this back to invalidate-then-clear.
+    for (const c of this.collectionCache.values()) c._invalidateAfterRestore()
   }
 
   private backupContext() {

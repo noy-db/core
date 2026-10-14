@@ -1895,7 +1895,21 @@ const KERNEL_SURFACE_BUDGET = {
   // delegates instead of one call. Those lines are the price of the boundary,
   // and the boundary is worth more than the lines: it also keeps the module out
   // of the always-on bundle for every caller who never asks for a remote series.
-  'packages/hub/src/kernel/vault.ts': 3928,
+  // 3928→3941 (family#192): a handle held across a keyring-reloading pull read
+  // stale data. ⚠️ A SECOND raise on this file, and the root's option-1 ruling
+  // was for family#206 specifically, not a licence — this one is flagged for
+  // ratification at merge rather than assumed.
+  // The CODE is two lines (a `getDEK` indirection at the collection
+  // construction site, and invalidating instances in place instead of clearing
+  // the map). The rest is the two traps a reader needs AT those lines, and
+  // compressing further would mean deleting them: the narrative already moved
+  // to `__tests__/192-handle-stale-after-keyring-reload.test.ts`, which
+  // measures the failure in two rounds.
+  // ⛔ Why it cannot move out: both lines are the vault's own cache lifecycle.
+  // `collectionCache` is a private field of this class and
+  // `_invalidateSyncApplied` resolves through it, so there is no service that
+  // could own either edit.
+  'packages/hub/src/kernel/vault.ts': 3941,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
