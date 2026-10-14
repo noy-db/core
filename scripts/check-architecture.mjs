@@ -1508,7 +1508,14 @@ const KERNEL_SURFACE_BUDGET = {
   // holds IS the instance in the vault's collection cache, so dropping that map fixed the next
   // `vault.collection()` and left the caller reading pre-restore data from the handle they were
   // told to use. Mostly the comment explaining that.
-  'packages/hub/src/kernel/collection.ts': 4600,
+  // 4600→4611 (family#208): `schema` gains the late-attach door `computed` and
+  // `moneyFields` already had. ⚠️ FLAGGED for ratification at merge, like
+  // family#192's — each raise is its own decision.
+  // Three lines of code (the field loses `readonly`, a first-wins `_applySchema`);
+  // the rest is why first-wins is correct rather than merely consistent.
+  // ⛔ Cannot move out: `schema` is this class's own private field and the
+  // door must sit beside the three it mirrors.
+  'packages/hub/src/kernel/collection.ts': 4611,
   // Lowered 4549→4548 (#826/#798/#812 deprecation cut, 2026-07-26): removed the #799 cover delegators + option key, the dead auth/autoSync/syncInterval options, and the /bundle retirement fallout. Ratchets the #799 bumps back down as their comments promised.
   // Bumped 3640→3700 (2026-06-08): deferred-numbering wiring — `sequence()`
   // routing + `runNumberingPass` + the cache-coherent `stamp` closure. The
@@ -1909,7 +1916,10 @@ const KERNEL_SURFACE_BUDGET = {
   // `collectionCache` is a private field of this class and
   // `_invalidateSyncApplied` resolves through it, so there is no service that
   // could own either edit.
-  'packages/hub/src/kernel/vault.ts': 3941,
+  // 3941→3946 (family#208): one line threading a reconcile-path `schema` into
+  // `_applySchema`, plus why it is not routed through `reconcileViaAttach`
+  // (`schema` is not a Via-family option). FLAGGED for ratification.
+  'packages/hub/src/kernel/vault.ts': 3946,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
