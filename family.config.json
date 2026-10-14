@@ -7,7 +7,8 @@
     "versions-uniform",
     "check-license",
     "prose-examples",
-    "changeset-names"
+    "changeset-names",
+    "changeset-coverage"
   ],
   "localChecks": [
     "pnpm check:architecture",
