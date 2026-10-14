@@ -560,7 +560,17 @@ export class Noydb {
    */
   async openVault(
     name: string,
-    opts?: { locale?: string; create?: boolean; meta?: VaultMeta },
+    opts?: {
+      locale?: string
+      create?: boolean
+      meta?: VaultMeta
+      /**
+       * family#191 — mint these collections' DEKs now, instead of on their
+       * first write. Sugar over {@link Vault.provisionCollectionKeys}; see it
+       * for what this does and does not prevent.
+       */
+      collections?: readonly string[]
+    },
   ): Promise<Vault> {
     if (this.closed) throw new ValidationError('Instance is closed')
     this.touchPolicy(name)
@@ -578,16 +588,30 @@ export class Noydb {
       if (opts?.locale !== undefined) {
         comp.setLocale(opts.locale)
       }
-      return comp
+      return await this.#provisionDeclared(comp, opts?.collections)
     }
 
     const opening = this.#openVaultFresh(name, opts)
     this.vaultOpening.set(name, opening)
     try {
-      return await opening
+      return await this.#provisionDeclared(await opening, opts?.collections)
     } finally {
       this.vaultOpening.delete(name)
     }
+  }
+
+  /**
+   * family#191 — provision declared collections' DEKs. ONE implementation
+   * reached from both of `openVault`'s returns: the cached branch exits early,
+   * and a caller passing `collections` on a second open of the same vault
+   * should get the same guarantee as the first. Idempotent, so the repeat
+   * costs a keyring lookup per name and mints nothing.
+   */
+  async #provisionDeclared(comp: Vault, collections: readonly string[] | undefined): Promise<Vault> {
+    if (collections !== undefined && collections.length > 0) {
+      await comp.provisionCollectionKeys(collections)
+    }
+    return comp
   }
 
   /** Uncached single-flight body of {@link openVault} — see `vaultOpening`. */

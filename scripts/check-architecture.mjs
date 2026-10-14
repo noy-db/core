@@ -1919,7 +1919,18 @@ const KERNEL_SURFACE_BUDGET = {
   // 3941→3946 (family#208): one line threading a reconcile-path `schema` into
   // `_applySchema`, plus why it is not routed through `reconcileViaAttach`
   // (`schema` is not a Via-family option). FLAGGED for ratification.
-  'packages/hub/src/kernel/vault.ts': 3946,
+  // 3946→4005 (family#191): `provisionCollectionKeys` — a NEW PUBLIC API.
+  // ⚠️ FLAGGED for ratification, per the convention.
+  // ⭐ The justification differs from the recent raises on this file, and the
+  // difference is the point: this is not an internal trap comment, it is
+  // PUBLISHED API DOCUMENTATION. It ships in the `.d.ts`, the prose gates
+  // check it, and what it documents is the three cases the API does NOT
+  // cover — where getting that wrong is silent cross-device data loss.
+  // Trimming it to a pointer would move a consumer-facing contract out of the
+  // one place the consumer reads.
+  // ⛔ Cannot move out: it needs `this.getDEK` and `this.keyring`, both
+  // private to this class.
+  'packages/hub/src/kernel/vault.ts': 4005,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
@@ -2192,7 +2203,11 @@ const KERNEL_SURFACE_BUDGET = {
   // explicitly not to trade reasoning-next-to-code for a ceiling. Compressing
   // these to pointers is what the first attempt did, and it is why this number
   // is higher than the one the ruling first quoted.
-  'packages/hub/src/kernel/noydb.ts': 2517,  // see the #1121 note above
+  // 2517→2541 (family#191): `openVault`'s `collections` option plus the one
+  // `#provisionDeclared` helper both of its returns go through — the cached
+  // branch exits early, and a single implementation is what stops the two
+  // paths drifting. FLAGGED for ratification.
+  'packages/hub/src/kernel/noydb.ts': 2541,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

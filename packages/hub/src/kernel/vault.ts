@@ -3504,6 +3504,65 @@ export class Vault {
    * collection-cache clear, ledger-store reset) that `load()` performs on this
    * Vault's private state.
    */
+  /**
+   * Provision collection DEKs up front (family#191).
+   *
+   * ⛔ WHAT THIS PREVENTS. DEKs are minted on a collection's FIRST WRITE. Two
+   * devices with separate local stores that each write the first record of an
+   * empty collection therefore mint two different keys for it, and
+   * `persistKeyring`'s CAS cannot help: it reconciles two sessions over ONE
+   * store (core#132), and neither device can see the other's. Measured on main,
+   * two devices, one remote: A's record reaches the remote, B's pull does NOT
+   * store it, and B logs NO rejection — the record is dropped with no trace,
+   * which is worse than the `TamperedError` the original report expected.
+   *
+   * ⭐ Why this is enough, and why it needs no new replication: `_keyring` is
+   * already `RESERVED_REPLICATION[0]`, so a DEK that exists BEFORE any write
+   * travels on its own. The whole defect is timing — the key did not exist
+   * until someone wrote, and by then both sides had minted. Provisioning moves
+   * the mint earlier; nothing new has to travel.
+   *
+   * Idempotent by construction: a name that already has a key resolves to it
+   * rather than minting a second, so calling this on every boot is correct.
+   * Entitlement is unchanged — a caller not granted a collection is refused by
+   * `ensureCollectionDEK`'s own check rather than silently given a key.
+   *
+   * ⚠️ IT DOES NOT CLOSE THE RACE ON ITS OWN, and callers should know which
+   * three cases remain:
+   *   1. an UNDECLARED collection — its first write still mints;
+   *   2. a device that writes to a provisioned collection BEFORE its first
+   *      pull — it has no keyring update yet, so it still mints a rival. This
+   *      makes the key available early; it cannot make a device fetch it;
+   *   3. reserved lazily-minted DEKs (`_sync_credentials`, the link stores),
+   *      which appear on first use and are not nameable here.
+   *
+   * @returns the names it minted, and those that already had a key.
+   */
+  async provisionCollectionKeys(
+    names: readonly string[],
+  ): Promise<{ minted: readonly string[]; existing: readonly string[] }> {
+    const minted: string[] = []
+    const existing: string[] = []
+    for (const name of names) {
+      // Reserved collections are refused rather than quietly accepted: their
+      // DEKs are propagated at grant time and minted by machinery on first
+      // use, so a name here could not change when they appear (residual 3).
+      if (name.startsWith('_')) {
+        throw new ValidationError(
+          `provisionCollectionKeys: "${name}" is an internal collection and cannot be provisioned. `
+          + 'Reserved DEKs are minted by the subsystem that owns them, on first use.',
+        )
+      }
+      // Read the keyring BEFORE resolving: the resolver mints on a miss, so
+      // asking afterwards cannot distinguish "was already there" from "I just
+      // made it", and that distinction is the whole return value.
+      const had = this.keyring.deks.has(name)
+      await this.getDEK(name)
+      ;(had ? existing : minted).push(name)
+    }
+    return { minted, existing }
+  }
+
   /** core#90 — the first `attachSyncTarget()` on a vault opened without one: from here every write is dirty-tracked. Cached collection handles are rebuilt (as after `load()`); re-acquire handles obtained before the attach. */
   _enableSync(onDirty: OnDirtyCallback): void {
     this.onDirty = onDirty
