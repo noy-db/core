@@ -54,6 +54,25 @@ export interface FormatExportOptions {
    * lets {@link NoydbFormat} be pure.
    */
   readonly redact?: true | { readonly sensitivity?: string }
+  /**
+   * Carry each record's store-level `_v` and `_ts` on the chunk, as
+   * `ExportChunk.envelopeMeta` (family#166). Off by default.
+   *
+   * ⭐ The format port's half of the flag `exportStream` already accepts. A
+   * format that wants write metadata — `as-sql`'s `metadataColumns` is the
+   * reason this exists — could not previously ask for it: `vault.export`
+   * never passed it, so those columns were always NULL even when the encoder
+   * was ready to fill them.
+   *
+   * ⚠️ POSITIONAL, not keyed by id: `envelopeMeta[i]` describes `records[i]`.
+   * A record need not carry an `id` field at all — hub's id is the store key,
+   * not a property of the record — so a keyed shape could not be built for
+   * every collection. See {@link ExportChunk.envelopeMeta}.
+   *
+   * ⚠️ It costs one extra store read per record, so it is opt-in rather than
+   * always-on.
+   */
+  readonly withEnvelopeMeta?: boolean
 }
 
 /** Options for an import. */
@@ -98,7 +117,13 @@ export interface FormatsStrategy {
 export interface FormatsContext {
   assertCanExport(tier: 'plaintext' | 'bundle', format?: string): void
   assertCanImport(tier: 'plaintext' | 'bundle', format?: string): void
-  chunks(collections?: readonly string[]): AsyncIterable<ExportChunk>
+  /**
+   * ⚠️ `withEnvelopeMeta` is forwarded to `exportStream`, not applied here.
+   * The meta is read from the STORE alongside each record, so it has to be
+   * requested at the read — a post-hoc pass could not recover it without
+   * re-reading, which is the cost this flag exists to make opt-in.
+   */
+  chunks(collections?: readonly string[], withEnvelopeMeta?: boolean): AsyncIterable<ExportChunk>
   describe(collection: string): { readonly fields: readonly unknown[] } | undefined
   plan(
     records: Readonly<Record<string, readonly unknown[]>>,
