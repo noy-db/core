@@ -213,12 +213,21 @@ export async function diffVault<T = unknown>(
   // round-tripping an id-less record through `/as`, and it is a format question
   // (`exportVaultJSON` emits `records: [...]`, dropping the id), not one
   // `diffVault` can answer. Reported, not papered over.
-  const byHubId = isVaultCandidate(candidate)
+  // ⚠️ TWO QUESTIONS, and `byHubId` used to answer both with one flag
+  // (family#175). `normaliseCandidate` branches on it to call
+  // `candidate.exportStream()`, so it means "the candidate IS a Vault"; the
+  // loop below uses it to mean "key the live side by hub id". Those came apart
+  // the moment an artefact could carry ids: keying the candidate by hub id
+  // while the live side keyed by a record FIELD would mismatch every record
+  // whose id field differs from its store key — exactly the id-less record
+  // this row is about — and report the vault added-and-deleted.
+  const candidateIsVault = isVaultCandidate(candidate)
+  const keyByHubId = candidateIsVault || artefactCarriesIds(candidate)
   for await (const chunk of vault.exportStream({ granularity: 'collection' })) {
     if (filter && !filter.has(chunk.collection)) continue
     const collection = live.get(chunk.collection) ?? new Map<string, T>()
     chunk.records.forEach((record, i) => {
-      const id = byHubId ? (chunk.ids?.[i] ?? '') : readIdField(record, idKey)
+      const id = keyByHubId ? (chunk.ids?.[i] ?? '') : readIdField(record, idKey)
       if (!id) {
         skipped.push({ collection: chunk.collection, side: 'vault', index: i })
         return
@@ -229,7 +238,7 @@ export async function diffVault<T = unknown>(
   }
 
   // Side B — normalise the candidate into the same shape.
-  const cand = await normaliseCandidate<T>(candidate, idKey, filter, byHubId, skipped)
+  const cand = await normaliseCandidate<T>(candidate, idKey, filter, candidateIsVault, skipped)
 
   // Walk every (collection, id) on either side and bucket.
   const added: VaultDiffEntry<T>[] = []
@@ -312,6 +321,29 @@ export async function diffVault<T = unknown>(
  * decides how the LIVE side is keyed, which is computed before the candidate is
  * normalised. The two sides must agree or every record mismatches.
  */
+/**
+ * family#175 — does this artefact carry hub ids? Decides whether the LIVE side
+ * keys by hub id, so both sides agree.
+ *
+ * ⚠️ Parses a string candidate that `normaliseCandidate` will parse again.
+ * Deliberate: `diffVault` is host-side tooling, not a hot path, and threading
+ * one parse through both would make the vault/string/object dispatch depend on
+ * a pre-parsed value it does not otherwise need. Correctness first; if an
+ * artefact ever gets big enough for this to matter, hoist the parse then.
+ */
+function artefactCarriesIds(candidate: unknown): boolean {
+  let raw: unknown = candidate
+  if (typeof candidate === 'string') {
+    try { raw = JSON.parse(candidate) } catch { return false }
+  }
+  if (raw === null || typeof raw !== 'object') return false
+  const nested = (raw as { collections?: unknown }).collections
+  if (nested === null || typeof nested !== 'object' || Array.isArray(nested)) return false
+  return Object.values(nested).some(
+    (body) => Array.isArray((body as { ids?: unknown } | null)?.ids),
+  )
+}
+
 function isVaultCandidate(candidate: unknown): boolean {
   return typeof candidate === 'object'
     && candidate !== null
@@ -362,6 +394,29 @@ async function normaliseCandidate<T>(
   return collectionsFromObject<T>(candidate, idKey, filter, skipped)
 }
 
+/**
+ * family#175 — normalise the two candidate artefact shapes to
+ * `[collection, records, ids?]`.
+ *
+ * ⭐ `dump()`-like flat (`{ <coll>: records[] }`) and `exportVaultJSON`'s
+ * nested (`{ collections: { <coll>: { records, ids } } }`). Kept as one
+ * function so a third shape has an obvious home, and so the caller cannot
+ * accidentally handle one and not the other — which is precisely what
+ * happened.
+ */
+function flattenCandidateShape(
+  raw: object,
+): Array<readonly [string, unknown, readonly string[] | undefined]> {
+  const nested = (raw as { collections?: unknown }).collections
+  if (nested !== null && typeof nested === 'object' && !Array.isArray(nested)) {
+    return Object.entries(nested).map(([name, body]) => {
+      const b = body as { records?: unknown; ids?: readonly string[] } | null
+      return [name, b?.records, b?.ids] as const
+    })
+  }
+  return Object.entries(raw).map(([name, value]) => [name, value, undefined] as const)
+}
+
 function collectionsFromObject<T>(
   raw: unknown,
   idKey: string,
@@ -374,12 +429,32 @@ function collectionsFromObject<T>(
   }
   // A vault dump JSON has a top-level shape like { _compartment, _keyring, <coll>: <records[]> }.
   // We accept both: keys starting with `_` are skipped (they're metadata), the rest are collections.
-  for (const [key, value] of Object.entries(raw)) {
+  // family#175 — TWO artefact shapes reach here, and recognising only one was
+  // a silent data-loss hazard rather than a missing feature.
+  //
+  // ⛔ `exportVaultJSON` nests its records under `collections: { <coll>:
+  // { schema, refs, records, ids } }`, while this loop required the top-level
+  // value to BE the array (the `dump()`-like flat shape). So `collections` was
+  // not an array, `continue` skipped it, the candidate parsed as EMPTY — and
+  // diffing a vault against ITS OWN export reported every record as DELETED,
+  // with `skipped: 0`, so nothing signalled a problem. Applying that diff
+  // would have emptied the vault. Measured on main before this change:
+  // `{ add: 0, modify: 0, delete: 2, skipped: 0 }` for a two-record vault.
+  const entries = flattenCandidateShape(raw)
+  for (const [key, value, ids] of entries) {
     if (key.startsWith('_')) continue
     if (filter && !filter.has(key)) continue
     if (!Array.isArray(value)) continue
     const collection = new Map<string, T>()
     ;(value as readonly T[]).forEach((record, i) => {
+      // family#175 — the HUB ID when the artefact carries one, which is what
+      // lets an id-less record round-trip. `ids[i]` identifies `records[i]`
+      // positionally; see `exportVaultJSON`.
+      const hubId = ids?.[i]
+      if (hubId !== undefined && hubId !== '') {
+        collection.set(hubId, record)
+        return
+      }
       // family#151 — RECORDED, not dropped. A candidate row with no `idKey`
       // field lands in no bucket, and `as`'s `apply()` walks only the buckets,
       // so the row was silently never imported. This path cannot key by hub id
