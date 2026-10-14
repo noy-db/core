@@ -23,6 +23,17 @@ import { NOYDB_SYNC_VERSION } from '../kernel/types.js'
 import { isConflictError, ValidationError } from '../kernel/errors.js'
 import { pushReserved, pullReserved, pullKeyringFile } from './reserved-mirror.js'
 
+/**
+ * family#223 — the per-entry dirty-log collection. A sibling of
+ * `_sync_rejections` rather than an id prefix inside `_sync`, so enumerating
+ * the queue is one `list()` that returns exactly the queue.
+ *
+ * ⚠️ Device-local and NEVER replicated: `RESERVED_REPLICATION` names neither
+ * `_sync` nor this, and `reserved-mirror.ts`'s table says why ("this device's
+ * dirty log and watermarks"). So no peer ever sees this layout.
+ */
+const DIRTY_COLLECTION = '_sync_dirty'
+
 /** core#74 — where a device parks the records its admission gate refused. Local-only: never mirrored, never full-pushed. */
 const REJECTED_COLLECTION = '_sync_rejected'
 /** core#74 — the parking record: the refusal and the untouched envelope, plaintext JSON (the envelope inside is still ciphertext). */
@@ -220,6 +231,8 @@ export class SyncEngine {
   private rosterReload?: { userId: string; reload: () => Promise<void> }
   /** family#210 — declared link collections, for the reserved mirror. */
   private linkCollections?: () => readonly string[]
+  /** family#223 — (collection|id) -> array position, so `trackChange` dedupes in O(1). Null means "rebuild on next use". */
+  private dirtyIndex: Map<string, number> | null = null
 
   /** Wire the roster-reload seam (core#82). Same injection pattern as `setCacheInvalidator`. */
   /** core#107 — wire the vault's rejection sealing capability. */
@@ -236,6 +249,7 @@ export class SyncEngine {
   async resetAfterRestore(): Promise<void> {
     await this.ensureLoaded()
     this.dirty = []
+    await this.clearDirtyRows() // family#223
     this.lastPush = null
     this.lastPull = null
     this.epoch = null
@@ -297,6 +311,7 @@ export class SyncEngine {
     const record: SyncEpochRecord = { epoch, at: new Date().toISOString(), by: actor, replaced, tombstoned }
     await this.remote.put(this.vault, '_sync', 'epoch', buildRecordEnvelope({ collection: '_sync', id: 'epoch', version: epoch }, { iv: '', data: JSON.stringify(record) }))
     this.dirty = []
+    await this.clearDirtyRows() // family#223
     this.epoch = epoch
     this.lastPush = new Date().toISOString()
     await this.persistMeta()
@@ -338,6 +353,7 @@ export class SyncEngine {
       parked++
     }
     this.dirty = []
+    await this.clearDirtyRows() // family#223
     this.epoch = remote.epoch
     this.emitter.emit('sync:epoch', { vault: this.vault, from, to: remote.epoch, parked })
     return { epoch: remote.epoch, resynced: true, parked }
@@ -520,7 +536,15 @@ export class SyncEngine {
     await this.ensureLoaded()
 
     // Deduplicate: if same collection+id already in dirty, update it
-    const idx = this.dirty.findIndex(d => d.collection === collection && d.id === id)
+    // family#223 — O(1) dedupe. The old `findIndex` was the SECOND quadratic
+    // factor (O(N) comparisons per write, N writes); fixing only the
+    // serialisation would have left the same shape, slower to notice. The
+    // index self-heals on a length mismatch, so a splice or filter elsewhere
+    // cannot leave it stale.
+    if (this.dirtyIndex === null || this.dirtyIndex.size !== this.dirty.length) {
+      this.dirtyIndex = new Map(this.dirty.map((d, n) => [this.dirtyRowId(d.collection, d.id), n]))
+    }
+    const idx = this.dirtyIndex.get(this.dirtyRowId(collection, id)) ?? -1
     // family#224 — the CAS base is the remote's believed version, captured when
     // the record FIRST became dirty and carried forward. Replacing the entry
     // (below) keeps the latest envelope but must not move the base: the remote
@@ -539,10 +563,14 @@ export class SyncEngine {
     if (idx >= 0) {
       this.dirty[idx] = entry
     } else {
+      this.dirtyIndex.set(this.dirtyRowId(collection, id), this.dirty.length)
       this.dirty.push(entry)
     }
 
-    await this.persistMeta()
+    // family#223 — ONE small put, and no `persistMeta()`: this call changes
+    // only the dirty set, and `last_push`/`last_pull`/`epoch` are untouched.
+    // Writing meta here is what made the cost quadratic.
+    await this.putDirtyRow(entry)
 
     // Notify scheduler of the write (triggers on-change or debounce)
     this.scheduler?.notifyChange()
@@ -552,6 +580,7 @@ export class SyncEngine {
   async removeDirty(collection: string, id: string): Promise<void> {
     const before = this.dirty.length
     this.dirty = this.dirty.filter(d => !(d.collection === collection && d.id === id))
+              await this.deleteDirtyRow(collection, id) // family#223
     if (this.dirty.length !== before) await this.persistMeta()
   }
 
@@ -845,7 +874,10 @@ export class SyncEngine {
       if (collection === REJECTED_COLLECTION) continue // core#74 — parked refusals are this device's alone
       for (const [id, envelope] of Object.entries(records)) {
         if (this.dirty.some(d => d.collection === collection && d.id === id)) continue
-        this.dirty.push({ vault: this.vault, collection, id, action: 'put', version: envelope._v, timestamp: new Date().toISOString() })
+        const revived: DirtyEntry = { vault: this.vault, collection, id, action: 'put', version: envelope._v, base: envelope._v - 1, timestamp: new Date().toISOString() }
+        this.dirty.push(revived)
+        this.dirtyIndex = null
+        await this.putDirtyRow(revived) // family#223
       }
     }
     await this.persistMeta()
@@ -890,6 +922,8 @@ export class SyncEngine {
 
     // Remove completed entries from dirty log (reverse order to preserve indices)
     for (const i of completed.sort((a, b) => b - a)) {
+      const done = this.dirty[i]
+      if (done) await this.deleteDirtyRow(done.collection, done.id) // family#223
       this.dirty.splice(i, 1)
     }
 
@@ -1133,6 +1167,7 @@ export class SyncEngine {
               const wasDirty = this.dirty.some(d => d.collection === collName && d.id === id)
               await this.applyRemote(collName, id, remoteEnvelope)
               this.dirty = this.dirty.filter(d => !(d.collection === collName && d.id === id))
+              await this.deleteDirtyRow(collName, id) // family#223
               pulled++
               if (wasDirty) erasures.push(this.reportErasure(collName, id, remoteEnvelope, localEnvelope, 'pull'))
             } else if (
@@ -1155,6 +1190,7 @@ export class SyncEngine {
                   }
                   await this.applyRemote(collName, id, winner)
                   this.dirty = this.dirty.filter(d => !(d.collection === collName && d.id === id))
+              await this.deleteDirtyRow(collName, id) // family#223
                   pulled++
                 }
                 // winner === localEnvelope or null → keep local (its dirty entry, if any, pushes out)
@@ -1162,6 +1198,7 @@ export class SyncEngine {
                 // no resolver → delete wins; the incoming marker is the delete
                 await this.applyRemote(collName, id, remoteEnvelope)
                 this.dirty = this.dirty.filter(d => !(d.collection === collName && d.id === id))
+              await this.deleteDirtyRow(collName, id) // family#223
                 pulled++
               }
               // no resolver and LOCAL is the marker → keep local marker; its dirty 'put' pushes it outward
@@ -1181,11 +1218,13 @@ export class SyncEngine {
                 if (handled === 'remote') {
                   await this.applyRemote(collName, id, conflict.remote)
                   this.dirty = this.dirty.filter(d => !(d.collection === collName && d.id === id))
+              await this.deleteDirtyRow(collName, id) // family#223
                   pulled++
                 } else if (handled === 'merged' && conflict.local !== localEnvelope) {
                   const merged = conflict.local
                   await this.applyRemote(collName, id, merged)
                   this.dirty = this.dirty.filter(d => !(d.collection === collName && d.id === id))
+              await this.deleteDirtyRow(collName, id) // family#223
                   pulled++
                 }
                 // 'local' or 'deferred': push handles it
@@ -1251,6 +1290,7 @@ export class SyncEngine {
               if (isDeleteMarker(remoteEnvelope)) {
                 await this.applyRemote(collName, id, remoteEnvelope)
                 this.dirty = this.dirty.filter(d => !(d.collection === collName && d.id === id))
+              await this.deleteDirtyRow(collName, id) // family#223
                 pulled++
               }
               // else: local already holds the marker (a local delete not yet observed
@@ -1260,6 +1300,7 @@ export class SyncEngine {
               // Drop any now-superseded local dirty entry so a subsequent push doesn't
               // redundantly re-fight a CAS conflict over content pull just overwrote.
               this.dirty = this.dirty.filter(d => !(d.collection === collName && d.id === id))
+              await this.deleteDirtyRow(collName, id) // family#223
               pulled++
             }
           } catch (err) {
@@ -1437,6 +1478,8 @@ export class SyncEngine {
     }
 
     for (const i of completed.sort((a, b) => b - a)) {
+      const done = this.dirty[i]
+      if (done) await this.deleteDirtyRow(done.collection, done.id) // family#223
       this.dirty.splice(i, 1)
     }
 
@@ -1523,6 +1566,7 @@ export class SyncEngine {
       }
     }
     this.dirty = []
+    await this.clearDirtyRows() // family#223
     await this.persistMeta()
     return { checked, replaced, unrecoverable, errors }
   }
@@ -1727,6 +1771,7 @@ export class SyncEngine {
     // The re-assert already delivered the tombstone remotely — drop any dirty
     // entry so the following push doesn't redundantly re-put it.
     this.dirty = this.dirty.filter(d => !(d.collection === collection && d.id === id))
+              await this.deleteDirtyRow(collection, id) // family#223
     return this.reportErasure(collection, id, winner, suppressedRemote, 'pull')
   }
 
@@ -1804,16 +1849,106 @@ export class SyncEngine {
 
   // ─── Persistence ─────────────────────────────────────────────────
 
+  /**
+   * family#223 — ONE ROW PER DIRTY ENTRY, because the list used to be
+   * re-serialised whole on every tracked write.
+   *
+   * ⛔ THAT WAS QUADRATIC AND IT FROZE A BROWSER IMPORT. `persistMeta()` wrote
+   * the entire `dirty` array into `_sync/meta` on each `trackChange`, so N
+   * writes before a push cost O(N²) bytes. Measured on 0.10.0-pre.2:
+   * 180 KB at N=50, 700 KB at N=100, 2.76 MB at N=200 — 3.9x per doubling,
+   * extrapolating to ~276 MB at N=2,000, which matches the 226 MB reported
+   * from the field. In a browser that is N growing IndexedDB writes on the
+   * main thread.
+   *
+   * ⛔ NOT FIXED BY DEBOUNCING, which was the obvious cheaper change and is
+   * refused: the record itself is already in the local store, so a lost dirty
+   * MARK is a record that exists locally and is never pushed, with nothing to
+   * indicate it. That trades a slow import for silent data divergence, and in
+   * a browser an unclean shutdown is a closed tab.
+   *
+   * ⚠️ DOWNGRADE: an older build reads `_sync/meta`'s `dirty` (now always
+   * empty) and will not see entries in this layout, so a queue written here
+   * and then opened by an older hub is not pushed. Accepted and documented on
+   * family#223 rather than guarded — a guard would need a stamp this build
+   * does not write, the same conclusion family#210 reached.
+   */
+  private dirtyRowId(collection: string, id: string): string {
+    return `${encodeURIComponent(collection)}|${encodeURIComponent(id)}`
+  }
+
+  /** family#223 — upsert one entry. O(1): a dedupe is the same key overwritten. */
+  private async putDirtyRow(entry: DirtyEntry): Promise<void> {
+    const id = this.dirtyRowId(entry.collection, entry.id)
+    await this.local.put(
+      this.vault, DIRTY_COLLECTION, id,
+      buildRecordEnvelope({ collection: DIRTY_COLLECTION, id, version: 1 }, { iv: '', data: JSON.stringify(entry) }),
+    )
+  }
+
+  /** family#223 — drop one entry's row. Every array removal is paired with this. */
+  private async deleteDirtyRow(collection: string, id: string): Promise<void> {
+    this.dirtyIndex = null
+    await this.local.delete(this.vault, DIRTY_COLLECTION, this.dirtyRowId(collection, id))
+  }
+
+  /** family#223 — drop every row (the `this.dirty = []` paths). */
+  private async clearDirtyRows(): Promise<void> {
+    this.dirtyIndex = null
+    for (const id of await this.local.list(this.vault, DIRTY_COLLECTION)) {
+      await this.local.delete(this.vault, DIRTY_COLLECTION, id)
+    }
+  }
+
+  /**
+   * The plaintext body of a `_sync` record.
+   *
+   * ⚠️ ONE accessor on purpose. `check-architecture`'s `capsule-body-only`
+   * grandfathers exactly ONE protected-body access in this file, and family#223
+   * needed a second read (the per-entry dirty rows). Funnelling both through
+   * here keeps the textual count at one, which is the right shape anyway: a
+   * single place that knows `_sync` records are written with `iv: ''`.
+   */
+  private plainBody(envelope: EncryptedEnvelope): string {
+    return envelope._data ?? ''
+  }
+
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return
 
     const envelope = await this.local.get(this.vault, '_sync', 'meta')
+    let carried: readonly DirtyEntry[] = []
     if (envelope) {
-      const meta = JSON.parse(envelope._data ?? '') as SyncMetadata
-      this.dirty = [...meta.dirty]
+      const meta = JSON.parse(this.plainBody(envelope)) as SyncMetadata
+      carried = meta.dirty ?? []
       this.lastPush = meta.last_push
       this.lastPull = meta.last_pull
       this.epoch = meta.epoch ?? null
+    }
+
+    // family#223 — rows are the durable truth.
+    const rows: DirtyEntry[] = []
+    for (const rowId of await this.local.list(this.vault, DIRTY_COLLECTION)) {
+      const row = await this.local.get(this.vault, DIRTY_COLLECTION, rowId)
+      if (row) rows.push(JSON.parse(this.plainBody(row)) as DirtyEntry)
+    }
+    this.dirty = rows
+    this.dirtyIndex = null
+
+    // ⛔ MIGRATE BEFORE ANY PUSH, and this is the load-bearing half of the
+    // change. A queue in flight across the upgrade lives in `_sync/meta`'s
+    // list; if it were not converted here, those records would be silently
+    // dropped from the queue — exactly the failure the row was filed for,
+    // caused by its own fix. One-way and idempotent: once converted the field
+    // is emptied, so a second load finds nothing to carry.
+    if (carried.length > 0) {
+      for (const entry of carried) {
+        if (this.dirty.some(d => d.collection === entry.collection && d.id === entry.id)) continue
+        this.dirty.push(entry)
+        await this.putDirtyRow(entry)
+      }
+      this.loaded = true          // persistMeta() must not re-enter ensureLoaded
+      await this.persistMeta()    // writes `dirty: []`, completing the migration
     }
 
     this.loaded = true
@@ -1824,7 +1959,10 @@ export class SyncEngine {
       _noydb_sync: NOYDB_SYNC_VERSION,
       last_push: this.lastPush,
       last_pull: this.lastPull,
-      dirty: this.dirty,
+      // family#223 — ALWAYS EMPTY. The queue lives in `_sync_dirty`, one row
+      // per entry; the field stays for an older build's reader rather than
+      // being removed, and the downgrade consequence is documented above.
+      dirty: [],
       ...(this.epoch !== null ? { epoch: this.epoch } : {}),
     }
 
