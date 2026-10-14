@@ -20,6 +20,8 @@ type WiredEngine = {
   setCacheInvalidator(fn: (collection: string, id: string, action: 'put' | 'delete') => Promise<void>): void
   setGraphBatchController(c: { begin(): void; flush(): Promise<void> }): void
   setReservedLookupSource(s: { collections(): readonly string[] }): void
+  // family#210 — the vault's declared link sets, enumerated for the reserved mirror.
+  setLinkCollections(fn: () => readonly string[]): void
   setReservedDictExpander(fn: (names: readonly string[]) => readonly string[]): void
   setPeriodPullSource(s: { periods(): Promise<readonly unknown[]> }): void
   setRosterReload(seam: { userId: string; reload: () => Promise<void> }): void
@@ -47,6 +49,7 @@ export function wireEngine(host: EngineWiringHost, name: string, comp: Vault, en
   engine.setCacheInvalidator((collection, id, action) => comp._invalidateSyncApplied(collection, id, action))
   engine.setGraphBatchController({ begin: () => comp._beginGraphBatch(), flush: () => comp._flushGraphBatch() })
   engine.setReservedLookupSource({ collections: () => comp._reservedLookupCollectionNames() }) // #650 Task 4
+  engine.setLinkCollections(() => comp._linkCollectionNames()) // family#210 — read per sync, so a set declared after the attach counts
   engine.setReservedDictExpander(names => comp._reservedDictDepsOf(names)) // #653
   engine.setPeriodPullSource({ periods: () => comp.listPeriods() }) // #807 period-scoped pull windows
   engine.setRosterReload({ userId: host.user, reload: () => comp._reloadKeyringAfterSync() }) // core#82

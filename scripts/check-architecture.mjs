@@ -1930,7 +1930,13 @@ const KERNEL_SURFACE_BUDGET = {
   // one place the consumer reads.
   // ⛔ Cannot move out: it needs `this.getDEK` and `this.keyring`, both
   // private to this class.
-  'packages/hub/src/kernel/vault.ts': 4005,
+  // 4005→4018 (family#210 PR 2): `_linkCollectionNames()` — the vault's declared
+  // link sets, enumerated for the reserved mirror. FLAGGED for ratification.
+  // One accessor; the rest is why it is ENUMERATED and not a `_links_*`
+  // pattern — the mirror's declared list is what makes "which reserved records
+  // travel" auditable, and a regex would move that answer out of a declaration.
+  // ⛔ Cannot move out: `linkRegistry` is this class's own private field.
+  'packages/hub/src/kernel/vault.ts': 4018,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
