@@ -1868,7 +1868,34 @@ const KERNEL_SURFACE_BUDGET = {
   // and it is what lets `diffVault` stop keying on a record FIELD and silently
   // dropping every record that has none. A service cannot supply it because a
   // service is not on the export path.
-  'packages/hub/src/kernel/vault.ts': 3844,
+  // 3844→3928 (family#206): remote-authority sequences. ⭐ RULED by the root on
+  // family#206 under this check's own genuinely-core-growth clause, raised to
+  // the MEASURED count with no headroom.
+  // What the lines ARE: the `remoteSequenceStore` memo and the
+  // `getAuthorityStore` resolver (fields, one constructor option, one
+  // assignment), a ~12-line delegate, `_setAuthorityStore`, and the branch in
+  // `sequence()`. Wiring, not capability — the three preconditions, the
+  // never-mint DEK read and the refusals all live in `with-commit/sequence`'s
+  // `resolveRemoteSequenceStore`, which `vault.ts` already imported from. The
+  // first attempt put that logic HERE and cost +82; moving it out, as this
+  // check's message instructs, is what brought it to +55.
+  // ⛔ The remaining lines cannot leave: sync TARGETS live on Noydb and the
+  // sequence HANDLE is built here, so the resolver must cross both files.
+  // ⚠️ Most of the delta is COMMENT — the traps a reader needs AT these
+  // declarations (why the remote store is a separate memo, why the authority is
+  // not `syncAdapter`, and why the resolver is reached by a dynamic import).
+  // The root ruled explicitly that these stay rather than being traded for a
+  // lower number.
+  // ⛔ AND `port-layering` SHAPES THE REST OF IT. The first version imported
+  // the resolver statically and this file's own note above (core#76/#77)
+  // predicted the outcome: that check forbids the spine reaching a `with-*`
+  // service, and its grandfathered list says never to add to it. So the
+  // resolver arrives through `await import()` — the sanctioned S4 hatch — which
+  // forces the private method to be async and the handle to be three async
+  // delegates instead of one call. Those lines are the price of the boundary,
+  // and the boundary is worth more than the lines: it also keeps the module out
+  // of the always-on bundle for every caller who never asks for a remote series.
+  'packages/hub/src/kernel/vault.ts': 3928,
   // Bumped 3960→3962 (#822 period-summary push symmetry, 2026-07-26): two lines wiring
   // the vault's existing `onDirty` into VaultPeriods so `closePeriod` marks the `_periods`
   // summary dirty and push carries it. The decision (which reserved collections push and
@@ -2123,7 +2150,25 @@ const KERNEL_SURFACE_BUDGET = {
   // self-provision happens. Four lines: the import, a one-line guarded call,
   // and the comment pointing at `assertPeerKeyringMatches`, which carries the
   // reasoning so this site stays short.
-  'packages/hub/src/kernel/noydb.ts': 2493,  // see the #1121 note above
+  // 2493→2517 (family#206): per-vault SYNC-PEER target resolution for
+  // remote-authority sequences. ⭐ RULED by the root on family#206 under this
+  // check's own genuinely-core-growth clause, not slipped through, and raised
+  // to the MEASURED count with no headroom.
+  // What the lines ARE: the `authorityTargets` map, its seed beside
+  // `primaryTarget`, the resolver handed to `new Vault(...)`, and the
+  // attach-time registration. Wiring, not capability — the capability
+  // (preconditions, the non-minting DEK read, the refusals) is in
+  // `with-commit/sequence`'s `resolveRemoteSequenceStore`, which is where the
+  // reasoning lives too.
+  // ⛔ Why it cannot be moved out: sync TARGETS live on Noydb and the sequence
+  // HANDLE is built on Vault, so resolving one from the other has to cross
+  // both files. A third seam to avoid these lines was considered and rejected
+  // as more indirection than the feature — see the PR.
+  // ⚠️ Most of the delta is COMMENT, and it stays: the root's ruling was
+  // explicitly not to trade reasoning-next-to-code for a ceiling. Compressing
+  // these to pointers is what the first attempt did, and it is why this number
+  // is higher than the one the ruling first quoted.
+  'packages/hub/src/kernel/noydb.ts': 2517,  // see the #1121 note above
   // Lowered 2407→2345 (#834 vault() cache-only, 2026-07-26): deleting the two drifted
   // fallback Vault constructors from vault() removed ~80 lines of duplicated option block.
   // A test now asserts noydb.ts contains exactly ONE `new Vault(` site — that invariant,

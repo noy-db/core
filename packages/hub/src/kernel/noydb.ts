@@ -157,6 +157,21 @@ export class Noydb {
   private readonly vaultOpening = new Map<string, Promise<Vault>>()
   private readonly keyringCache = new Map<string, UnlockedKeyring>()
   private readonly syncEngines = new Map<string, SyncEngine>()
+  /**
+   * family#206 — per vault, the SYNC-PEER a remote-authority sequence issues
+   * from. First sync-peer wins, so an attach cannot move the authority out
+   * from under a series that has already issued against it.
+   *
+   * ⛔ NOT `primaryStore`, and core#139 one screen below is why: that selector
+   * falls back to `targets[0]` of ANY role, so `[{backup}, {sync-peer}]`
+   * chooses the archive. core#139 paid for exactly that shape with presence,
+   * where the symptom was a write nobody reads back. For a counter it is
+   * worse — numbers issued against a push-only store are numbers no other
+   * device can see, which is the failure this row exists to prevent, wearing
+   * a different hat. No sync-peer means no authority means the series
+   * REFUSES, which is intended and not a degradation.
+   */
+  private readonly authorityTargets = new Map<string, { store: NoydbStore; label?: string }>()
   /** core#90 — conflict resolvers registered per vault, replayed onto a target attached after open. */
   private readonly conflictResolvers = new Map<string, Map<string, CollectionConflictResolver>>()
   /**
@@ -600,6 +615,8 @@ export class Noydb {
     // outside the block too — presence binds to the same choice (core#139).
     const primaryTarget = targets.find(t => t.role === 'sync-peer') ?? targets[0]
     const primaryStore = primaryTarget?.store
+    const authority = targets.find(t => t.role === 'sync-peer') // family#206 — sync-peer ONLY, never a positional fallback
+    if (authority) this.authorityTargets.set(name, { store: authority.store, ...(authority.label !== undefined ? { label: authority.label } : {}) })
     if (targets.length > 0) {
       const primary = primaryTarget!
       // #897 — a policy is always RESOLVED (falling back to the store preset), but
@@ -678,6 +695,8 @@ export class Noydb {
         targets
           .filter((t) => t.role === 'backup' || t.role === 'archive')
           .map((t) => ({ store: t.store, role: t.role as 'backup' | 'archive', ...(t.label !== undefined ? { label: t.label } : {}) })),
+      getAuthorityStore: () => this.authorityTargets.get(name) ?? null, // family#206 — read per call, so a later attach counts
+
       historyConfig: this.options.history,
       // #838 — the 21 conditional strategy spreads that used to live here are
       // one shared reference. This block is where #834's drift happened: a
@@ -1783,6 +1802,11 @@ export class Noydb {
     const existing = [...this.syncEngines.keys()].filter(k => k === vault || k.startsWith(`${vault}::`)).length
     this.syncEngines.set(existing === 0 ? vault : `${vault}::${existing}`, engine)
     if (existing === 0) comp._enableSync(this.#dirtyFanout(vault)) // the vault had no target: switch on sync mode
+    // family#206 — first sync-peer wins: an attach must not move the authority out from under a series that already issued.
+    if (t.role === 'sync-peer' && !this.authorityTargets.has(vault)) {
+      this.authorityTargets.set(vault, { store: t.store, ...(t.label !== undefined ? { label: t.label } : {}) })
+      comp._setAuthorityStore(() => this.authorityTargets.get(vault) ?? null)
+    }
     wireEngine(this.#wiring, vault, comp, engine)
     if (declared) engine.startScheduler()
   }

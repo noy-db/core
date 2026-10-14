@@ -338,6 +338,20 @@ export class Vault {
 
   /** Lazily-built atomic-sequence store. See {@link sequence}. */
   private sequenceStore: SequenceStore | null = null
+  /**
+   * family#206 — the store for `authority: 'remote'` series.
+   *
+   * ⛔ SEPARATE FROM {@link sequenceStore} ON PURPOSE, and do not "simplify"
+   * the two into one memoized field. They address DIFFERENT stores — the local
+   * adapter and the sync-peer's — so a single memo would hand whichever
+   * authority asked second the other one's adapter, decided by nothing but
+   * which `vault.sequence()` call happened first. A remote series issuing from
+   * the local store is the exact bug family#206 exists to close, and it would
+   * look like it worked.
+   */
+  private remoteSequenceStore: SequenceStore | null = null
+  /** family#206 — resolves the sync-peer target to issue remote sequences from. */
+  private getAuthorityStore: (() => { store: NoydbStore; label?: string } | null) | undefined
   /** Lazily-built deferred-numbering engine. See {@link runNumberingPass}. */
   private deferredNumbering: DeferredNumberingStore | null = null
   /** Registered deferred-numbering series, keyed by series name. */
@@ -463,6 +477,19 @@ export class Vault {
     /** #615 — push-only sync targets (backup/archive) this vault may target-purge. Default: none. */
     getPurgeableTargets?: () => readonly { store: NoydbStore; role: 'backup' | 'archive'; label?: string }[]
     /**
+     * family#206 — the SYNC-PEER target a remote-authority sequence issues
+     * from, or `null`.
+     *
+     * ⛔ NOT `syncAdapter`, which is right here beside it and is the wrong
+     * store: that one resolves through `primaryTarget`, which falls back to
+     * `targets[0]` of ANY role, so a `[{backup}, {sync-peer}]` configuration
+     * selects the archive. An authority must be a store both devices read AND
+     * write; `backup`/`archive` are push-only by contract. The full argument,
+     * including what core#139 already paid for this shape, is in
+     * `with-commit/sequence`'s `resolveRemoteSequenceStore`.
+     */
+    getAuthorityStore?: () => { store: NoydbStore; label?: string } | null
+    /**
      * tree-shake seam — strategy for optional blob storage.
      * Passed through to every `Collection` built by `vault.collection()`.
      * `undefined` => every `collection.blob(id)` throws with a pointer
@@ -498,6 +525,7 @@ export class Vault {
     this.onDirty = opts.onDirty
     this.onRegisterConflictResolver = opts.onRegisterConflictResolver
     this.syncAdapter = opts.syncAdapter
+    this.getAuthorityStore = opts.getAuthorityStore
     this.getPurgeableTargets = opts.getPurgeableTargets ?? (() => [])
     // #838 — 20 field assignments, each re-applying a `?? NO_*` default that
     // `createNoydb` had already resolved, are one shared reference.
@@ -1636,6 +1664,45 @@ export class Vault {
    * await seq.next()   // { serial: 1, formatted: '2026/0001' }
    * ```
    */
+  /** family#206 — the store a remote-authority series issues from. Preconditions and the reasoning: `with-commit/sequence`'s `resolveRemoteSequenceStore`. */
+  /**
+   * family#206 — bind a remote-authority handle for `series`.
+   *
+   * ⚠️ `async` + a DYNAMIC import, and both are forced, not stylistic.
+   * `check-architecture`'s `port-layering` forbids the kernel spine from
+   * statically reaching a `with-*` service, and its grandfathered list is a
+   * ratchet whose own comment says never to add to it — a dynamic `import()`
+   * is the sanctioned escape hatch (the S4 gate recipe). It also keeps the
+   * module out of the always-on bundle for every caller who never asks for a
+   * remote series, which is what the opt-in architecture is for.
+   *
+   * ⚠️ `#`, not `private`. A TS `private` method is still a real prototype
+   * property, so it would land in `__tests__/kernel-api-surface-golden.test.ts`'s
+   * frozen Vault surface — an implementation detail needing a deliberate edit
+   * to the microkernel's public manifest. `#` is genuinely absent from
+   * `getOwnPropertyNames`.
+   */
+  async #remoteSequenceHandle(series: string, key: string): Promise<SequenceHandle> {
+    const { resolveRemoteSequenceStore } = await import('../with-commit/sequence/remote-authority.js')
+    this.remoteSequenceStore = resolveRemoteSequenceStore({
+      series,
+      target: this.getAuthorityStore?.() ?? null,
+      existing: this.remoteSequenceStore,
+      deks: () => this.keyring.deks,
+      encrypted: this.encrypted,
+      build: (adapter, getDEK) => this.strategies.sequence.createStore({
+        adapter, vault: this.name, encrypted: this.encrypted, getDEK, actor: this.keyring.userId,
+      }),
+    })
+    return this.remoteSequenceStore.handle(key)
+  }
+
+  /** family#206 — a sync-peer attached after open becomes the authority; drop any store memoized against the previous answer. */
+  _setAuthorityStore(resolve: () => { store: NoydbStore; label?: string } | null): void {
+    this.getAuthorityStore = resolve
+    this.remoteSequenceStore = null
+  }
+
   sequence(series: string, opts: SequenceOptions & { format: string }): FormattedSequenceHandle
   sequence(series: string, opts?: SequenceOptions): SequenceHandle
   sequence(series: string, opts?: SequenceOptions): SequenceHandle | FormattedSequenceHandle {
@@ -1672,18 +1739,35 @@ export class Vault {
         },
       }
     }
-    if (!this.sequenceStore) {
-      // Opt-in gate (S4): NO_SEQUENCE.createStore throws SequenceNotEnabledError
-      // unless `sequenceStrategy: withSequence()` was passed to createNoydb.
-      this.sequenceStore = this.strategies.sequence.createStore({
-        adapter: this.adapter,
-        vault: this.name,
-        encrypted: this.encrypted,
-        getDEK: this.getDEK,
-        actor: this.keyring.userId,
-      })
+    const key = resolveSequenceKey(series, opts)
+    let handle: SequenceHandle
+    // family#206 — `'remote'` issues from the sync-peer, resolved at USE time
+    // (see `lazyRemoteHandle`). Absent or `'local'` takes the branch below,
+    // byte for byte what it was before.
+    if (opts?.authority === 'remote') {
+      // Resolved per OPERATION, not here: `SequenceOfflineError` is thrown by
+      // `next()`/`seedTo()` and not by `vault.sequence()`, so acquiring a
+      // handle stays safe and USING it is what can refuse. It also lets a
+      // handle acquired before `attachSyncTarget()` start working after it.
+      handle = {
+        next: async (o) => (await this.#remoteSequenceHandle(series, key)).next(o),
+        peek: async () => (await this.#remoteSequenceHandle(series, key)).peek(),
+        seedTo: async (n) => (await this.#remoteSequenceHandle(series, key)).seedTo(n),
+      }
+    } else {
+      if (!this.sequenceStore) {
+        // Opt-in gate (S4): NO_SEQUENCE.createStore throws SequenceNotEnabledError
+        // unless `sequenceStrategy: withSequence()` was passed to createNoydb.
+        this.sequenceStore = this.strategies.sequence.createStore({
+          adapter: this.adapter,
+          vault: this.name,
+          encrypted: this.encrypted,
+          getDEK: this.getDEK,
+          actor: this.keyring.userId,
+        })
+      }
+      handle = this.sequenceStore.handle(key)
     }
-    const handle = this.sequenceStore.handle(resolveSequenceKey(series, opts))
     if (opts?.format === undefined) return handle
     // Formatted variant: validate the template now (throws on a bad
     // token), then wrap next() to also return the rendered serial string.

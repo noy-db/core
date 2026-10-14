@@ -30,11 +30,40 @@
  * | `_history`, `_ledger` | NOT replicated | per-device evidence: the ledger is a hash chain per writer, two devices appending would fork it; `vault.at(T)` runs where history lives |
  * | `_sync_rejections` | higher `_v` wins | core#107 — the arbiter's refusals, sealed under the refused record's own collection DEK |
  * | `_sync` | NOT replicated | this device's dirty log and watermarks |
+ * | `_sequences` | NOT replicated | family#206 — the counter VALUE is sealed, so no rule here can compare two of them; see below |
  * | `_meta/schema-fence`, `_meta/handle`, other `_meta` | NOT replicated | session and instance state; the rest of `_meta` is decided one id at a time |
  *
  * DEK-free by construction: every rule compares a field the mover can read
  * without a key — `roster_epoch` (plaintext JSON on purpose, #1097, read
  * through `team/keyring.ts`'s parser) or the envelope's `_v`.
+ *
+ * ## ⛔ Why `_sequences` is NOT here, and is not an oversight (family#206)
+ *
+ * The obvious fix for "two devices issue the same invoice number" is to
+ * replicate the counter and let the higher value win. **That rule cannot be
+ * written in this file**, and the line above is the reason: the counter's value
+ * lives in the SEALED BODY, and this mover holds no DEK by design. Every rule
+ * here is a `supersedes(candidate, current)` over ENVELOPES.
+ *
+ * So the only rule available is `versionSupersedes`, and for two devices that
+ * each incremented locally it is wrong in both directions. Both reach `_v: 5`
+ * carrying different values, `candidate._v > current._v` is false, and the pull
+ * is a **NO-OP** — the receiving device never sees the other's maximum, which
+ * looks exactly like replication working. Where the versions do differ it picks
+ * by WRITE COUNT rather than by value, and can move a counter BACKWARDS.
+ *
+ * ⚠️ The two ways to make max-wins expressible are both refused: putting the
+ * value in cleartext on the envelope is a storage-format break *and* an
+ * information leak (invoice volume is precisely what the body protects), and
+ * handing this mover a DEK breaks the trust boundary this whole file is
+ * careful to sit outside of.
+ *
+ * ⭐ So family#206 is solved on the ISSUING side instead — `vault.sequence(name,
+ * { authority: 'remote' })` CASes against the sync-peer's store, so there is
+ * exactly ONE counter and nothing to reconcile. See `with-commit/sequence`'s
+ * `resolveRemoteSequenceStore`. Adding `_sequences` here would also change
+ * behaviour for EXISTING vaults, whose counters would start moving under a rule
+ * that cannot evaluate them: additive in API, not additive in effect.
  *
  * ## The one rule, both directions
  *

@@ -331,6 +331,12 @@ export {
   SequenceContentionError,
   SequenceOfflineError,
   SequenceNotEnabledError,
+  // family#206 — a remote-authority series refuses rather than falling back to
+  // the per-device counter, so a caller that wants to queue or retry has to be
+  // able to catch this BY CLASS. `__tests__/error-classes-reachable.test.ts`
+  // is what caught its absence here, which is the #57 class of bug: declared,
+  // thrown, and unreachable from every published entry point.
+  SequenceAuthorityUnavailableError,
   PodIntegrityError,
   PodSealMismatchError,
   PodVersionConflictError,
